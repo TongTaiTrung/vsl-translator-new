@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vsl-api",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["-m", "src.app.server", "--port", "8000"],
+      "port": 8000
+    }
+  ]
+}

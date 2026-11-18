@@ -28,8 +28,11 @@ hoặc ngay trong phần Cài đặt.
 
 - Webcam mở ở độ phân giải 16:9 lớn nhất (giống `src/features/camera.py`); frame được thu nhỏ về cạnh dài
   1280 rồi gửi đi dạng JPEG.
-- Thu 15 fps vào cửa sổ trượt 30 frame (2 giây). Mỗi 5 frame mới gửi cửa sổ mới nhất tới `POST /api/predict`,
-  luôn chỉ một request đang chạy.
+- Thu 15 fps, cửa sổ dự đoán 30 frame (2 giây). Mặc định app mở một phiên `POST /api/stream` và mỗi
+  5 frame chỉ gửi các frame MỚI tới `POST /api/stream/<id>`: server giữ tracking MediaPipe và cửa sổ 30
+  frame nên mỗi frame chỉ trích một lần (~0.15 s/request trên CPU, so với ~1.5 s khi gửi cả 30 frame).
+  Server cũ không có `/api/stream` thì app tự gửi cả cửa sổ tới `POST /api/predict`. Luôn chỉ một request
+  đang chạy; HUD trên video hiện chế độ (`stream`/`window`) và thời gian mỗi request.
 - Mỗi phản hồi là một phiếu (`lib/voter.ts`, port từ `src/app/voting.py`): cùng nhãn đủ `Số phiếu để chốt từ`
   lần liên tiếp thì chốt từ. `hand_frames` trong phản hồi phân biệt nghỉ tay / đang vào ký hiệu / đang ký.
 - Nghỉ tay liên tục 3 giây (chỉnh được) sau khi đã có từ thì kết thúc câu. Câu được ghép bằng Groq qua route

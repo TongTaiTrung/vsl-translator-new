@@ -280,7 +280,17 @@ export default function Home() {
                   {PHASE_TEXT[state!.phase]}
                   {state!.inFlight && <span className="spinner" aria-label="đang gọi API" />}
                 </span>
-                {state!.resolution && <span className="hud-meta">{state!.resolution}</span>}
+                {state!.resolution && (
+                  <span className="hud-meta">
+                    {state!.resolution}
+                    {state!.mode && (
+                      <span title={state!.mode === "stream" ? "Luồng liên tục: chỉ gửi frame mới" : "Gửi cả cửa sổ 30 frame (server cũ)"}>
+                        · {state!.mode === "stream" ? "stream" : "window"}
+                      </span>
+                    )}
+                    {state!.latencyMs != null && <span>· {state!.latencyMs} ms</span>}
+                  </span>
+                )}
               </div>
             )}
             {running && state!.phase === "buffering" && (

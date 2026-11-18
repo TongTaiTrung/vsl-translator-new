@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 
 from src.app.server import create_app
-from src.features.extract import FEATURE_DIM, SEQ_FEATURE_DIM
+from src.features.extract import _PALM_Y, FEATURE_DIM, REST_Y, SEQ_FEATURE_DIM
 from src.model.predict import VSLPredictor
 from src.model.training import Config, Normalizer, VSLNet, default_groups, save_ensemble
 
@@ -63,6 +63,18 @@ class ServerTests(unittest.TestCase):
         self.assertIn("cảm ơn".encode(), response.data)          # tiếng Việt không bị escape
         self.assertEqual(self.calls, [{"n": 30, "shape": (48, 64, 3), "fps": 30.0, "mirror": False}])
         self.assertEqual(response.headers["Access-Control-Allow-Origin"], "*")
+
+    def test_predict_counts_frames_with_active_hands(self):
+        def extractor(frames, *, fps, mirror_data):
+            features = np.zeros((len(frames), FEATURE_DIM), dtype=np.float32)
+            features[:12, list(_PALM_Y)] = np.nan            # 12 frame không thấy tay
+            features[12:15, list(_PALM_Y)] = REST_Y + 0.5    # 3 frame tay buông -> không tính
+            return features
+
+        client = create_app(self.predictor, feature_extractor=extractor).test_client()
+        frames = [encode_frame(self.frame) for _ in range(30)]
+        body = client.post("/api/predict", json={"frames": frames}).get_json()
+        self.assertEqual(body["hand_frames"], 15)
 
     def test_predict_accepts_raw_features(self):
         response = self.client.post("/api/predict", json={"features": np.zeros((30, FEATURE_DIM)).tolist()})

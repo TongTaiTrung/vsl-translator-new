@@ -16,7 +16,8 @@ Endpoint:
   Thay cho ``frames`` có thể gửi ``features``: mảng ``(frames, FEATURE_DIM)`` feature thô đã trích.
 
   Trả về dict của ``VSLPredictor.predict_raw`` (``label``, ``confidence``, ``probability_gap``,
-  ``accepted``, ``rejection_reason``, ``top``) cộng ``frames`` và ``elapsed_ms``.
+  ``accepted``, ``rejection_reason``, ``top``) cộng ``frames``, ``hand_frames`` (số frame có tay
+  đang ký, không tính tay buông — 0 nghĩa là người dùng đang nghỉ) và ``elapsed_ms``.
   Lỗi đầu vào trả 400 ``{"error": ...}``.
 
 Chạy::
@@ -39,7 +40,7 @@ import torch
 from flask import Flask, jsonify, request, send_from_directory
 
 from src.builtin.mediapipe_builtin import LandmarkerLoader, VisionRunningMode
-from src.features.extract import FEATURE_DIM, extract
+from src.features.extract import FEATURE_DIM, active_presence, extract
 from src.features.frame import frame_padding
 from src.features.schema import EXPECTED_FRAMES
 from src.model.predict import VSLPredictor
@@ -171,7 +172,9 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
                 result = predictor.predict_raw(features, top_k=top_k)
         except ValueError as exc:          # vd. feature chứa vô cực
             raise BadRequest(str(exc)) from None
-        result.update(frames=int(features.shape[0]), elapsed_ms=round((time.perf_counter() - started) * 1000, 1))
+        hand_frames = sum(bool(active_presence(frame).any()) for frame in features)
+        result.update(frames=int(features.shape[0]), hand_frames=int(hand_frames),
+                      elapsed_ms=round((time.perf_counter() - started) * 1000, 1))
         return jsonify(result)
 
     return app

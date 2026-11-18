@@ -9,7 +9,7 @@ Hàm vào/ra giữ nguyên:
     extract(pose_res, hand_res)            -> (FEATURE_DIM,)          mỗi frame
     process_sequence(raw_sequence, ...)    -> (target_len, SEQ_FEATURE_DIM)
 
-Giả định đầu vào: frame đã qua frame_padding thành 720 x 720 nên toạ độ
+Giả định đầu vào: frame đã qua frame_padding thành FRAME_SIZE x FRAME_SIZE (1280) nên toạ độ
 chuẩn hoá x, y của MediaPipe cùng một tỉ lệ, không cần W/H.
 """
 from __future__ import annotations

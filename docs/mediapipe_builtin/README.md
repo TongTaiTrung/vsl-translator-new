@@ -110,7 +110,7 @@ Chỉ là hộp chứa kết quả async. Không có đồng bộ lock — mỗi
 
 - **Tách khỏi logic đặc trưng**: loader chỉ trả kết quả MediaPipe; việc ghép tay, chuẩn hoá, NaN nằm ở `src/features/extract.py`.
 - **Timestamp tự động** cho video/live stream, tránh lỗi MediaPipe khi timestamp không tăng.
-- **Padding tập trung**: cả loader và các pipeline bên ngoài đều có thể gọi `frame_padding`; hàm này idempotent với ảnh 720.
+- **Padding tập trung**: cả loader và các pipeline bên ngoài đều có thể gọi `frame_padding`; hàm này idempotent với ảnh 1280.
 - **Delegate**: CPU dùng RGB, delegate khác dùng RGBA để tương thích GPU.
 - **Không cache model giữa các instance**: mỗi `LandmarkerLoader` tạo tài nguyên MediaPipe riêng, phù hợp cho session riêng nhưng tốn bộ nhớ nếu tạo quá nhiều.
 

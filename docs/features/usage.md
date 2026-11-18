@@ -16,7 +16,7 @@ assert padded.shape == (FRAME_SIZE, FRAME_SIZE, 3)
 assert padded.dtype.name == "uint8"
 ```
 
-`frame_padding` chỉ **thu nhỏ** ảnh lớn hơn 720, không phóng to ảnh nhỏ; ảnh được đặt giữa, phần thừa màu đen.
+`frame_padding` scale đều để cạnh dài bằng 1280 (thu nhỏ hoặc phóng to); ảnh được đặt giữa, phần thừa màu đen.
 
 Lỗi thường gặp:
 
@@ -94,7 +94,7 @@ Nếu không truyền `processor`, `DataHandler` chỉ đọc được mẫu có
 
 | API | Input | Output | Ghi chú |
 |---|---|---|---|
-| `frame_padding(frame)` | `(H, W, 3) uint8` | `(720, 720, 3) uint8` | alias `pad_frame` |
+| `frame_padding(frame)` | `(H, W, 3) uint8` | `(1280, 1280, 3) uint8` | alias `pad_frame` |
 | `extract(pose_res, hand_res)` | MediaPipe results | `(131,) float32` | có `NaN` |
 | `process_sequence(raw, target_len=30)` | `(T, 131)` | `(30, 170) float32` | nội suy + khử gai + resample + motion |
 | `process_sequence(..., add_motion=False)` | `(T, 131)` | `(30, 131) float32` | không thêm chuyển động |

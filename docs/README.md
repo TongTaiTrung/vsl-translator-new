@@ -23,7 +23,7 @@ Ngoài ra, [Đánh giá kiến trúc AI và quy trình huấn luyện](tue-17-11
 
 ```mermaid
 flowchart LR
-    A[Camera / video] --> B[frame_padding<br/>720x720]
+    A[Camera / video] --> B[frame_padding<br/>1280x1280]
     B --> C[LandmarkerLoader<br/>Pose + Hand]
     C --> D[extract<br/>T x 131]
     D --> E[process_sequence<br/>30 x 170]
@@ -46,7 +46,7 @@ flowchart LR
 
 ### Quy ước chung
 
-- Ảnh là **BGR uint8**, luôn được đưa về **720 x 720** bằng `frame_padding` trước khi detect/trích xuất.
+- Ảnh là **BGR uint8**, luôn được đưa về **1280 x 1280** bằng `frame_padding` trước khi detect/trích xuất.
 - Toạ độ landmark MediaPipe là chuẩn hoá `[0, 1]`; hệ quy chiếu thân được dựng từ hai vai, đơn vị là độ rộng vai.
 - `FEATURE_VERSION = 2`, `FRAME_FEATURE_DIM = 131`, `EXPECTED_FRAMES = 30`, `SEQ_FEATURE_DIM = 170`.
 - Dữ liệu huấn luyện phải dùng **cùng extractor/feature version** với checkpoint dự đoán.

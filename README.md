@@ -1,6 +1,6 @@
 # VSL translator
 
-The pipeline records BGR video, pads every frame to 720 x 720, extracts 131 raw
+The pipeline records BGR video, pads every frame to 1280 x 1280, extracts 131 raw
 features per frame with the bundled MediaPipe landmarker models, and processes a
 clip into a `(30, 170)` sequence for classification.
 

@@ -9,6 +9,7 @@ import numpy as np
 from src.data.data_reader import DataHandler
 from src.data.reextract import find_raw_samples, reextract_sample
 from src.features.extract import FEATURE_DIM, FEATURE_VERSION, SEQ_FEATURE_DIM, process_sequence
+from src.features.frame import FRAME_SIZE
 
 
 class ReextractTests(unittest.TestCase):
@@ -40,7 +41,7 @@ class ReextractTests(unittest.TestCase):
             self.assertEqual(meta["session"], "original-session")
             self.assertTrue(meta["mirror"])
             self.assertEqual(meta["created"], "earlier")
-            self.assertEqual(meta["frame_size"], 720)
+            self.assertEqual(meta["frame_size"], FRAME_SIZE)
             self.assertEqual(meta["feature_version"], FEATURE_VERSION)
             self.assertEqual(meta["source_video"], "xin chao/3.mp4")
             raw_features = np.stack([DataHandler._load_feature(target / f"{i}.npz") for i in range(8)])

@@ -34,9 +34,7 @@ runs/
 # ---- Data ----
 # Raw recordings in data/raw/ are NOT ignored (they are the source of truth).
 # Derived artifacts are reproducible from raw, so keep them out of git.
-data/cache/
-data/processed/
-*.npz
+data/
 
 # ---- Environment / secrets ----
 .env
@@ -53,3 +51,4 @@ Thumbs.db
 # ---- Tooling outputs ----
 graphify-out/
 .claude/settings.local.json
+

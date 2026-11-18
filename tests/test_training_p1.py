@@ -73,6 +73,24 @@ class EpochBudgetTests(unittest.TestCase):
         self.assertLess(info["final_lr"], 0.05 * cfg.lr)
 
 
+class WarmStartTests(unittest.TestCase):
+    def test_init_state_loads_weights_and_keeps_start_when_nothing_improves(self):
+        X, y = tiny_data()
+        cfg = tiny_config(warmup_epochs=0, lr=1e-9, min_lr=1e-9, ema_decay=0.0)
+        groups = default_groups(SEQ_FEATURE_DIM)
+        base, _ = train_one(X, y, None, None, 3, groups, cfg, torch.device("cpu"), fixed_epochs=2, log_every=0)
+        start = {k: v.clone() for k, v in base.state_dict().items()}
+        tuned, info = train_one(X, y, X, y, 3, groups, cfg, torch.device("cpu"), log_every=0,
+                                fixed_epochs=2, init_state=start)
+        self.assertGreaterEqual(info["best_epoch"], 0)
+        if info["best_epoch"] == 0:                       # model ban đầu thắng -> trả về đúng trọng số cũ
+            for k, v in tuned.state_dict().items():
+                torch.testing.assert_close(v, start[k])
+        with torch.no_grad():
+            base_acc = (base.eval()(X).argmax(1) == y).float().mean().item()
+        self.assertGreaterEqual(info["val_acc"], base_acc)   # không bao giờ tệ hơn điểm xuất phát trên val
+
+
 class SoftPresenceTests(unittest.TestCase):
     def test_weak_soft_presence_does_not_count_as_second_hand(self):
         x = torch.zeros(1, 30, SEQ_FEATURE_DIM)
@@ -149,6 +167,16 @@ class EvaluationHookTests(unittest.TestCase):
         self.assertEqual(result["evaluation"], {"ok": True})
         self.assertEqual(calls, [((18, 3), (18,), ["a", "b", "c"], (18,))])
         self.assertIn(result["temperature_status"], {"fitted", "at_bound", "skipped_no_errors"})
+
+    def test_fold_assignment_is_saved_for_finetuning(self):
+        import json
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.dict(sys.modules, {"src.model.evaluation": None}):
+            self._run(directory)
+            folds = json.loads((Path(directory) / "folds.json").read_text(encoding="utf-8"))
+        self.assertEqual(folds["k"], 3)
+        self.assertEqual(sorted(folds["fold_by_group"]), sorted(str(i) for i in range(18)))
+        self.assertEqual(set(folds["fold_by_group"].values()), {0, 1, 2})
 
     def test_training_runs_without_evaluation_module(self):
         with tempfile.TemporaryDirectory() as directory, \

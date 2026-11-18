@@ -14,4 +14,4 @@ flask-sqlalchemy
 flask-restful
 cryptography
 pyOpenSSL
-torch
+torchrequests

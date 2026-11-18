@@ -734,13 +734,18 @@ def hard_negative_margin_loss(logits: torch.Tensor, target: torch.Tensor, margin
 def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
               fixed_epochs: int | None = None, init_strength: float = 0.5,
               freeze_strength: bool = False, tag: str = "", log_every: int = 5,
-              hand_presence: torch.Tensor | None = None, norm_stats=None):
+              hand_presence: torch.Tensor | None = None, norm_stats=None, init_state: dict | None = None):
     """Huấn luyện 1 model. Có (Xva,yva): early stopping + tự thích ứng. Không có: chạy `fixed_epochs`.
 
     norm_stats=(mean, std, presence_aware) tensor trên device: để augmentation tay phụ tính lại cột tay-tay.
+    init_state: state_dict để fine-tune (warm-start) thay vì khởi tạo ngẫu nhiên. Khi có val, model ban đầu
+    được chấm trước epoch 1 và là ứng viên "best" (best_epoch=0) -> fine-tune không thể trả về model tệ hơn
+    trên val so với lúc bắt đầu.
     """
     has_val = Xva is not None
     model = build_model(Xtr.shape[-1], n_classes, groups, cfg).to(device)
+    if init_state is not None:
+        model.load_state_dict(init_state)
     ema = EMA(model, cfg.ema_decay)
     aug = Augmenter()
     donor_pool = None
@@ -778,6 +783,15 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
     lr_scale, lr_target = 1.0, 1.0      # lr_scale tiến mượt về lr_target (không "vách đứng")
     sub = torch.randperm(n, device=device)[:min(n, 512)]   # tập con cố định để đo train-acc sạch (rẻ)
     Xsub, ysub = Xtr[sub], ytr[sub]
+    if init_state is not None and has_val:                  # điểm xuất phát của fine-tune = mốc để so
+        va_logits = logits_of(ema.module, Xva)
+        m0 = eval_metrics(va_logits, yva)
+        best.update(key=(m0[1], m0[0]), state=copy.deepcopy(ema.module.state_dict()), epoch=-1, m=m0,
+                    logits=va_logits.cpu())
+        best_loss = m0[0]
+        if log_every:
+            print(f"  {tag} ep   0 | (model ban đầu) val_loss {m0[0]:.3f} acc {m0[1]:.3f} top5 {m0[2]:.3f}",
+                  flush=True)
     t0 = time.time()
 
     for ep in range(total_epochs):
@@ -885,7 +899,7 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
 
     if has_val:
         ema.module.load_state_dict(best["state"])
-        hist = ctrl.hist[:best["epoch"] + 1]
+        hist = ctrl.hist[:best["epoch"] + 1] or [ctrl.s]      # best_epoch=0 (giữ model ban đầu) -> s hiện tại
         info = {"best_epoch": best["epoch"] + 1, "val_loss": best["m"][0], "val_acc": best["m"][1],
                 "val_top5": best["m"][2], "strength": float(np.mean(hist[-10:])), "val_logits": best["logits"],
                 "history": history}
@@ -1240,6 +1254,10 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
     # ---------------- lưu ----------------
     save_ensemble(out_dir / "ensemble.pt", models, norms, cfg, layout, classes, temp, thr, (T, D))
     (out_dir / "classes.json").write_text(json.dumps(classes, ensure_ascii=False, indent=1), encoding="utf-8")
+    # Group gốc -> fold: fine-tune sau này phải giữ đúng phép chia này (model fold f chưa từng thấy val fold f).
+    (out_dir / "folds.json").write_text(json.dumps(
+        {"k": k, "seed": cfg.seed, "fold_by_group": {str(g): int(f) for g, f in fold_by_group.items()}},
+        ensure_ascii=False, indent=1), encoding="utf-8")
     metrics = {
         "cv_acc_mean": float(np.mean(accs)), "cv_acc_std": float(np.std(accs)),
         "fold_acc": accs, "best_epochs": [i["best_epoch"] for i in infos],

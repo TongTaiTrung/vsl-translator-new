@@ -84,8 +84,13 @@ class VSLPredictor:
         self.threshold = max(float(self.checkpoint["reject_threshold"]), min_confidence)
         self.min_probability_gap = min_probability_gap
 
-    def predict_processed(self, sequence: np.ndarray, *, top_k: int = 3) -> dict:
-        """Predict a processed ``(T, D)`` sequence; return JSON-compatible data."""
+    def predict_processed(self, sequence: np.ndarray, *, top_k: int = 3,
+                          ensemble: training.VSLEnsemble | None = None) -> dict:
+        """Predict a processed ``(T, D)`` sequence; return JSON-compatible data.
+
+        ensemble: chạy một ensemble khác (vd. một model con để sàng lọc nhanh) với cùng
+        ngưỡng từ chối; mặc định là ensemble của checkpoint.
+        """
         features = np.asarray(sequence, dtype=np.float32)
         if features.shape != (self.target_len, self.feature_dim):
             raise ValueError(f"Expected processed features {(self.target_len, self.feature_dim)}, got {features.shape}")
@@ -95,7 +100,7 @@ class VSLPredictor:
             raise ValueError("top_k must be positive")
 
         ranked = training.predict_topk(
-            self.ensemble, features, self.classes,
+            self.ensemble if ensemble is None else ensemble, features, self.classes,
             k=min(max(top_k, 2), len(self.classes)), reject_threshold=self.threshold,
         )[0]
         confident = ranked[0][0] != "unknown"
@@ -197,11 +202,22 @@ class VSLStreamSession:
         frame = frame_padding(frame)
         pose_result, hand_result, _ = self.landmarkers.detect(frame)
         feature = extract(pose_result, hand_result)
-        hand_present = bool(active_presence(feature).any())   # tay đang buông (dưới bụng) không tính
 
         self.last_frame = frame
         self.last_pose_result = pose_result
         self.last_hand_result = hand_result
+        return self.update_features(feature, now=now)
+
+    def update_features(self, feature: np.ndarray, *, now: float) -> dict:
+        """Cập nhật cửa sổ bằng đặc trưng thô ``(FEATURE_DIM,)`` của một frame đã trích xuất.
+
+        ``update_frame`` gọi hàm này sau MediaPipe; có thể gọi trực tiếp để phát lại
+        đặc trưng đã lưu (đánh giá offline) mà không cần camera.
+        """
+        if self._closed:
+            raise RuntimeError("Stream session is closed")
+        now = float(now)
+        hand_present = bool(active_presence(feature).any())   # tay đang buông (dưới bụng) không tính
         if hand_present:
             self.last_hand_time = now
         if self.last_hand_time is None or now - self.last_hand_time > self.config.no_hand_timeout:
@@ -220,11 +236,11 @@ class VSLStreamSession:
 
         duration = now - self.history[0][0] if self.history else 0.0
         ready = hand_present and len(self.history) >= self.config.min_frames \
-            and duration >= self.config.min_window_seconds
+            and duration >= self._min_ready_seconds()
         self.frame_count += 1
         if ready and self.frame_count % self.config.predict_every == 0:
             raw = np.stack([item[1] for item in self.history])
-            self.prediction = self.predictor.predict_raw(raw, top_k=self.config.top_k)
+            self.prediction = self._predict(raw, duration)
             label = self.prediction["label"]
             self.recent_labels.append(label)
             self.stable_label = label if label and len(self.recent_labels) == self.config.stability_frames \
@@ -241,6 +257,14 @@ class VSLStreamSession:
             "duration": float(duration),
         }
         return self.last_state
+
+    def _min_ready_seconds(self) -> float:
+        """Độ dài cửa sổ tối thiểu để bắt đầu dự đoán (lớp con có thể dự đoán sớm hơn)."""
+        return self.config.min_window_seconds
+
+    def _predict(self, raw: np.ndarray, duration: float) -> dict:
+        """Dự đoán cửa sổ thô hiện tại ``(frames, FEATURE_DIM)``."""
+        return self.predictor.predict_raw(raw, top_k=self.config.top_k)
 
     def close(self) -> None:
         if not self._closed:

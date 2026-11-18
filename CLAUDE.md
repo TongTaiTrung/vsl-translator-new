@@ -15,7 +15,7 @@ Use the project virtualenv at `.venv/` (Python 3.12). Install with `pip install 
 Tests use `unittest`, not pytest, which isn't installed. `tests/` has no `__init__.py`, so `discover` fails. Run modules by dotted name from the repo root:
 
 ```bash
-.venv/bin/python -m unittest tests.test_predict tests.test_reextract tests.test_feature_augmentation tests.test_training_robustness tests.test_builtin_collection tests.test_training_p1 tests.test_evaluation tests.test_feature_v3
+.venv/bin/python -m unittest tests.test_predict tests.test_reextract tests.test_feature_augmentation tests.test_training_robustness tests.test_builtin_collection tests.test_training_p1 tests.test_evaluation tests.test_feature_v3 tests.test_app tests.test_fast
 .venv/bin/python -m unittest tests.test_predict.PredictorTests.test_checkpoint_prediction_is_json_ready_and_validates_shape
 ```
 

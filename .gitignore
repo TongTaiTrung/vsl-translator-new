@@ -1,0 +1,55 @@
+# ---- Python ----
+__pycache__/
+.pycaches/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+
+# ---- Virtualenv ----
+.venv/
+venv/
+env/
+
+# ---- Testing / tooling caches ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- Jupyter ----
+.ipynb_checkpoints/
+
+# ---- Training outputs (checkpoints, metrics, ONNX exports) ----
+runs/
+*.pt
+*.pth
+*.onnx
+
+# ---- Data ----
+# Raw recordings in data/raw/ are NOT ignored (they are the source of truth).
+# Derived artifacts are reproducible from raw, so keep them out of git.
+data/cache/
+data/processed/
+*.npz
+
+# ---- Environment / secrets ----
+.env
+.env.*
+!.env.example
+
+# ---- Editors / OS ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ---- Tooling outputs ----
+graphify-out/
+.claude/settings.local.json

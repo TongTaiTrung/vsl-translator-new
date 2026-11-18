@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Vietnamese Sign Language (VSL) translator. The pipeline is: BGR video → pad every frame to 720×720 (`src/features/frame.py:frame_padding`) → MediaPipe pose and hand landmarkers → **275 raw features per frame** (`src/features/extract.py:extract`) → `process_sequence` resamples and expands each clip to a **`(30, 314)` sequence** → an ensemble classifier (`VSLNet`, `HandPairNet` or `SignFormer`) with rejection.
+Vietnamese Sign Language (VSL) translator. The pipeline is: BGR video → pad every frame to 1280×1280 (`src/features/frame.py:frame_padding`, scales up or down so the long side fills the canvas; raw videos recorded before this are 720×720) → MediaPipe pose and hand landmarkers → **275 raw features per frame** (`src/features/extract.py:extract`) → `process_sequence` resamples and expands each clip to a **`(30, 314)` sequence** → an ensemble classifier (`VSLNet`, `HandPairNet` or `SignFormer`) with rejection.
 
 Comments, docstrings and many CLI messages are written in Vietnamese. Match that style when editing nearby code.
 

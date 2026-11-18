@@ -43,7 +43,7 @@ def find_raw_samples(raw_root: Path, classes: list[str] | None = None) -> list[P
 
 
 def extract_video_features(video_path: Path) -> tuple[np.ndarray, float]:
-    """Decode every frame, pad it to 720 square, and run the builtin landmarks."""
+    """Decode every frame, pad it to the FRAME_SIZE square, and run the builtin landmarks."""
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         cap.release()

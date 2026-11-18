@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from src.features.extract import _PALM_Y, FEATURE_DIM, SEQ_FEATURE_DIM
+from src.features.frame import FRAME_SIZE
 from src.model.predict import StreamConfig, VSLPredictor, VSLStreamSession
 from src.model.training import Config, Normalizer, VSLNet, default_groups, save_ensemble
 
@@ -55,7 +56,7 @@ class PredictorTests(unittest.TestCase):
 
             def detect(self, frame):
                 self.calls += 1
-                assert frame.shape == (720, 720, 3)
+                assert frame.shape == (FRAME_SIZE, FRAME_SIZE, 3)
                 return None, self.calls <= 3, self.calls
 
             def close(self):
@@ -129,7 +130,7 @@ class PredictorTests(unittest.TestCase):
                 self.running_mode = running_mode
 
             def detect(self, frame, timestamp_ms=None):
-                assert frame.shape == (720, 720, 3)
+                assert frame.shape == (FRAME_SIZE, FRAME_SIZE, 3)
                 type(self).timestamps.append(timestamp_ms)
                 return None, None, None
 

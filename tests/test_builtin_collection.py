@@ -13,13 +13,25 @@ from src.features.frame import FRAME_SIZE, frame_padding
 
 
 class BuiltinCollectionTests(unittest.TestCase):
-    def test_frame_padding_always_returns_720_square(self):
-        for height, width in ((720, 1280), (640, 480), (240, 320), (720, 720)):
+    def test_frame_padding_always_returns_square_canvas(self):
+        for height, width in ((720, 1280), (640, 480), (240, 320), (720, 720), (1080, 1920)):
             with self.subTest(shape=(height, width)):
                 frame = np.full((height, width, 3), 255, dtype=np.uint8)
                 padded = frame_padding(frame)
                 self.assertEqual(padded.shape, (FRAME_SIZE, FRAME_SIZE, 3))
                 self.assertEqual(padded[FRAME_SIZE // 2, FRAME_SIZE // 2, 0], 255)
+
+    def test_frame_padding_keeps_normalized_geometry_across_resolutions(self):
+        # Video cũ 720x720 (đã pad từ 1280x720) và camera 1280x720 phải cho cùng vùng nội dung.
+        for height, width in ((720, 720), (720, 1280), (405, 720)):
+            with self.subTest(shape=(height, width)):
+                frame = np.full((height, width, 3), 255, dtype=np.uint8)
+                padded = frame_padding(frame)
+                cols = np.flatnonzero(padded[:, :, 0].max(axis=0))
+                rows = np.flatnonzero(padded[:, :, 0].max(axis=1))
+                self.assertEqual((cols[0], cols[-1] + 1), (0, FRAME_SIZE))
+                expected = round(FRAME_SIZE * height / max(height, width))
+                self.assertAlmostEqual((rows[-1] + 1 - rows[0]) / FRAME_SIZE, expected / FRAME_SIZE, delta=2 / FRAME_SIZE)
 
     def test_builtin_loader_processes_image_and_video_frames(self):
         frame = np.zeros((64, 64, 3), dtype=np.uint8)
@@ -70,7 +82,7 @@ class BuiltinCollectionTests(unittest.TestCase):
                 self.assertEqual(saved["X"].shape, shape)
             self.assertEqual(get_next_id(root / "raw", "hello", extracted), 1)
 
-    def test_data_handler_video_output_is_720_square(self):
+    def test_data_handler_video_output_is_square_canvas(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "sample.mp4"
             DataHandler._write_video(path, [np.zeros((360, 640, 3), dtype=np.uint8)], 30)

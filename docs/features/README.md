@@ -6,7 +6,7 @@ Chuyển khung hình BGR thành vector đặc trưng VSL và biến một clip c
 
 ```mermaid
 flowchart LR
-    A[BGR frame] -->|frame_padding| B[720x720 BGR]
+    A[BGR frame] -->|frame_padding| B[1280x1280 BGR]
     B --> C[MediaPipe results]
     C -->|extract| D[(T, 131) raw<br/>có NaN]
     D -->|process_sequence| E[(30, 170) processed]
@@ -26,11 +26,11 @@ flowchart LR
 `frame_padding(frame)`:
 
 1. Kiểm tra đầu vào là `np.ndarray`, shape `(H, W, 3)`, dtype `uint8`, kích thước dương.
-2. Nếu đã là `720 x 720`, trả nguyên frame.
-3. Nếu cạnh lớn hơn 720, scale **đều** bằng `min(1.0, 720 / max(H, W))` với `INTER_AREA` (không phóng to ảnh nhỏ).
-4. Đặt ảnh vào giữa canvas `720 x 720`, phần thừa tô đen `(0, 0, 0)`.
+2. Nếu đã là `1280 x 1280`, trả nguyên frame.
+3. Scale **đều** bằng `1280 / max(H, W)` (thu nhỏ dùng `INTER_AREA`, phóng to dùng `INTER_LINEAR`), để toạ độ chuẩn hoá không phụ thuộc độ phân giải đầu vào (video cũ 720x720 và camera 1280x720 cho cùng hình học).
+4. Đặt ảnh vào giữa canvas `1280 x 1280`, phần thừa tô đen `(0, 0, 0)`.
 
-Kết quả luôn là `(720, 720, 3) uint8`, không méo tỉ lệ. `pad_frame` là alias.
+Kết quả luôn là `(1280, 1280, 3) uint8`, không méo tỉ lệ. `pad_frame` là alias.
 
 ## `extract.py` — 131 đặc trưng/frame
 

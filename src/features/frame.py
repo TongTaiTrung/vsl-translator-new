@@ -1,11 +1,16 @@
 import cv2
 import numpy as np
 
-FRAME_SIZE = 720
+FRAME_SIZE = 1280
 
 
 def frame_padding(frame: np.ndarray) -> np.ndarray:
-    """Fit a BGR frame into a centered 720 x 720 canvas without distortion."""
+    """Fit a BGR frame into a centered FRAME_SIZE x FRAME_SIZE canvas without distortion.
+
+    Ảnh luôn được scale đều sao cho cạnh dài bằng FRAME_SIZE (thu nhỏ hoặc phóng to),
+    nên toạ độ landmark chuẩn hoá [0, 1] giống nhau bất kể độ phân giải đầu vào
+    (vd. video cũ 720x720 và camera 1280x720 cho cùng hình học).
+    """
     if not isinstance(frame, np.ndarray) or frame.ndim != 3 or frame.shape[2] != 3:
         raise ValueError(f"Expected a BGR frame with shape (H, W, 3), got {getattr(frame, 'shape', None)}.")
     if frame.dtype != np.uint8:
@@ -17,11 +22,12 @@ def frame_padding(frame: np.ndarray) -> np.ndarray:
     if height == FRAME_SIZE and width == FRAME_SIZE:
         return frame
 
-    scale = min(1.0, FRAME_SIZE / max(height, width))
-    if scale < 1.0:
-        new_width = max(1, int(width * scale))
-        new_height = max(1, int(height * scale))
-        content = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
+    scale = FRAME_SIZE / max(height, width)
+    if scale != 1.0:
+        new_width = max(1, min(FRAME_SIZE, round(width * scale)))
+        new_height = max(1, min(FRAME_SIZE, round(height * scale)))
+        interpolation = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LINEAR
+        content = cv2.resize(frame, (new_width, new_height), interpolation=interpolation)
     else:
         new_height, new_width = height, width
         content = frame
@@ -32,9 +38,9 @@ def frame_padding(frame: np.ndarray) -> np.ndarray:
     right = FRAME_SIZE - new_width - left
 
     padded = cv2.copyMakeBorder(
-        content, 
-        top, bottom, left, right, 
-        cv2.BORDER_CONSTANT, 
+        content,
+        top, bottom, left, right,
+        cv2.BORDER_CONSTANT,
         value=(0, 0, 0)
     )
     return padded

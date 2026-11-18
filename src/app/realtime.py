@@ -18,6 +18,7 @@ import numpy as np
 
 from src.app.sentence import DEFAULT_MODEL, GroqClient, SentenceComposer
 from src.app.voting import VoteConfig, WordVoter
+from src.features.camera import open_camera, parse_resolution
 from src.model.predict import StreamConfig, VSLPredictor
 
 
@@ -187,6 +188,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Dịch VSL realtime: vote theo frame + ghép câu bằng LLM (Groq)")
     parser.add_argument("--checkpoint", type=Path, default=None, help="mặc định: runs/*/ensemble.pt mới nhất")
     parser.add_argument("--camera", type=int, default=0)
+    parser.add_argument("--resolution", type=parse_resolution, default=None,
+                        help="RỘNGxCAO cố định (vd. 1920x1080); mặc định: độ phân giải 16:9 lớn nhất camera hỗ trợ")
     parser.add_argument("--mirror-data", action="store_true", help="phải giống MIRROR_DATA lúc thu dữ liệu")
     parser.add_argument("--no-mirror-preview", action="store_true")
     parser.add_argument("--min-consecutive", type=int, default=5, help="số frame liên tiếp để chốt một từ")
@@ -227,11 +230,11 @@ def main(argv=None) -> None:
     stream_config = StreamConfig(predict_every=1, mirror_data=args.mirror_data)
     renderer = Renderer(args.display_size, mirror_preview=not args.no_mirror_preview)
 
-    cap = cv2.VideoCapture(args.camera)
-    if not cap.isOpened():
-        cap.release()
+    try:
+        cap = open_camera(args.camera, args.resolution)
+    except RuntimeError:
         composer.close()
-        raise RuntimeError(f"Không mở được camera {args.camera}")
+        raise
     window = "VSL realtime translator"
     translator = None
     try:

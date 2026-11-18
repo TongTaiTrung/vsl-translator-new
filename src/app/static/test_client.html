@@ -69,7 +69,7 @@
       <label>Số frame <input id="nFrames" type="number" min="1" value="30"></label>
       <label>FPS <input id="fps" type="number" min="1" max="60" step="1" value="15"></label>
       <label>Đếm ngược <input id="countdown" type="number" min="0" max="10" value="2"> s</label>
-      <label>Cạnh dài <input id="maxSide" type="number" min="160" max="1280" step="80" value="640"> px</label>
+      <label>Cạnh dài <input id="maxSide" type="number" min="160" max="1280" step="80" value="1280"> px</label>
     </div>
     <div class="row">
       <label><input id="mirrorData" type="checkbox"> mirror_data</label>
@@ -156,9 +156,14 @@ function setMode(next) {
 
 async function startCamera() {
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+    // Xin độ phân giải 16:9 lớn nhất (trình duyệt chọn chế độ gốc gần nhất); ô "maxSide" thu nhỏ khi gửi.
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 3840 }, height: { ideal: 2160 }, aspectRatio: { ideal: 16 / 9 } },
+      audio: false,
+    });
     video.srcObject = stream;
     await video.play();
+    console.log(`Camera: ${video.videoWidth}x${video.videoHeight}`);
     $("captureBtn").disabled = false;
     $("loopBtn").disabled = false;
     $("startCam").textContent = "Tắt camera";

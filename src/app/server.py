@@ -2,6 +2,7 @@
 
 Endpoint:
 
+- ``GET  /``            → trang HTML test API (``static/test_client.html``: webcam hoặc file video).
 - ``GET  /api/health``  → trạng thái server, checkpoint và danh sách lớp.
 - ``POST /api/predict`` → JSON body::
 
@@ -35,7 +36,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import torch
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 
 from src.builtin.mediapipe_builtin import LandmarkerLoader, VisionRunningMode
 from src.features.extract import FEATURE_DIM, extract
@@ -45,6 +46,7 @@ from src.model.predict import VSLPredictor
 
 DEFAULT_FPS = 15.0
 MAX_TOP_K = 10
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 class BadRequest(ValueError):
@@ -102,7 +104,7 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
     expected_frames: số frame mỗi request phải gửi (mặc định 30); ``None`` nhận mọi số frame > 0.
     feature_extractor: ``(frames, fps=, mirror_data=) -> (N, FEATURE_DIM)``; thay được khi test.
     """
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder=None)
     app.json.ensure_ascii = False          # trả nhãn tiếng Việt nguyên dạng
     app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
     model_lock = threading.Lock()          # torch model dùng chung; MediaPipe chạy song song theo request
@@ -127,6 +129,10 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
     @app.errorhandler(413)
     def too_large(_exc):
         return jsonify(error="Request quá lớn (tối đa 64 MB)"), 413
+
+    @app.get("/")
+    def test_client():
+        return send_from_directory(STATIC_DIR, "test_client.html")
 
     @app.get("/api/health")
     def health():

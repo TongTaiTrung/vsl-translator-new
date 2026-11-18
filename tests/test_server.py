@@ -91,6 +91,12 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/predict", data="x", content_type="text/plain").status_code, 400)
         self.assertEqual(self.calls, [])
 
+    def test_root_serves_test_page(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"/api/predict", response.data)
+        response.close()
+
     def test_cors_preflight(self):
         response = self.client.options("/api/predict")
         self.assertEqual(response.status_code, 204)

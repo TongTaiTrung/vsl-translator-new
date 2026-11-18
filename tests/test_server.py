@@ -115,5 +115,122 @@ class ServerTests(unittest.TestCase):
         self.assertIn("POST", response.headers["Access-Control-Allow-Methods"])
 
 
+class FakeStreamExtractor:
+    """Extractor giả cho /api/stream: ghi lại timestamp; frame có kênh B > 200 thì có tay (palm y = 0)."""
+
+    instances: list["FakeStreamExtractor"] = []
+
+    def __init__(self):
+        self.timestamps, self.mirrors, self.closed = [], [], False
+        FakeStreamExtractor.instances.append(self)
+
+    def extract(self, frame, *, timestamp_ms, mirror_data):
+        self.timestamps.append(timestamp_ms)
+        self.mirrors.append(mirror_data)
+        feature = np.zeros(FEATURE_DIM, dtype=np.float32)
+        if frame[..., 0].mean() <= 200:
+            feature[list(_PALM_Y)] = np.nan
+        return feature
+
+    def close(self):
+        self.closed = True
+
+
+class StreamTests(unittest.TestCase):
+    predictor = None
+
+    @classmethod
+    def setUpClass(cls):
+        ServerTests.setUpClass()
+        cls.predictor, cls.directory = ServerTests.predictor, ServerTests.directory
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.directory.cleanup()
+
+    def setUp(self):
+        FakeStreamExtractor.instances = []
+        self.app = create_app(self.predictor, stream_extractor_factory=FakeStreamExtractor, max_streams=2,
+                              stream_idle_s=60.0)
+        self.client = self.app.test_client()
+        self.hand = encode_frame(np.full((48, 64, 3), 255, dtype=np.uint8))
+        self.empty = encode_frame(np.zeros((48, 64, 3), dtype=np.uint8))
+
+    def open(self) -> str:
+        response = self.client.post("/api/stream")
+        self.assertEqual(response.status_code, 201, response.get_json())
+        self.assertEqual(response.get_json()["window"], 30)
+        return response.get_json()["session_id"]
+
+    def send(self, sid, frames, **extra):
+        return self.client.post(f"/api/stream/{sid}", json={"frames": frames, **extra})
+
+    def test_window_fills_then_predicts_only_new_frames(self):
+        sid = self.open()
+        body = self.send(sid, [self.empty] * 25).get_json()
+        self.assertEqual((body["ready"], body["buffered"], body["hand_frames"]), (False, 25, 0))
+        self.assertNotIn("label", body)
+
+        body = self.send(sid, [self.hand] * 5).get_json()
+        self.assertTrue(body["ready"])
+        self.assertIn(body["label"], ("xin chào", "cảm ơn"))
+        self.assertEqual((body["buffered"], body["frames"], body["hand_frames"]), (30, 30, 5))
+
+        body = self.send(sid, [self.hand] * 5).get_json()          # cửa sổ trượt: giữ 30 frame mới nhất
+        self.assertEqual((body["buffered"], body["hand_frames"]), (30, 10))
+        extractor, = FakeStreamExtractor.instances
+        self.assertEqual(len(extractor.timestamps), 35)          # mỗi frame chỉ trích MỘT lần
+
+    def test_timestamps_strictly_increase(self):
+        sid = self.open()
+        self.send(sid, [self.empty] * 3, fps=10)
+        self.send(sid, [self.empty] * 3, timestamps=[150.4, 150.4, 120.0])
+        self.send(sid, [self.empty] * 2, timestamps=[5000, 5066.7])
+        extractor, = FakeStreamExtractor.instances
+        self.assertEqual(extractor.timestamps, [0, 100, 200, 201, 202, 203, 5000, 5067])
+
+    def test_reset_clears_window_but_keeps_tracking(self):
+        sid = self.open()
+        self.send(sid, [self.hand] * 30)
+        body = self.send(sid, [self.empty] * 4, reset=True, mirror_data=True).get_json()
+        self.assertEqual((body["ready"], body["buffered"], body["hand_frames"]), (False, 4, 0))
+        extractor, = FakeStreamExtractor.instances
+        self.assertEqual(extractor.mirrors[-1], True)
+        self.assertFalse(extractor.closed)
+
+    def test_close_limit_and_unknown_session(self):
+        first, second = self.open(), self.open()
+        self.assertEqual(self.client.post("/api/stream").status_code, 503)
+        self.assertEqual(self.client.delete(f"/api/stream/{first}").status_code, 204)
+        self.assertEqual(self.send(first, [self.empty]).status_code, 404)
+        self.open()                                               # đã có chỗ trống
+        self.assertEqual(self.client.get("/api/health").get_json()["stream"], {"window": 30, "active": 2, "max": 2})
+        del second
+
+    def test_idle_sessions_expire(self):
+        app = create_app(self.predictor, stream_extractor_factory=FakeStreamExtractor, stream_idle_s=0.0)
+        client = app.test_client()
+        sid = client.post("/api/stream").get_json()["session_id"]
+        self.assertEqual(client.post(f"/api/stream/{sid}", json={"frames": [self.empty]}).status_code, 404)
+
+    def test_rejects_bad_stream_requests(self):
+        sid = self.open()
+        cases = [
+            {"frames": []},
+            {"frames": [self.empty] * 61},
+            {"frames": ["not base64!"]},
+            {"frames": [self.empty], "timestamps": [1, 2]},
+            {"frames": [self.empty], "timestamps": ["1"]},
+            {"frames": [self.empty], "reset": "yes"},
+            {"frames": [self.empty], "fps": 0},
+        ]
+        for body in cases:
+            with self.subTest(body={k: (v if k != "frames" else len(v)) for k, v in body.items()}):
+                response = self.client.post(f"/api/stream/{sid}", json=body)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("error", response.get_json())
+        self.assertEqual(FakeStreamExtractor.instances[0].timestamps, [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,9 @@
 """Dịch VSL liên tục từ webcam: dự đoán theo frame → bỏ phiếu → chuỗi từ → câu (LLM).
 
-Chạy: ``.venv/bin/python -m src.app [--checkpoint runs/.../ensemble.pt] [--no-llm]``
+Chạy: ``.venv/bin/python -m src.app [--checkpoint runs/.../ensemble.pt] [--no-llm] [--fast]``
+
+``--fast``: nhánh nhanh (``src/app/fast.py``) — sàng lọc bằng một model, chốt sớm khi rất chắc
+chắn và xác nhận bằng cả ensemble trước khi thêm từ.
 """
 
 from __future__ import annotations
@@ -55,7 +58,7 @@ class RealtimeTranslator:
         elif state["status"] == "collecting":
             self.voter.interrupt()
         elif prediction is not None and prediction is not self._last_prediction:
-            committed = self.voter.vote(prediction["label"])
+            committed = self._vote(prediction)
         self._last_prediction = prediction
 
         if committed is not None:
@@ -70,6 +73,10 @@ class RealtimeTranslator:
             "committed": committed,
         }
         return {**self._snapshot, "sentence": self.composer.state()}
+
+    def _vote(self, prediction: dict) -> str | None:
+        """Một dự đoán mới = một phiếu; trả về nhãn nếu vừa được chốt."""
+        return self.voter.vote(prediction["label"])
 
     def undo(self) -> str | None:
         removed = self.voter.undo()
@@ -141,11 +148,15 @@ class Renderer:
         prediction, vote = result["prediction"], result["vote"]
         if prediction and prediction["label"]:
             title = f'{prediction["label"]} {prediction["confidence"]:.0%}'
+            if prediction.get("strong"):
+                title += " ⚡"
         elif prediction:
             title = f'? ({prediction["rejection_reason"]})'
         else:
             title = "—"
-        bar = "■" * vote["count"] + "□" * max(vote["required"] - vote["count"], 0)
+        required = vote["early_required"] if vote.get("strong") and vote.get("early_required") \
+            else vote["required"]
+        bar = "■" * vote["count"] + "□" * max(required - vote["count"], 0)
         sentence = result["sentence"]
         lines = [
             (f'Dự đoán: {title}   {bar}', self.font, (110, 230, 160) if vote["count"] else (240, 240, 240)),
@@ -185,6 +196,15 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--model", default=DEFAULT_MODEL, help="model Groq")
     parser.add_argument("--no-llm", action="store_true", help="không gọi Groq, chỉ ghép nhãn thô")
     parser.add_argument("--display-size", type=int, default=640)
+    fast = parser.add_argument_group("nhánh nhanh (--fast)")
+    fast.add_argument("--fast", action="store_true",
+                      help="sàng lọc bằng 1 model, chốt sớm khi chắc chắn, ensemble xác nhận trước khi chốt")
+    fast.add_argument("--fast-model", type=int, default=-1, help="chỉ số model sàng lọc (-1: model toàn bộ dữ liệu)")
+    fast.add_argument("--early-window", type=float, default=1.0, help="giây; bắt đầu dự đoán sớm")
+    fast.add_argument("--early-votes", type=int, default=3, help="số phiếu mạnh liên tiếp để chốt sớm")
+    fast.add_argument("--strong-confidence", type=float, default=0.9)
+    fast.add_argument("--strong-gap", type=float, default=0.5)
+    fast.add_argument("--escalate", action="store_true", help="chạy cả ensemble mỗi khi model nhanh từ chối")
     return parser.parse_args(argv)
 
 
@@ -215,11 +235,24 @@ def main(argv=None) -> None:
     window = "VSL realtime translator"
     translator = None
     try:
-        translator = RealtimeTranslator(
-            predictor, stream_config=stream_config, composer=composer,
-            vote_config=VoteConfig(min_consecutive=args.min_consecutive),
-            reset_after_commit=not args.keep_window,
-        )
+        vote_config = VoteConfig(min_consecutive=args.min_consecutive)
+        if args.fast:
+            from src.app.fast import FastConfig, FastRealtimeTranslator   # fast.py import realtime.py
+            fast_config = FastConfig(
+                fast_model=args.fast_model, early_window_seconds=args.early_window,
+                early_votes=min(args.early_votes, args.min_consecutive),
+                strong_confidence=args.strong_confidence, strong_gap=args.strong_gap, escalate=args.escalate,
+            )
+            translator = FastRealtimeTranslator(
+                predictor, stream_config=stream_config, fast_config=fast_config, composer=composer,
+                vote_config=vote_config, reset_after_commit=not args.keep_window,
+            )
+            print(f"Nhánh nhanh: {fast_config}")
+        else:
+            translator = RealtimeTranslator(
+                predictor, stream_config=stream_config, composer=composer,
+                vote_config=vote_config, reset_after_commit=not args.keep_window,
+            )
         cv2.namedWindow(window, cv2.WINDOW_NORMAL)
         while True:
             ok, frame = cap.read()

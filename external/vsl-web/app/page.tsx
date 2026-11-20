@@ -4,8 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DEFAULT_OPTIONS,
   Recognizer,
+  SPEED_PRESETS,
   type Phase,
   type RecognizerState,
+  type Speed,
 } from "@/lib/recognizer";
 import { DEFAULT_MODEL, naiveSentence } from "@/lib/sentence";
 
@@ -18,6 +20,7 @@ interface Settings {
   model: string;
   mirrorPreview: boolean;
   mirrorData: boolean;
+  speed: Speed;
   minConsecutive: number;
   sentenceGapSeconds: number;
 }
@@ -29,6 +32,7 @@ const DEFAULT_SETTINGS: Settings = {
   model: DEFAULT_MODEL,
   mirrorPreview: true,
   mirrorData: DEFAULT_OPTIONS.mirrorData,
+  speed: "accurate",
   minConsecutive: DEFAULT_OPTIONS.minConsecutive,
   sentenceGapSeconds: DEFAULT_OPTIONS.sentenceGapMs / 1000,
 };
@@ -40,7 +44,8 @@ function loadSettings(): Settings {
   try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
     const groqKey = localStorage.getItem(GROQ_KEY) || "";
-    return { ...DEFAULT_SETTINGS, ...saved, groqKey, rememberKey: Boolean(groqKey) };
+    const speed = saved.speed in SPEED_PRESETS ? saved.speed : DEFAULT_SETTINGS.speed;
+    return { ...DEFAULT_SETTINGS, ...saved, speed, groqKey, rememberKey: Boolean(groqKey) };
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -93,7 +98,7 @@ async function composeSentence(words: string[], settings: Settings): Promise<Sen
 const PHASE_TEXT: Record<Phase, string> = {
   stopped: "Chưa bắt đầu",
   starting: "Đang mở camera…",
-  buffering: "Đang gom 2 giây đầu…",
+  buffering: "Đang gom frame…",
   idle: "Đang chờ — đưa tay lên để ký",
   entering: "Đang vào ký hiệu…",
   signing: "Đang nhận diện",
@@ -175,8 +180,13 @@ export default function Home() {
   useEffect(() => {
     if (!loaded) return;
     saveSettings(settings);
+    const { predictFrames, minFrames, strideFrames, minHandFrames } = SPEED_PRESETS[settings.speed];
     recognizerRef.current?.setOptions({
       apiUrl: settings.apiUrl,
+      predictFrames,
+      minFrames,
+      strideFrames,
+      minHandFrames,
       mirrorData: settings.mirrorData,
       minConsecutive: settings.minConsecutive,
       sentenceGapMs: settings.sentenceGapSeconds * 1000,
@@ -283,6 +293,7 @@ export default function Home() {
                 {state!.resolution && (
                   <span className="hud-meta">
                     {state!.resolution}
+                    <span title={SPEED_PRESETS[settings.speed].hint}>· {SPEED_PRESETS[settings.speed].label}</span>
                     {state!.mode && (
                       <span title={state!.mode === "stream" ? "Luồng liên tục: chỉ gửi frame mới" : "Gửi cả cửa sổ 30 frame (server cũ)"}>
                         · {state!.mode === "stream" ? "stream" : "window"}
@@ -439,6 +450,23 @@ export default function Home() {
               Địa chỉ API dự đoán
               <input value={settings.apiUrl} spellCheck={false} onChange={(e) => update("apiUrl", e.target.value)} />
             </label>
+            <fieldset className="speed">
+              <legend>Tốc độ nhận diện</legend>
+              {(Object.keys(SPEED_PRESETS) as Speed[]).map((key) => (
+                <label key={key} className={`speed-option ${settings.speed === key ? "selected" : ""}`}>
+                  <input
+                    type="radio" name="speed" value={key}
+                    checked={settings.speed === key}
+                    onChange={() => update("speed", key)}
+                  />
+                  <span>
+                    <strong>{SPEED_PRESETS[key].label}</strong>
+                    <span className="muted small">{SPEED_PRESETS[key].hint}</span>
+                  </span>
+                </label>
+              ))}
+              <p className="muted small">Nhanh hơn thì kém chính xác hơn. Áp dụng ngay, kể cả khi đang nhận diện; cần server có /api/stream.</p>
+            </fieldset>
             <div className="grid2">
               <label>
                 Số phiếu để chốt từ

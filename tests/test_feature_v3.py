@@ -214,3 +214,49 @@ class SignFormerTests(unittest.TestCase):
             ens, ck = tr.load_ensemble(path)
             self.assertEqual(ck["cfg"]["arch"], "former")
             self.assertEqual(tuple(ens(torch.zeros(1, 30, D)).shape), (1, 5))
+
+
+class FeatureV5Tests(unittest.TestCase):
+    """v5: tiếp xúc cơ thể không bị trục z nhiễu lấn át; hand_scale ước lượng độ sâu bàn tay."""
+
+    def _anchors(self):
+        return fx._body_anchors(np.zeros((33, 3), dtype=np.float32))
+
+    def test_version_bumped(self):
+        self.assertEqual(fx.FEATURE_VERSION, 5)
+
+    def test_palm_on_chest_registers_contact_despite_depth_offset(self):
+        # "tôi": nắm tay đặt trên ngực, z pose lệch ~-0.95 vai dù tay chạm thân.
+        palm = np.array([-0.09, 0.34, -0.95])
+        pts = palm + np.array([[0, 0, 0], [0.05, -0.05, 0], [0.0, -0.1, 0], [0, -0.08, 0],
+                               [-0.03, -0.06, 0], [-0.06, -0.04, 0]])
+        chest = fx._body_contacts(pts, self._anchors())[7]
+        self.assertGreater(chest, 0.5)
+
+    def test_hand_near_shoulder_away_from_chest_has_no_chest_contact(self):
+        # "m": tay ở ngang vai phải, xa ngực.
+        palm = np.array([-0.62, -0.12, -2.0])
+        pts = palm + np.array([[0, 0, 0], [0.05, 0.1, 0], [0.1, 0.4, 0], [0.05, 0.42, 0],
+                               [0, 0.4, 0], [-0.05, 0.3, 0]])
+        self.assertLess(fx._body_contacts(pts, self._anchors())[7], 0.1)
+
+    def test_hand_scale_grows_with_size_and_ignores_rotation_and_mirror(self):
+        hand = _hand(0.5) * 0.05 + np.array([0.5, 0.5, 0.0])
+        base = fx._hand_scale(hand, 0.25)
+        self.assertGreater(fx._hand_scale((hand - 0.5) * 1.5 + 0.5, 0.25), base * 1.4)
+        self.assertAlmostEqual(fx._hand_scale(hand, 0.5), base / 2, places=5)
+        a = 0.9
+        rot = np.array([[1, 0, 0], [0, np.cos(a), -np.sin(a)], [0, np.sin(a), np.cos(a)]])
+        self.assertAlmostEqual(fx._hand_scale(hand @ rot.T, 0.25), base, places=5)
+        self.assertAlmostEqual(fx._hand_scale(hand * np.array([-1, 1, 1]), 0.25), base, places=5)
+
+    def test_hand_scale_columns_are_per_side_and_not_flipped_by_mirror(self):
+        sl = fx.FEATURE_SLICES["hand_scale"]
+        self.assertEqual(sl.stop - sl.start, 2)
+        self.assertIn(sl.start, fx.SIDE_COLUMNS["left"])
+        self.assertIn(sl.start + 1, fx.SIDE_COLUMNS["right"])
+        perm, sign = fx.LEFT_MIRROR
+        left = fx.SIDE_COLUMNS["left"][perm]
+        self.assertEqual(sign[int(np.flatnonzero(left == sl.start)[0])], 1.0)
+        # Nằm trong nhóm vị trí của GroupStem (trước thủ hình).
+        self.assertLess(sl.stop, fx.FEATURE_SLICES["handshape"].start + 1)

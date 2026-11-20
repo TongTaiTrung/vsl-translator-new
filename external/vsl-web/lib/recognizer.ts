@@ -9,6 +9,8 @@
 // - `hand_frames` (số frame có tay đang ký) phân biệt: nghỉ tay (release, cho lặp từ) / đang vào ký hiệu
 //   (đứt chuỗi) / đủ tay (bỏ phiếu). Server cũ không trả trường này thì coi như đủ tay.
 // - Chốt một từ → xoá cửa sổ để ký hiệu kế tiếp bắt đầu từ frame mới; phản hồi của cửa sổ cũ bị bỏ.
+// - Tốc độ (SPEED_PRESETS, chỉ chế độ stream): dự đoán trên `predictFrames` frame gần nhất ngay khi có
+//   `minFrames` frame, gửi mỗi `strideFrames` frame → có kết quả sớm hơn nhưng model thấy ít ký hiệu hơn.
 // - Nghỉ tay liên tục `sentenceGapMs` sau khi đã có từ → kết thúc câu (onSentenceEnd).
 
 import { WordVoter } from "./voter";
@@ -41,13 +43,52 @@ type StreamResponse = Partial<Prediction> & {
 
 export type Phase = "stopped" | "starting" | "buffering" | "idle" | "entering" | "signing";
 export type Mode = "stream" | "window";
+export type Speed = "accurate" | "fast" | "fastest";
+
+export interface SpeedPreset {
+  label: string;
+  hint: string;
+  /** Dự đoán trên tối đa chừng này frame gần nhất (server nội suy về 30). */
+  predictFrames: number;
+  /** Có chừng này frame là bắt đầu dự đoán (sau khi bắt đầu / sau mỗi từ). */
+  minFrames: number;
+  strideFrames: number;
+  minHandFrames: number;
+}
+
+// Thời gian từ lúc bắt đầu ký tới lúc chốt từ, đo trên trình duyệt (video clip thu dữ liệu làm camera,
+// 2 phiếu): chuẩn ~1.5 s, nhanh ~1.0 s, rất nhanh ~0.8 s. Phát lại offline các clip holdout không thấy giảm
+// độ chính xác, nhưng clip thu sạch hơn camera thật: trên camera thật bản nhanh dễ nhầm hơn (nhất là lúc
+// đưa tay lên / chuyển ký hiệu). Giảm "Số phiếu để chốt từ" xuống 1 còn nhanh hơn nữa (và dễ nhầm hơn).
+export const SPEED_PRESETS: Record<Speed, SpeedPreset> = {
+  accurate: {
+    label: "Chuẩn (~1.5 giây)",
+    hint: "Chính xác nhất: chờ đủ 2 giây (cả ký hiệu) mới dự đoán.",
+    predictFrames: 30, minFrames: 30, strideFrames: 5, minHandFrames: 12,
+  },
+  fast: {
+    label: "Nhanh (~1 giây)",
+    hint: "Dự đoán trên 1.3 giây gần nhất, bắt đầu sau 0.8 giây. Đôi khi nhầm lúc chuyển ký hiệu.",
+    predictFrames: 20, minFrames: 12, strideFrames: 3, minHandFrames: 8,
+  },
+  fastest: {
+    label: "Rất nhanh (~0.8 giây)",
+    hint: "Dự đoán trên 1 giây gần nhất, bắt đầu sau 0.5 giây. Nhanh nhất nhưng dễ nhầm nhất, nên ký dứt khoát.",
+    predictFrames: 15, minFrames: 8, strideFrames: 2, minHandFrames: 6,
+  },
+};
 
 export interface RecognizerOptions {
   apiUrl: string;
   /** Dùng /api/stream nếu server hỗ trợ (nhanh hơn nhiều). */
   streaming: boolean;
   captureFps: number;
+  /** Số frame gửi tới /api/predict ở chế độ window (server yêu cầu đúng 30). */
   windowFrames: number;
+  /** Chế độ stream: dự đoán trên tối đa chừng này frame gần nhất. */
+  predictFrames: number;
+  /** Chế độ stream: có chừng này frame thì bắt đầu dự đoán. */
+  minFrames: number;
   strideFrames: number;
   maxSide: number;
   jpegQuality: number;
@@ -66,13 +107,15 @@ export const DEFAULT_OPTIONS: RecognizerOptions = {
   streaming: true,
   captureFps: 15,
   windowFrames: 30,
-  strideFrames: 5,
+  predictFrames: SPEED_PRESETS.accurate.predictFrames,
+  minFrames: SPEED_PRESETS.accurate.minFrames,
+  strideFrames: SPEED_PRESETS.accurate.strideFrames,
   maxSide: 1280,
   jpegQuality: 0.85,
   mirrorData: false,
   minConsecutive: 2,
   idleHandFrames: 3,
-  minHandFrames: 12,
+  minHandFrames: SPEED_PRESETS.accurate.minHandFrames,
   sentenceGapMs: 3000,
 };
 
@@ -83,6 +126,7 @@ export interface RecognizerState {
   phase: Phase;
   mode: Mode | null;
   buffered: number;
+  /** Số frame cần gom trước khi có dự đoán đầu tiên. */
   windowFrames: number;
   inFlight: boolean;
   prediction: Prediction | null;
@@ -144,7 +188,7 @@ export class Recognizer {
       phase: "stopped",
       mode: null,
       buffered: 0,
-      windowFrames: this.options.windowFrames,
+      windowFrames: Math.min(this.options.minFrames, this.options.predictFrames),
       inFlight: false,
       prediction: null,
       candidate: null,
@@ -174,7 +218,8 @@ export class Recognizer {
       this.mode = null;
       this.resetWindow();
     }
-    this.emit({ required: this.options.minConsecutive, windowFrames: this.options.windowFrames });
+    this.emit({ required: this.options.minConsecutive });
+    this.emitBuffered();
   }
 
   async start(): Promise<void> {
@@ -276,11 +321,13 @@ export class Recognizer {
   }
 
   private emitBuffered(): void {
-    const { windowFrames } = this.options;
-    const buffered = this.mode === "stream"
-      ? Math.min(windowFrames, this.serverBuffered + this.buffer.length)
-      : this.buffer.length;
-    this.emit({ buffered });
+    const { windowFrames, predictFrames, minFrames } = this.options;
+    if (this.mode === "window") {
+      this.emit({ buffered: this.buffer.length, windowFrames });
+      return;
+    }
+    const target = Math.min(minFrames, predictFrames);
+    this.emit({ buffered: Math.min(target, this.serverBuffered + this.buffer.length), windowFrames: target });
   }
 
   private grab(): Frame | null {
@@ -384,6 +431,8 @@ export class Recognizer {
         frames: frames.map((f) => f.data),
         timestamps: frames.map((f) => f.t),
         reset,
+        window: this.options.predictFrames,
+        min_frames: Math.min(this.options.minFrames, this.options.predictFrames),
         fps: this.options.captureFps,
         mirror_data: this.options.mirrorData,
         top_k: 3,

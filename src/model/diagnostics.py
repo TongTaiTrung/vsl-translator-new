@@ -281,7 +281,8 @@ def _composite_left_hand(target: np.ndarray, donor: np.ndarray, sl: dict, lowere
     """
     T = len(target)
     left = np.concatenate([np.arange(sl[n].start, sl[n].start + (sl[n].stop - sl[n].start) // 2)
-                           for n in ("hand_pos", "body_contact", "handshape", "orientation", "presence")])
+                           for n in ("hand_pos", "body_contact", "hand_scale", "handshape", "orientation",
+                                     "presence")])
     src = donor[np.round(np.linspace(0, len(donor) - 1, T)).astype(int)]
     if lowered_y is not None:
         valid = np.flatnonzero(np.isfinite(donor[:, sl["hand_pos"].start]))

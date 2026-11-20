@@ -181,6 +181,23 @@ class StreamTests(unittest.TestCase):
         extractor, = FakeStreamExtractor.instances
         self.assertEqual(len(extractor.timestamps), 35)          # mỗi frame chỉ trích MỘT lần
 
+    def test_short_window_predicts_early_on_recent_frames(self):
+        sid = self.open()
+        fast = {"window": 15, "min_frames": 8}
+        body = self.send(sid, [self.empty] * 7, **fast).get_json()
+        self.assertEqual((body["ready"], body["buffered"], body["window"]), (False, 7, 15))
+
+        body = self.send(sid, [self.hand], **fast).get_json()          # đủ min_frames: dự đoán 8 frame
+        self.assertTrue(body["ready"])
+        self.assertIn(body["label"], ("xin chào", "cảm ơn"))
+        self.assertEqual((body["frames"], body["hand_frames"]), (8, 1))
+
+        body = self.send(sid, [self.hand] * 20, **fast).get_json()     # chỉ 15 frame gần nhất
+        self.assertEqual((body["buffered"], body["frames"], body["hand_frames"]), (28, 15, 15))
+
+        body = self.send(sid, [self.empty] * 2).get_json()              # mặc định: cả cửa sổ 30 frame
+        self.assertEqual((body["ready"], body["frames"], body["hand_frames"], body["window"]), (True, 30, 21, 30))
+
     def test_timestamps_strictly_increase(self):
         sid = self.open()
         self.send(sid, [self.empty] * 3, fps=10)
@@ -223,6 +240,11 @@ class StreamTests(unittest.TestCase):
             {"frames": [self.empty], "timestamps": ["1"]},
             {"frames": [self.empty], "reset": "yes"},
             {"frames": [self.empty], "fps": 0},
+            {"frames": [self.empty], "window": 31},
+            {"frames": [self.empty], "window": 0},
+            {"frames": [self.empty], "window": 10.5},
+            {"frames": [self.empty], "window": 10, "min_frames": 11},
+            {"frames": [self.empty], "min_frames": True},
         ]
         for body in cases:
             with self.subTest(body={k: (v if k != "frames" else len(v)) for k, v in body.items()}):

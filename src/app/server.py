@@ -30,11 +30,16 @@ Luồng liên tục (nhanh hơn nhiều): mỗi client mở một phiên giữ l
         "frames": ["data:image/jpeg;base64,...", ...],  # 1–60 frame mới, theo thứ tự thời gian
         "timestamps": [1234.5, ...],  # tuỳ chọn; ms lúc thu từng frame (tăng dần), mặc định theo fps
         "reset": false,               # tuỳ chọn; xoá cửa sổ trước khi thêm (vd. sau khi chốt một từ)
+        "window": 30,                 # tuỳ chọn; dự đoán trên tối đa N frame gần nhất (1–cửa sổ phiên)
+        "min_frames": 30,             # tuỳ chọn; dự đoán khi đã có >= N frame (1–window), mặc định = window
         "fps": 15, "mirror_data": false, "top_k": 3
       }
 
-  Trả ``ready`` (cửa sổ đã đủ frame), ``buffered``, ``window``, ``hand_frames`` (trong cửa sổ),
-  ``elapsed_ms``; khi ``ready`` thêm kết quả dự đoán như ``/api/predict``. Phiên không tồn tại/hết hạn → 404.
+  ``window``/``min_frames`` nhỏ hơn cho kết quả sớm hơn (model thấy ít ký hiệu hơn nên kém chính xác hơn);
+  ``predict_raw`` tự nội suy số frame đó về 30.
+  Trả ``ready`` (đã đủ ``min_frames``), ``buffered``, ``window``, ``frames`` và ``hand_frames`` (của các
+  frame đem dự đoán), ``elapsed_ms``; khi ``ready`` thêm kết quả dự đoán như ``/api/predict``.
+  Phiên không tồn tại/hết hạn → 404.
 - ``DELETE /api/stream/<id>``   → đóng phiên (204). Phiên không dùng quá ``stream_idle_s`` tự đóng.
 
 Chạy::
@@ -204,6 +209,13 @@ def _parse_options(body: dict, default_mirror_data: bool) -> tuple[float, bool, 
     return float(fps), mirror_data, top_k
 
 
+def _int_option(body: dict, key: str, default: int, low: int, high: int) -> int:
+    value = body.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        raise BadRequest(f"{key} phải là số nguyên trong [{low}, {high}]")
+    return value
+
+
 def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAMES,
                default_mirror_data: bool = False, feature_extractor=extract_features,
                stream_extractor_factory=FrameFeatureExtractor, max_streams: int = 8,
@@ -330,6 +342,8 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
         reset = body.get("reset", False)
         if not isinstance(reset, bool):
             raise BadRequest("reset phải là true/false")
+        window_size = _int_option(body, "window", streams.window, 1, streams.window)
+        min_frames = _int_option(body, "min_frames", window_size, 1, window_size)
         decoded = [decode_frame(f) for f in frames]       # lỗi ảnh → 400 trước khi đụng vào phiên
 
         session = streams.get(sid)
@@ -341,12 +355,13 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
             for frame, ts in zip(decoded, session.next_timestamps(timestamps, len(decoded), fps)):
                 session.features.append(session.extractor.extract(frame, timestamp_ms=ts, mirror_data=mirror_data))
             session.touched = time.monotonic()
-            window = np.stack(session.features)
+            buffered = len(session.features)
+            recent = np.stack(list(session.features)[-window_size:])
 
-        ready = window.shape[0] == streams.window
-        result = run_model(window, top_k) if ready else {}
-        result.update(ready=ready, buffered=int(window.shape[0]), window=streams.window,
-                      frames=int(window.shape[0]), hand_frames=count_hand_frames(window),
+        ready = buffered >= min_frames
+        result = run_model(recent, top_k) if ready else {}
+        result.update(ready=ready, buffered=buffered, window=window_size,
+                      frames=int(recent.shape[0]), hand_frames=count_hand_frames(recent),
                       elapsed_ms=round((time.perf_counter() - started) * 1000, 1))
         return jsonify(result)
 

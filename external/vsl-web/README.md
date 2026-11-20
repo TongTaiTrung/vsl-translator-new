@@ -33,6 +33,18 @@ hoặc ngay trong phần Cài đặt.
   frame nên mỗi frame chỉ trích một lần (~0.15 s/request trên CPU, so với ~1.5 s khi gửi cả 30 frame).
   Server cũ không có `/api/stream` thì app tự gửi cả cửa sổ tới `POST /api/predict`. Luôn chỉ một request
   đang chạy; HUD trên video hiện chế độ (`stream`/`window`) và thời gian mỗi request.
+- **Tốc độ nhận diện** (Cài đặt, `SPEED_PRESETS` trong `lib/recognizer.ts`): đánh đổi độ chính xác lấy tốc độ.
+  Server dự đoán trên `window` frame gần nhất ngay khi có `min_frames` frame (`predict_raw` nội suy về 30).
+  Thời gian từ lúc bắt đầu ký tới lúc chốt từ, đo trên trình duyệt:
+
+  | Mức | Cửa sổ | Bắt đầu dự đoán | Gửi mỗi | Chốt từ sau |
+  |---|---|---|---|---|
+  | Chuẩn | 30 frame (2 s) | 30 frame | 5 frame | ~1.5 s |
+  | Nhanh | 20 frame | 12 frame | 3 frame | ~1.0 s |
+  | Rất nhanh | 15 frame | 8 frame | 2 frame | ~0.8 s |
+
+  Cửa sổ ngắn hơn thì model thấy ít ký hiệu hơn, dễ nhầm hơn lúc đưa tay lên hoặc chuyển ký hiệu. Giảm
+  `Số phiếu để chốt từ` xuống 1 còn nhanh hơn nữa. Chế độ `window` (server cũ) luôn dùng 30 frame.
 - Mỗi phản hồi là một phiếu (`lib/voter.ts`, port từ `src/app/voting.py`): cùng nhãn đủ `Số phiếu để chốt từ`
   lần liên tiếp thì chốt từ. `hand_frames` trong phản hồi phân biệt nghỉ tay / đang vào ký hiệu / đang ký.
 - Nghỉ tay liên tục 3 giây (chỉnh được) sau khi đã có từ thì kết thúc câu. Câu được ghép bằng Groq qua route

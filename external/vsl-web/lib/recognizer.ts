@@ -1,11 +1,15 @@
 // Nhận diện liên tục từ webcam bằng Flask API.
 //
 // - Thu frame ở 15 fps (nhịp lúc thu dữ liệu); cửa sổ dự đoán 30 frame = 2 giây (độ dài một mẫu train).
+// - Frame được mã hoá JPEG bất đồng bộ (OffscreenCanvas.convertToBlob / canvas.toBlob) nên không chặn
+//   main thread (toDataURL đồng bộ tốn ~10–30 ms mỗi frame, làm giật hoạt ảnh).
 // - Chế độ "stream" (mặc định, server có /api/stream): mở một phiên, mỗi request chỉ gửi các frame MỚI;
-//   server giữ tracking MediaPipe và cửa sổ 30 frame nên mỗi frame chỉ trích một lần (~0.15–0.3 s/request).
+//   server giữ tracking MediaPipe và cửa sổ 30 frame nên mỗi frame chỉ trích một lần.
+//   Server báo `binary` thì frame đi dạng multipart nhị phân (không base64, không preflight CORS) và được
+//   gửi NGAY khi thu (`predict: false`): server trích feature dần, chỉ chạy model mỗi `strideFrames` frame →
+//   request dự đoán chỉ còn trích 1 frame + chạy model (~50 ms thay vì ~170 ms khi gửi 5 frame một lần).
 //   Server cũ không có /api/stream thì tự chuyển về chế độ "window": gửi cả 30 frame tới /api/predict.
-// - Luôn chỉ có MỘT request đang chạy; gửi khi đã có thêm `strideFrames` frame mới. Mỗi phản hồi là một
-//   phiếu cho WordVoter.
+// - Luôn chỉ có MỘT request đang chạy. Mỗi phản hồi có dự đoán là một phiếu cho WordVoter.
 // - `hand_frames` (số frame có tay đang ký) phân biệt: nghỉ tay (release, cho lặp từ) / đang vào ký hiệu
 //   (đứt chuỗi) / đủ tay (bỏ phiếu). Server cũ không trả trường này thì coi như đủ tay.
 // - Chốt một từ → xoá cửa sổ để ký hiệu kế tiếp bắt đầu từ frame mới; phản hồi của cửa sổ cũ bị bỏ.
@@ -32,9 +36,10 @@ export interface Prediction {
   elapsed_ms: number;
 }
 
-/** Phản hồi của POST /api/stream/<id>: có kết quả dự đoán khi `ready`. */
+/** Phản hồi của POST /api/stream/<id>: có kết quả dự đoán khi `predicted` (server cũ: khi `ready`). */
 type StreamResponse = Partial<Prediction> & {
   ready: boolean;
+  predicted?: boolean;
   buffered: number;
   window: number;
   hand_frames: number;
@@ -141,8 +146,17 @@ export interface RecognizerState {
 }
 
 interface Frame {
-  data: string;
+  blob: Blob;
   t: number;
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }
 
 export interface RecognizerEvents {
@@ -162,10 +176,15 @@ export class Recognizer {
   private voter: WordVoter;
   private stream: MediaStream | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
-  private canvas: HTMLCanvasElement | null = null;
+  private canvas: HTMLCanvasElement | OffscreenCanvas | null = null;
+  /** Đang mã hoá frame trước (bỏ tick nếu máy chậm hơn nhịp thu). */
+  private grabbing = false;
   /** Chế độ window: 30 frame gần nhất. Chế độ stream: các frame chưa gửi lên server. */
   private buffer: Frame[] = [];
+  /** Số frame thu được từ lần dự đoán trước. */
   private sinceSend = 0;
+  /** Server nhận multipart + cờ predict: gửi từng frame ngay khi thu. */
+  private binary = false;
   private generation = 0;
   private inFlight: AbortController | null = null;
   private idleSince: number | null = null;
@@ -175,6 +194,8 @@ export class Recognizer {
   private serverBuffered = 0;
   /** Request stream kế tiếp phải xoá cửa sổ server (sau khi chốt từ / xoá hết). */
   private resetNext = false;
+  /** Thời điểm thu frame cuối của request stream gần nhất (để đo độ trễ thật). */
+  private lastFrameAt: number | null = null;
   private state: RecognizerState;
 
   constructor(
@@ -237,7 +258,7 @@ export class Recognizer {
     }
     this.video.srcObject = this.stream;
     await this.video.play().catch(() => undefined);
-    this.canvas = document.createElement("canvas");
+    this.canvas = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(1, 1) : document.createElement("canvas");
     this.mode = null;                // dò ở request đầu tiên
     this.resetWindow();
     this.emit({
@@ -309,8 +330,22 @@ export class Recognizer {
 
   private tick(): void {
     this.checkSentenceGap(performance.now());
-    const frame = this.grab();
-    if (!frame) return;
+    if (this.grabbing) return;
+    this.grabbing = true;
+    const generation = this.generation;
+    void this.grab()
+      .then((frame) => {
+        if (frame && this.running && this.timer) this.addFrame(frame, generation);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        this.grabbing = false;
+      });
+  }
+
+  private addFrame(frame: Frame, generation: number): void {
+    // Frame chụp trước khi cửa sổ bị xoá (chốt từ) vẫn thuộc ký hiệu cũ: bỏ.
+    if (generation !== this.generation) return;
     this.buffer.push(frame);
     // Chế độ window giữ 30 frame gần nhất; chế độ stream giữ frame chưa gửi (tối đa một request).
     const limit = this.mode === "stream" ? MAX_STREAM_FRAMES : this.options.windowFrames;
@@ -330,33 +365,46 @@ export class Recognizer {
     this.emit({ buffered: Math.min(target, this.serverBuffered + this.buffer.length), windowFrames: target });
   }
 
-  private grab(): Frame | null {
+  private async grab(): Promise<Frame | null> {
     const { video, canvas } = this;
     const w = video.videoWidth;
     const h = video.videoHeight;
     if (!canvas || !w || !h || video.readyState < 2) return null;
     // Gửi frame gốc (không lật); server tự lật nếu mirror_data = true.
     const scale = Math.min(1, this.options.maxSide / Math.max(w, h));
-    canvas.width = Math.round(w * scale);
-    canvas.height = Math.round(h * scale);
-    canvas.getContext("2d")!.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return { data: canvas.toDataURL("image/jpeg", this.options.jpegQuality), t: performance.now() };
+    const width = Math.round(w * scale);
+    const height = Math.round(h * scale);
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+    }
+    const t = performance.now();
+    const quality = this.options.jpegQuality;
+    if (canvas instanceof HTMLCanvasElement) {
+      canvas.getContext("2d")!.drawImage(video, 0, 0, width, height);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+      return blob ? { blob, t } : null;
+    }
+    (canvas.getContext("2d") as OffscreenCanvasRenderingContext2D).drawImage(video, 0, 0, width, height);
+    return { blob: await canvas.convertToBlob({ type: "image/jpeg", quality }), t };
   }
 
   private maybePredict(): void {
-    if (this.inFlight || this.sinceSend < this.options.strideFrames) return;
+    if (this.inFlight) return;
+    const due = this.sinceSend >= this.options.strideFrames;
     if (this.mode === "window" || (this.mode === null && !this.options.streaming)) {
-      if (this.buffer.length < this.options.windowFrames) return;
+      if (!due || this.buffer.length < this.options.windowFrames) return;
       this.mode = "window";
       this.sinceSend = 0;
       void this.run((signal) => this.predictWindow(signal));
-    } else {
-      // stream (hoặc chưa dò): gửi mọi frame chưa gửi.
-      const frames = this.buffer;
-      this.buffer = [];
-      this.sinceSend = 0;
-      void this.run((signal) => this.predictStream(frames, signal));
+      return;
     }
+    // stream (hoặc chưa dò): server nhị phân nhận frame ngay khi thu; server cũ thì gom đủ stride.
+    if (this.buffer.length === 0 || (!due && !(this.binary && this.sessionId))) return;
+    const frames = this.buffer;
+    this.buffer = [];
+    if (due) this.sinceSend = 0;
+    void this.run((signal) => this.predictStream(frames, due, signal));
   }
 
   /** Chạy một request (chỉ một request tại một thời điểm); bỏ kết quả nếu cửa sổ đã bị xoá. */
@@ -364,7 +412,6 @@ export class Recognizer {
     const controller = new AbortController();
     const generation = this.generation;
     this.inFlight = controller;
-    this.emit({ inFlight: true });
     const started = performance.now();
     try {
       const body = await request(controller.signal);
@@ -377,17 +424,16 @@ export class Recognizer {
       }
     } finally {
       if (this.inFlight === controller) this.inFlight = null;
-      this.emit({ inFlight: false });
+      // Frame thu trong lúc chờ: gửi tiếp ngay (chế độ nhị phân) thay vì đợi tick kế.
+      if (this.running && this.timer) this.maybePredict();
     }
   }
 
   private async post<T>(path: string, body: unknown, signal: AbortSignal): Promise<T> {
-    const response = await fetch(`${this.base}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal,
-    });
+    // FormData: trình duyệt tự đặt Content-Type multipart (request "đơn giản", không cần preflight CORS).
+    const response = await fetch(`${this.base}${path}`, body instanceof FormData
+      ? { method: "POST", body, signal }
+      : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new HttpError(data.error || `HTTP ${response.status}`, response.status);
     return data as T;
@@ -399,16 +445,18 @@ export class Recognizer {
     const fps = span > 0
       ? Math.min(240, Math.max(1, ((frames.length - 1) * 1000) / span))
       : this.options.captureFps;
+    const data = await Promise.all(frames.map((f) => blobToDataUrl(f.blob)));
     return this.post<Prediction>("/api/predict", {
-      frames: frames.map((f) => f.data), fps, mirror_data: this.options.mirrorData, top_k: 3,
+      frames: data, fps, mirror_data: this.options.mirrorData, top_k: 3,
     }, signal);
   }
 
-  private async predictStream(frames: Frame[], signal: AbortSignal): Promise<StreamResponse | null> {
+  private async predictStream(frames: Frame[], predict: boolean, signal: AbortSignal): Promise<StreamResponse | null> {
     if (!this.sessionId) {
       try {
-        const opened = await this.post<{ session_id: string; window: number }>("/api/stream", {}, signal);
+        const opened = await this.post<{ session_id: string; window: number; binary?: boolean }>("/api/stream", {}, signal);
         this.sessionId = opened.session_id;
+        this.binary = opened.binary === true;
         this.mode = "stream";
         this.serverBuffered = 0;
         this.resetNext = false;          // phiên mới vốn rỗng
@@ -426,18 +474,27 @@ export class Recognizer {
     }
     const reset = this.resetNext;
     this.resetNext = false;
+    const meta = {
+      timestamps: frames.map((f) => f.t),
+      reset,
+      predict,
+      window: this.options.predictFrames,
+      min_frames: Math.min(this.options.minFrames, this.options.predictFrames),
+      fps: this.options.captureFps,
+      mirror_data: this.options.mirrorData,
+      top_k: 3,
+    };
+    let payload: FormData | Record<string, unknown>;
+    if (this.binary) {
+      payload = new FormData();
+      payload.append("meta", JSON.stringify(meta));
+      frames.forEach((f, i) => (payload as FormData).append("frames", f.blob, `${i}.jpg`));
+    } else {
+      payload = { ...meta, frames: await Promise.all(frames.map((f) => blobToDataUrl(f.blob))) };
+    }
+    this.lastFrameAt = frames[frames.length - 1].t;
     try {
-      const body = await this.post<StreamResponse>(`/api/stream/${encodeURIComponent(this.sessionId)}`, {
-        frames: frames.map((f) => f.data),
-        timestamps: frames.map((f) => f.t),
-        reset,
-        window: this.options.predictFrames,
-        min_frames: Math.min(this.options.minFrames, this.options.predictFrames),
-        fps: this.options.captureFps,
-        mirror_data: this.options.mirrorData,
-        top_k: 3,
-      }, signal);
-      return body;
+      return await this.post<StreamResponse>(`/api/stream/${encodeURIComponent(this.sessionId)}`, payload, signal);
     } catch (err) {
       if (err instanceof HttpError && err.status === 404) {
         // Phiên hết hạn (server khởi động lại, nghỉ quá lâu): mở phiên mới ở request kế tiếp.
@@ -450,10 +507,19 @@ export class Recognizer {
     }
   }
 
-  private handle(response: StreamResponse | Prediction, latencyMs: number): void {
+  private handle(response: StreamResponse | Prediction, requestMs: number): void {
     const { idleHandFrames, minHandFrames } = this.options;
     const now = performance.now();
-    if ("ready" in response) this.serverBuffered = response.buffered;
+    // Độ trễ người dùng cảm nhận: từ lúc thu frame mới nhất tới lúc có kết quả.
+    const latencyMs = "ready" in response && this.lastFrameAt !== null ? now - this.lastFrameAt : requestMs;
+    if ("ready" in response) {
+      this.serverBuffered = response.buffered;
+      // Chỉ trích feature (predict: false) khi cửa sổ đã đủ: không có phiếu, chỉ cập nhật số frame.
+      if (response.ready && !(response.predicted ?? true)) {
+        this.emitBuffered();
+        return;
+      }
+    }
 
     if ("ready" in response && !response.ready) {
       // Cửa sổ server chưa đủ frame: chưa có dự đoán, chỉ theo dõi nghỉ tay để kết thúc câu.

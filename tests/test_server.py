@@ -1,4 +1,6 @@
 import base64
+import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -197,6 +199,41 @@ class StreamTests(unittest.TestCase):
 
         body = self.send(sid, [self.empty] * 2).get_json()              # mặc định: cả cửa sổ 30 frame
         self.assertEqual((body["ready"], body["frames"], body["hand_frames"], body["window"]), (True, 30, 21, 30))
+
+    def test_predict_false_only_extracts(self):
+        sid = self.open()
+        body = self.send(sid, [self.hand] * 30, predict=False).get_json()
+        self.assertEqual((body["ready"], body["predicted"], body["buffered"], body["hand_frames"]), (True, False, 30, 30))
+        self.assertNotIn("label", body)
+        body = self.send(sid, [self.hand]).get_json()                   # mặc định predict = true
+        self.assertTrue(body["predicted"])
+        self.assertIn(body["label"], ("xin chào", "cảm ơn"))
+        self.assertEqual(self.send(sid, [self.hand], predict="yes").status_code, 400)
+
+    def test_multipart_binary_frames(self):
+        sid = self.open()
+        jpeg = base64.b64decode(self.hand.partition(",")[2])
+        data = {"meta": json.dumps({"timestamps": [10, 77], "window": 2, "top_k": 2}),
+                "frames": [(io.BytesIO(jpeg), "0.jpg", "image/jpeg"), (io.BytesIO(jpeg), "1.jpg", "image/jpeg")]}
+        response = self.client.post(f"/api/stream/{sid}", data=data, content_type="multipart/form-data")
+        self.assertEqual(response.status_code, 200, response.get_json())
+        body = response.get_json()
+        self.assertEqual((body["predicted"], body["frames"], body["hand_frames"], len(body["top"])), (True, 2, 2, 2))
+        extractor, = FakeStreamExtractor.instances
+        self.assertEqual(extractor.timestamps, [10, 77])
+
+        bad = [{"meta": "{not json", "frames": [(io.BytesIO(jpeg), "0.jpg")]},
+               {"meta": "{}"},
+               {"meta": "{}", "frames": [(io.BytesIO(b"xx"), "0.jpg")]}]
+        for data in bad:
+            with self.subTest(meta=data["meta"], files=len(data.get("frames", []))):
+                response = self.client.post(f"/api/stream/{sid}", data=data, content_type="multipart/form-data")
+                self.assertEqual(response.status_code, 400)
+
+    def test_cors_preflight_is_cacheable(self):
+        response = self.client.options("/api/stream")
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.headers["Access-Control-Max-Age"], "86400")
 
     def test_timestamps_strictly_increase(self):
         sid = self.open()

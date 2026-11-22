@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from src.data.data_reader import DataHandler
-from src.features.extract import FEATURE_SLICES, FEATURE_VERSION
+from src.features.extract import FEATURE_SLICES, FEATURE_VERSION, PITCH_AUG_DEG, rotate_view_pitch
 
 
 def available_sources(processed_root: Path, classes: list[str] | None = None) -> list[Path]:
@@ -120,12 +120,18 @@ def add_feature_noise(features: np.ndarray, rng: np.random.Generator, strength: 
 
 
 def augment_sample(source_dir: Path, raw_root: Path, copies: int, strength: float,
-                   rng: np.random.Generator) -> list[Path]:
-    """Write new numeric sample directories under processed; never touch raw."""
+                   rng: np.random.Generator, pitch_degrees: float = PITCH_AUG_DEG) -> list[Path]:
+    """Write new numeric sample directories under processed; never touch raw.
+
+    Mỗi bản sao: nhiễu feature + góc nhìn pitch ngẫu nhiên đều trong [-pitch_degrees, pitch_degrees]
+    (rotate_view_pitch: camera cao/thấp hơn lúc thu). pitch_degrees=0 -> chỉ nhiễu như trước.
+    """
     source_dir = Path(source_dir)
     raw_root = Path(raw_root)
     if copies < 1:
         raise ValueError("copies must be positive")
+    if not np.isfinite(pitch_degrees) or not 0 <= pitch_degrees <= 45:
+        raise ValueError("pitch_degrees must be in [0, 45]")
     meta = DataHandler._read_meta(source_dir)
     if "augmentation" in meta:
         raise ValueError(f"Cannot augment a derived sample: {source_dir}")
@@ -152,6 +158,9 @@ def augment_sample(source_dir: Path, raw_root: Path, copies: int, strength: floa
         stage = class_dir / f".augment_{uuid.uuid4().hex}"
         try:
             augmented = add_feature_noise(features, rng, strength)
+            view_pitch = float(rng.uniform(-pitch_degrees, pitch_degrees)) if pitch_degrees > 0 else 0.0
+            if view_pitch:
+                augmented = rotate_view_pitch(augmented, view_pitch)
             stage.mkdir()
             for index, feature in enumerate(augmented):
                 np.savez_compressed(stage / f"{index}.npz", feature=feature)
@@ -164,7 +173,7 @@ def augment_sample(source_dir: Path, raw_root: Path, copies: int, strength: floa
                 "origin_sample_id": source_id,
                 "augmentation": {
                     "type": "feature_noise", "source_sample_id": source_id,
-                    "strength": float(strength),
+                    "strength": float(strength), "view_pitch_deg": round(view_pitch, 3),
                 },
             }
             (stage / "meta.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")

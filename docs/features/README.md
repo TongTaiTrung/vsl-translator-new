@@ -38,8 +38,19 @@ Kết quả luôn là `(1280, 1280, 3) uint8`, không méo tỉ lệ. `pad_frame
 
 - Gốc: trung điểm hai vai (landmark pose 11, 12).
 - Đơn vị: độ rộng vai 2D.
-- `u_x`: vai trái → vai phải; `u_y`: dọc sống lưng (hông → vai, fallback trục Y); `u_z = u_x × u_y`.
-- Trục Z pose được giảm chấn (`Z_POSE = 0.5`) vì nhiễu lớn hơn X/Y; khi dựng hệ trục thân giảm thêm (`TORSO_Z = 0.3`).
+- `u_x`: vai trái → vai phải; `u_y`: phương thẳng đứng của ảnh, trực giao hoá với `u_x` (chỉ khử roll); `u_z = u_x × u_y`.
+- Trục Z pose được giảm chấn (`Z_POSE = 0.5`) vì nhiễu lớn hơn X/Y; khi dựng `u_x` giảm thêm (`TORSO_Z = 0.3`).
+- **Pitch (camera cao/thấp hơn người ký) không được khử trong `extract`** (từ v6). Đo trên 368 clip gốc: pitch thân suy
+  từ z của pose (ảnh hay `pose_world`) lệch theo *lớp ký hiệu* trong cùng một camera (vd. session 22/11: `b` −20°, `o` −9°)
+  nhiều hơn mức lệch giữa các session (~±5°), và xoay theo nó làm nhiễu vị trí tay tăng 2–4 lần; tín hiệu hình học đầu
+  (tai/mắt/mũi) cũng phụ thuộc lớp như vậy. v5 dùng trục hông khi visibility > 0.5, nhưng hông hầu như ngoài khung nên
+  nhánh đó chỉ chạy ở ~7% clip và đổi hệ trục giữa clip (pitch giả ~−4°); v6 bỏ nhánh này.
+- Bất biến pitch được dạy bằng dữ liệu: `rotate_view_pitch(features, degrees)` mô phỏng camera thấp hơn (`degrees > 0`)
+  trên feature thô: xoay `hand_pos`, `inter_hand_vec`, `face_vec` quanh trục x qua giữa vai trong thang độ sâu thật
+  (z ảnh của pose ≈ `POSE_Z_GAIN = 3.35` × độ sâu, hồi quy với `pose_world`), và xoay `palm_dir`/`palm_normal`. Các nhóm
+  còn lại bất biến (`body_contact` xấp xỉ). So với việc trích lại từ cảnh 3D đã xoay, nó giải thích ~97% thay đổi của y
+  vị trí và ~92% của hướng lòng bàn tay. `augment_sample` gán mỗi bản sao một pitch ngẫu nhiên đều trong
+  ±`PITCH_AUG_DEG` (12°), ghi vào `meta.augmentation.view_pitch_deg`.
 
 ### Ghép bàn tay với trái/phải
 

@@ -50,5 +50,4 @@ Thumbs.db
 
 # ---- Tooling outputs ----
 graphify-out/
-.claude/settings.local.json
-
+.claude

@@ -86,6 +86,35 @@ class SentenceTests(unittest.TestCase):
         self.assertEqual(format_labels(words), "xin chào | toi | ten_la | [đánh vần: T-R-U-N-G]")
         self.assertEqual(naive_sentence(words), "Xin chào tôi tên là Trung")
 
+    def test_tone_marks_join_spelling_group(self):
+        words = ["m", "i", "n", "h", "b", "i", "dấu nặng", "n", "g", "u"]
+        self.assertEqual(format_labels(words), "[đánh vần: M-I-N-H-B-I-(dấu nặng)-N-G-U]")
+        self.assertEqual(naive_sentence(words), "Minh bị ngu")
+        self.assertEqual(naive_sentence(["xin chào", "toi", *words]), "Xin chào tôi Minh bị ngu")
+        self.assertIn("Minh bị ngu", build_system_prompt())
+
+    def test_vowel_marks_join_spelling_group(self):
+        words = ["xin chào", "toi", "ten_la", "t", "h", "o", "dấu ơ,ư"]
+        self.assertEqual(format_labels(words), "xin chào | toi | ten_la | [đánh vần: T-H-O-(dấu ơ,ư)]")
+        self.assertEqual(naive_sentence(words), "Xin chào tôi tên là Thơ")
+        self.assertIn("Kết quả: Xin chào, tôi tên là Thơ.", build_system_prompt())
+        self.assertEqual(naive_sentence(["c", "o", "dấu â,ô,ê", "n", "g"]), "Công")
+        self.assertEqual(naive_sentence(["h", "o", "n", "dấu ơ,ư"]), "Hơn")
+        self.assertEqual(naive_sentence(["t", "h", "o", "dấu ơ,ư", "dấu sắc"]), "Thớ")
+        self.assertEqual(naive_sentence(["t", "h", "o", "dấu sắc", "dấu ơ,ư"]), "Thớ")
+        self.assertEqual(naive_sentence(["n", "g", "u", "dấu ơ,ư", "o", "i", "dấu huyền"]), "Người")
+
+    def test_misspelled_sac_label_is_a_tone(self):
+        words = ["t", "r", "o", "n", "g", "dấu nặng", "t", "u", "a", "dấu â,ô,ê", "t", "dấu sắt"]
+        self.assertEqual(format_labels(words), "[đánh vần: T-R-O-N-G-(dấu nặng)-T-U-A-(dấu â,ô,ê)-T-(dấu sắc)]")
+        self.assertEqual(naive_sentence(words), "Trọng tuất")
+
+    def test_fallback_splits_syllables_and_places_tone(self):
+        self.assertEqual(naive_sentence(["h", "o", "a", "dấu huyền"]), "Hòa")
+        self.assertEqual(naive_sentence(["t", "o", "a", "n", "dấu sắc", "h", "o", "c", "dấu nặng"]), "Toán học")
+        self.assertEqual(naive_sentence(list("anhem")), "Anh em")
+        self.assertEqual(naive_sentence(list("xyz")), "Xyz")
+
     def test_system_prompt_contains_glossary(self):
         prompt = build_system_prompt({"toi": "tôi"})
         self.assertIn('"toi" = "tôi"', prompt)

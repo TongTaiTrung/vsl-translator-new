@@ -8,6 +8,7 @@ Không dùng thành tố phi thủ công.
 Hàm vào/ra giữ nguyên:
     extract(pose_res, hand_res)            -> (FEATURE_DIM,)          mỗi frame
     process_sequence(raw_sequence, ...)    -> (target_len, SEQ_FEATURE_DIM)
+    rotate_view_pitch(features, degrees)   -> cùng shape, mô phỏng camera cao/thấp hơn (dùng khi augment)
 
 Giả định đầu vào: frame đã qua frame_padding thành FRAME_SIZE x FRAME_SIZE (1280) nên toạ độ
 chuẩn hoá x, y của MediaPipe cùng một tỉ lệ, không cần W/H.
@@ -19,15 +20,21 @@ from scipy.interpolate import interp1d
 
 from src.builtin.mediapipe_builtin.defs import HandLandmarkerResult, PoseLandmarkerResult
 
-FEATURE_VERSION = 5
+FEATURE_VERSION = 6
 
 # =============================================================================
 # CẤU HÌNH
 # =============================================================================
 Z_POSE = 0.5          # giảm chấn trục Z (nhiễu gấp ~4-5 lần X, Y)
-TORSO_Z = 0.3         # giảm chấn thêm khi dựng hệ trục thân (tránh lắc yaw/pitch giả)
+TORSO_Z = 0.3         # giảm chấn thêm z của đường vai khi dựng trục x của thân (tránh lắc yaw giả)
 VIS_MIN = 0.3         # visibility tối thiểu để tin cổ tay / khuỷu tay của pose
-HIP_VIS_MIN = 0.5     # visibility tối thiểu để dùng hông dựng trục sống lưng
+# Pitch (camera đặt cao/thấp hơn người ký) KHÔNG được ước lượng từ landmark: đo trên 368 clip gốc, pitch thân
+# suy từ z của pose (ảnh hay world) lệch theo lớp ký hiệu trong cùng một camera (vd. 22/11: "b" -20°, "o" -9°)
+# nhiều hơn mức lệch giữa các session (~±5°), còn xoay theo nó làm nhiễu vị trí tay tăng 2-4 lần. Vì vậy trục dọc
+# luôn là phương thẳng đứng của ảnh, và bất biến pitch được dạy qua augmentation (rotate_view_pitch).
+PITCH_AUG_DEG = 12.0  # biên độ pitch ngẫu nhiên mặc định khi tăng cường dữ liệu (src/data/augment.py)
+POSE_Z_GAIN = 3.35    # z ảnh của pose ≈ 3.35 x độ sâu thật (cùng đơn vị x): hồi quy với pose_world trên clip gốc,
+                      # tương quan 0.95 (y khớp 1.04). rotate_view_pitch xoay trong thang độ sâu thật.
 MAX_MATCH_DIST = 0.8  # (đơn vị vai) cổ tay tay-detect cách cổ tay pose xa hơn -> bỏ tay đó
 PRESENCE_TEMPERATURE = 0.35  # soft confidence cho ghép hand <-> pose wrist
 USE_HAND_WORLD = True # thủ hình/hướng bàn tay lấy từ hand_world_landmarks (mét, chuẩn hơn).
@@ -125,6 +132,33 @@ def _left_mirror() -> tuple[np.ndarray, np.ndarray]:
 
 
 LEFT_MIRROR = _left_mirror()
+
+# Cột đầu (x) của các vector 3D đổi theo góc nhìn. Vị trí: z đã nhân Z_POSE; hướng: vector đơn vị đẳng hướng.
+_PITCH_POS = np.concatenate([_SL["hand_pos"].start + 3 * np.arange(6), [_SL["inter_hand_vec"].start],
+                             _SL["face_vec"].start + 3 * np.arange(4)])
+_PITCH_DIR = _SL["orientation"].start + np.array([0, 3, 9, 12])   # palm_dir, palm_normal mỗi tay
+
+
+def rotate_view_pitch(features: np.ndarray, degrees: float) -> np.ndarray:
+    """Mô phỏng camera đặt thấp hơn (degrees > 0, nhìn hất lên) hoặc cao hơn (< 0) trên feature THÔ (..., FEATURE_DIM).
+
+    Xoay quanh trục x của thân (qua giữa hai vai): y' = y cos + z sin, z' = -y sin + z cos, với z hướng ra xa camera,
+    nên điểm ở trước thân hiện cao hơn khi nhìn từ dưới. Vị trí (hand_pos, inter_hand_vec, face_vec) xoay trong thang
+    độ sâu thật (z lưu = Z_POSE * POSE_Z_GAIN * độ sâu thật); palm_dir, palm_normal xoay trực tiếp. Bất biến, giữ nguyên: thủ hình,
+    hand_local, hand_scale, góc cổ tay (tích vô hướng với cẳng tay cùng xoay), tiếp xúc, presence. body_contact chỉ xấp xỉ
+    bất biến (neo ngực/bụng cố định, z giảm trọng số) nên cũng giữ nguyên. NaN giữ NaN.
+    """
+    out = np.array(features, dtype=np.float32, copy=True)
+    if out.shape[-1] != FEATURE_DIM:
+        raise ValueError(f"Expected (..., {FEATURE_DIM}), got {out.shape}")
+    a = np.radians(float(degrees))
+    c, s = np.float32(np.cos(a)), np.float32(np.sin(a))
+    for starts, z_scale in ((_PITCH_POS, Z_POSE * POSE_Z_GAIN), (_PITCH_DIR, 1.0)):
+        y = out[..., starts + 1]
+        z = out[..., starts + 2] / z_scale
+        out[..., starts + 1] = y * c + z * s
+        out[..., starts + 2] = (z * c - y * s) * z_scale
+    return out
 
 # =============================================================================
 # HẰNG SỐ CẤU TRÚC BÀN TAY (MediaPipe 21 điểm)
@@ -328,14 +362,11 @@ def extract(pose_res: PoseLandmarkerResult, hand_res: HandLandmarkerResult) -> n
     tz = np.array([1.0, 1.0, TORSO_Z], dtype=np.float32)
     u_x = _unit_vector((l_sh - r_sh) * tz)
 
-    mid_hip = 0.5 * (pose_pts[23] + pose_pts[24])
-    hip_ok = min(_vis(pose_lms[23]), _vis(pose_lms[24])) > HIP_VIS_MIN
-    if hip_ok and np.linalg.norm((mid_hip - mid_sh)[:2]) > 0.1 * shoulder_width:
-        v_spine = (mid_hip - mid_sh) * tz
-    else:
-        v_spine = np.array([0.0, 1.0, 0.0], dtype=np.float32)
-
-    u_y = _unit_vector(v_spine - np.dot(v_spine, u_x) * u_x)
+    # Trục dọc = phương thẳng đứng của ảnh (chỉ khử roll theo đường vai). v5 dùng hông khi visibility > 0.5,
+    # nhưng hông hầu như ngoài khung: nhánh đó chỉ chạy ở ~7% clip (26% frame của một session) và đổi định nghĩa
+    # hệ trục giữa chừng clip, đưa vào một pitch giả ~-4° phụ thuộc session.
+    v_up = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+    u_y = _unit_vector(v_up - np.dot(v_up, u_x) * u_x)
     u_z = _unit_vector(np.cross(u_x, u_y))
     rot = np.stack([u_x, u_y, u_z], axis=1).astype(np.float32)  # (3,3), det=+1
 

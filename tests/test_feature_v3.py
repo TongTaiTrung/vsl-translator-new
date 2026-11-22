@@ -172,6 +172,110 @@ class HandPairModelTests(unittest.TestCase):
         self.assertFalse(ensemble.presence_aware)
 
 
+def _pt(row, vis=1.0):
+    return SimpleNamespace(x=float(row[0]), y=float(row[1]), z=float(row[2]), visibility=vis)
+
+
+def _scene():
+    """Pose (33,3) toạ độ ảnh + tay phải (ảnh, world) đưa ra trước ngực; hông trong khung."""
+    pose = np.tile([0.5, 0.5, 0.0], (33, 1))
+    rows = {0: (0.5, 0.30, -0.30), 2: (0.52, 0.28, -0.28), 5: (0.48, 0.28, -0.28), 7: (0.55, 0.29, -0.1),
+            8: (0.45, 0.29, -0.1), 9: (0.51, 0.33, -0.28), 10: (0.49, 0.33, -0.28), 11: (0.6, 0.45, 0.0),
+            12: (0.4, 0.45, 0.0), 13: (0.65, 0.6, -0.1), 14: (0.35, 0.6, -0.2), 15: (0.62, 0.75, -0.1),
+            16: (0.42, 0.52, -0.4), 23: (0.57, 0.85, 0.0), 24: (0.43, 0.85, 0.0)}
+    for k, v in rows.items():
+        pose[k] = v
+    a = 0.6
+    tilt = np.array([[1, 0, 0], [0, np.cos(a), -np.sin(a)], [0, np.sin(a), np.cos(a)]])
+    world = (_hand(0.5) - _hand(0.5)[0]) @ tilt.T * 0.02
+    image = world * 2.0
+    image[:, :2] += pose[16, :2]
+    image[:, 2] -= image[0, 2]
+    return pose, image, world
+
+
+def _results(pose, image, world, hip_vis=1.0):
+    vis = [hip_vis if i in (23, 24) else 1.0 for i in range(33)]
+    pose_res = SimpleNamespace(pose_landmarks=[[_pt(r, v) for r, v in zip(pose, vis)]])
+    hand_res = SimpleNamespace(hand_landmarks=[[_pt(r) for r in image]],
+                               hand_world_landmarks=[[_pt(r) for r in world]])
+    return pose_res, hand_res
+
+
+def _rotate_scene(pose, image, world, degrees):
+    """Camera thấp hơn `degrees`: xoay cảnh quanh trục x qua giữa vai, trong thang độ sâu thật (z / POSE_Z_GAIN)."""
+    a = np.radians(degrees)
+    c, s = np.cos(a), np.sin(a)
+
+    def rot(pts, gain):
+        q = np.array(pts, dtype=np.float64)
+        q[:, 2] /= gain
+        y, z = q[:, 1].copy(), q[:, 2].copy()
+        q[:, 1], q[:, 2] = y * c + z * s, z * c - y * s
+        q[:, 2] *= gain
+        return q
+
+    origin = 0.5 * (pose[11] + pose[12])
+    pose_r = rot(pose - origin, fx.POSE_Z_GAIN) + origin
+    hand_abs = image.copy()
+    hand_abs[:, 2] += pose[16, 2]
+    hand_abs = rot(hand_abs - origin, fx.POSE_Z_GAIN) + origin
+    hand_abs[:, 2] -= pose_r[16, 2]
+    return pose_r, hand_abs, rot(world, 1.0)
+
+
+class FeatureV6Tests(unittest.TestCase):
+    """v6: hệ trục thân không phụ thuộc hông; rotate_view_pitch mô phỏng camera cao/thấp để augment."""
+
+    def test_version_bumped(self):
+        self.assertEqual(fx.FEATURE_VERSION, 6)
+
+    def test_frame_does_not_depend_on_hip_visibility(self):
+        pose, image, world = _scene()
+        pose[23, 2] = pose[24, 2] = -0.5            # hông nghiêng sâu: v5 sẽ đổi pitch của hệ trục khi hông "thấy được"
+        seen = fx.extract(*_results(pose, image, world, hip_vis=0.9))
+        hidden = fx.extract(*_results(pose, image, world, hip_vis=0.1))
+        np.testing.assert_array_equal(seen, hidden)
+
+    def test_rotate_view_pitch_matches_extracting_a_rotated_scene(self):
+        pose, image, world = _scene()
+        base = fx.extract(*_results(pose, image, world))
+        S = fx.FEATURE_SLICES
+        o = S["orientation"].start
+        for degrees in (12.0, -8.0):
+            moved = fx.extract(*_results(*_rotate_scene(pose, image, world, degrees)))
+            predicted = fx.rotate_view_pitch(base, degrees)
+            cols = np.r_[S["hand_pos"], S["face_vec"], o:o + 6, o + 9:o + 15]
+            live = cols[np.isfinite(base[cols])]
+            self.assertGreater(np.abs(moved[live] - base[live]).max(), 0.05)       # góc nhìn thật sự làm lệch
+            np.testing.assert_allclose(predicted[live], moved[live], atol=2e-3)
+
+    def test_rotate_view_pitch_geometry_and_invariants(self):
+        rng = np.random.default_rng(0)
+        x = rng.normal(size=(5, fx.FEATURE_DIM)).astype(np.float32)
+        x[1, :9] = np.nan
+        np.testing.assert_allclose(fx.rotate_view_pitch(x, 0.0), x, atol=1e-6)
+        np.testing.assert_allclose(fx.rotate_view_pitch(fx.rotate_view_pitch(x, 15.0), -15.0), x, atol=1e-5)
+        y = fx.rotate_view_pitch(x, 15.0)
+        self.assertTrue(np.isnan(y[1, :9]).all())
+        S = fx.FEATURE_SLICES
+        for name in ("body_contact", "hand_contact", "hand_scale", "handshape", "hand_local", "presence"):
+            np.testing.assert_array_equal(y[:, S[name]], x[:, S[name]])
+        o = S["orientation"].start
+        np.testing.assert_array_equal(y[:, o + 6:o + 9], x[:, o + 6:o + 9])     # góc cổ tay
+        for k in (0, 3, 9, 12):                                                  # palm_dir/normal giữ độ dài
+            np.testing.assert_allclose(np.linalg.norm(y[:, o + k:o + k + 3], axis=1),
+                                       np.linalg.norm(x[:, o + k:o + k + 3], axis=1), rtol=1e-5)
+        # Camera thấp hơn: tay ở trước thân (z < 0) hiện cao hơn (y nhỏ hơn); x không đổi.
+        point = np.zeros(fx.FEATURE_DIM, dtype=np.float32)
+        point[S["hand_pos"].start + 9: S["hand_pos"].start + 12] = (0.1, 0.4, -1.0)
+        lifted = fx.rotate_view_pitch(point, 10.0)[S["hand_pos"].start + 9: S["hand_pos"].start + 12]
+        self.assertAlmostEqual(float(lifted[0]), 0.1, places=6)
+        self.assertLess(lifted[1], 0.4)
+        with self.assertRaises(ValueError):
+            fx.rotate_view_pitch(np.zeros((2, 5)), 5.0)
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -221,9 +325,6 @@ class FeatureV5Tests(unittest.TestCase):
 
     def _anchors(self):
         return fx._body_anchors(np.zeros((33, 3), dtype=np.float32))
-
-    def test_version_bumped(self):
-        self.assertEqual(fx.FEATURE_VERSION, 5)
 
     def test_palm_on_chest_registers_contact_despite_depth_offset(self):
         # "tôi": nắm tay đặt trên ngực, z pose lệch ~-0.95 vai dù tay chạm thân.

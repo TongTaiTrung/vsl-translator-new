@@ -10,6 +10,7 @@ import {
   type Speed,
 } from "@/lib/recognizer";
 import { DEFAULT_MODEL, naiveSentence } from "@/lib/sentence";
+import { ThemeToggle } from "./theme-toggle";
 
 // ------------------------------------------------------------------ cài đặt (lưu trên trình duyệt)
 
@@ -20,6 +21,7 @@ interface Settings {
   model: string;
   mirrorPreview: boolean;
   mirrorData: boolean;
+  debugCrop: boolean;
   speed: Speed;
   minConsecutive: number;
   sentenceGapSeconds: number;
@@ -32,6 +34,7 @@ const DEFAULT_SETTINGS: Settings = {
   model: DEFAULT_MODEL,
   mirrorPreview: true,
   mirrorData: DEFAULT_OPTIONS.mirrorData,
+  debugCrop: false,
   speed: "accurate",
   minConsecutive: DEFAULT_OPTIONS.minConsecutive,
   sentenceGapSeconds: DEFAULT_OPTIONS.sentenceGapMs / 1000,
@@ -96,17 +99,25 @@ async function composeSentence(words: string[], settings: Settings): Promise<Sen
 // ------------------------------------------------------------------ hiển thị
 
 const PHASE_TEXT: Record<Phase, string> = {
-  stopped: "Chưa bắt đầu",
-  starting: "Đang mở camera…",
-  buffering: "Đang gom frame…",
-  idle: "Đang chờ — đưa tay lên để ký",
-  entering: "Đang vào ký hiệu…",
+  stopped: "Camera đang tắt",
+  starting: "Đang tải MediaPipe, mở camera",
+  buffering: "Đang chuẩn bị",
+  idle: "Đưa tay lên để ký",
+  entering: "Đang vào ký hiệu",
   signing: "Đang nhận diện",
 };
 
 const REJECT_TEXT: Record<string, string> = {
-  ambiguous: "chưa chắc (2 lớp quá sát)",
-  low_confidence: "độ tin cậy thấp",
+  ambiguous: "Hai ký hiệu quá giống nhau",
+  low_confidence: "Chưa đủ chắc chắn",
+};
+
+const STATUS_TEXT: Record<SentenceStatus, string> = {
+  idle: "",
+  pending: "Đang ghép câu",
+  ok: "Đã ghép bằng Groq",
+  fallback: "Ghép thô",
+  error: "Groq lỗi, đã ghép thô",
 };
 
 interface Health {
@@ -118,8 +129,50 @@ interface Health {
 
 const percent = (value: number) => `${Math.round(value * 100)}%`;
 
+function Icon({ name }: { name: "settings" | "close" | "copy" | "check" | "speaker" | "undo" | "trash" | "stop" | "play" | "flag" }) {
+  const paths: Record<string, React.ReactNode> = {
+    settings: (
+      <>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+      </>
+    ),
+    close: <path d="M6 6l12 12M18 6L6 18" />,
+    copy: (
+      <>
+        <rect x="9" y="9" width="11" height="11" rx="2" />
+        <path d="M5 15V5a2 2 0 0 1 2-2h8" />
+      </>
+    ),
+    check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
+    speaker: (
+      <>
+        <path d="M11 5L6 9H3v6h3l5 4z" />
+        <path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" />
+      </>
+    ),
+    undo: <path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" />,
+    trash: <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />,
+    stop: <rect x="6" y="6" width="12" height="12" rx="2.5" />,
+    play: <path d="M8 5.5v13l10.5-6.5z" />,
+    flag: <path d="M5 21V4M5 4h11l-2 4 2 4H5" />,
+  };
+  return (
+    <svg className="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"
+      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {paths[name]}
+    </svg>
+  );
+}
+
+/** Thay đổi `value` → render lại con với key mới để chạy hoạt ảnh vào. */
+function Swap({ value, className, children }: { value: string; className?: string; children: React.ReactNode }) {
+  return <span key={value} className={`swap ${className ?? ""}`}>{children}</span>;
+}
+
 export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const overlayRef = useRef<HTMLCanvasElement>(null);
   const recognizerRef = useRef<Recognizer | null>(null);
   const settingsRef = useRef<Settings>(DEFAULT_SETTINGS);
   const composeVersion = useRef(0);
@@ -165,14 +218,13 @@ export default function Home() {
       onSentenceEnd: (words) => void finishSentence(words),
     });
     recognizerRef.current = recognizer;
-    return () => recognizer.stop();
+    return () => recognizer.dispose();
   }, [updateCurrent, finishSentence]);
 
   // Nạp cài đặt đã lưu (chỉ chạy trên trình duyệt).
   useEffect(() => {
     const saved = loadSettings();
     setSettings(saved);
-    setSettingsOpen(!saved.groqKey);      // chưa có key: mở sẵn phần cài đặt
     setLoaded(true);
   }, []);
 
@@ -191,6 +243,7 @@ export default function Home() {
       minConsecutive: settings.minConsecutive,
       sentenceGapMs: settings.sentenceGapSeconds * 1000,
     });
+    recognizerRef.current?.setDebugCanvas(settings.debugCrop ? overlayRef.current : null);
   }, [settings, loaded]);
 
   // Kiểm tra API dự đoán mỗi khi đổi địa chỉ.
@@ -218,9 +271,12 @@ export default function Home() {
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
 
-  const running = state !== null && state.phase !== "stopped";
+  const phase: Phase = state?.phase ?? "stopped";
+  const running = phase !== "stopped";
   const words = state?.words ?? [];
   const prediction = state?.prediction ?? null;
+  const showCandidate = running && phase === "signing" && state?.candidate && state.count > 0;
+  const bufferProgress = state && state.windowFrames > 0 ? Math.min(1, state.buffered / state.windowFrames) : 0;
 
   const toggle = () => {
     const recognizer = recognizerRef.current;
@@ -241,7 +297,7 @@ export default function Home() {
   const copy = async (id: number, text: string) => {
     await navigator.clipboard.writeText(text);
     setCopied(id);
-    setTimeout(() => setCopied(null), 1200);
+    setTimeout(() => setCopied(null), 1400);
   };
 
   const speak = (text: string) => {
@@ -252,180 +308,241 @@ export default function Home() {
     window.speechSynthesis.speak(utterance);
   };
 
+  // Sheet cài đặt: Esc để đóng, đưa focus vào sheet khi mở.
+  const sheetRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!settingsOpen) return;
+    sheetRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setSettingsOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [settingsOpen]);
+
+  const healthText = health === null
+    ? "Đang kết nối"
+    : health.ok
+      ? `${health.classes?.length ?? 0} ký hiệu sẵn sàng`
+      : health.error ?? "API lỗi";
+
   return (
-    <main className="app">
+    <div className="shell">
       <header className="topbar">
-        <div>
-          <h1>VSL Translator</h1>
-          <p className="muted">Dịch ngôn ngữ ký hiệu Việt Nam từ webcam thành câu hoàn chỉnh</p>
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true"><i /><i /></span>
+          <span className="brand-name">UrSound</span>
         </div>
-        <span className={`pill ${health?.ok ? "ok" : health ? "bad" : ""}`}>
-          {health === null
-            ? "Đang kiểm tra API…"
-            : health.ok
-              ? `API sẵn sàng · ${health.classes?.length ?? 0} ký hiệu`
-              : health.error ?? "API lỗi"}
-        </span>
+        <div className="topbar-right">
+          <span className={`health ${health?.ok ? "ok" : health ? "bad" : "wait"}`} title={health?.checkpoint}>
+            <i className="health-dot" />
+            {healthText}
+          </span>
+          <ThemeToggle />
+          <button className="icon-button" onClick={() => setSettingsOpen(true)} aria-label="Mở cài đặt">
+            <Icon name="settings" />
+          </button>
+        </div>
       </header>
 
-      <div className="layout">
-        <section className="stage">
-          <div className={`video-wrap phase-${state?.phase ?? "stopped"}`}>
+      <main className="workspace">
+        <section className="stage" aria-label="Camera">
+          <div className={`frame phase-${phase}`}>
             <video
               ref={videoRef}
               className={settings.mirrorPreview ? "mirror" : undefined}
               playsInline
               muted
             />
+            {settings.debugCrop && (
+              <canvas ref={overlayRef} className={`debug-overlay${settings.mirrorPreview ? " mirror" : ""}`} aria-hidden="true" />
+            )}
+            <span className="corner tl" /><span className="corner tr" />
+            <span className="corner bl" /><span className="corner br" />
+
             {!running && (
-              <div className="video-empty">
-                <p>Camera đang tắt</p>
-                <p className="muted">Bấm “Bắt đầu nhận diện” để mở camera</p>
+              <div className="frame-empty">
+                <button className="start" onClick={toggle} aria-label="Bắt đầu phiên dịch">
+                  <span className="start-ring" aria-hidden="true" />
+                  <Icon name="play" />
+                </button>
+                <p className="frame-empty-title">Bắt đầu phiên dịch</p>
+                <p className="frame-empty-note">Camera chỉ dùng để nhận diện, không ghi lại hình ảnh.</p>
               </div>
             )}
-            {running && (
-              <div className="hud">
-                <span className="hud-status">
-                  <i className="dot" />
-                  {PHASE_TEXT[state!.phase]}
-                  {state!.inFlight && <span className="spinner" aria-label="đang gọi API" />}
-                </span>
-                {state!.resolution && (
-                  <span className="hud-meta">
-                    {state!.resolution}
-                    <span title={SPEED_PRESETS[settings.speed].hint}>· {SPEED_PRESETS[settings.speed].label}</span>
-                    {state!.mode && (
-                      <span title={state!.mode === "stream" ? "Luồng liên tục: chỉ gửi frame mới" : "Gửi cả cửa sổ 30 frame (server cũ)"}>
-                        · {state!.mode === "stream" ? "stream" : "window"}
-                      </span>
-                    )}
-                    {state!.latencyMs != null && <span>· {state!.latencyMs} ms</span>}
+            {phase === "starting" && <div className="frame-empty"><p className="frame-empty-title">Đang mở camera…</p></div>}
+
+            {running && phase !== "starting" && (
+              <>
+                <div className="hud-phase" role="status">
+                  <span className="ring" style={{ "--p": phase === "buffering" ? bufferProgress : 1 } as React.CSSProperties}>
+                    <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8" /></svg>
+                    <i />
+                  </span>
+                  <Swap value={phase}>{PHASE_TEXT[phase]}</Swap>
+                </div>
+                {state?.latencyMs != null && (
+                  <span className="hud-latency" title={`Từ lúc chụp frame tới lúc có kết quả; MediaPipe ${state.delegate ?? ""} trên trình duyệt ${state.detectMs ?? "–"} ms/frame`}>
+                    {state.latencyMs} ms
                   </span>
                 )}
-              </div>
-            )}
-            {running && state!.phase === "buffering" && (
-              <div className="buffer-bar">
-                <div style={{ width: `${(state!.buffered / state!.windowFrames) * 100}%` }} />
-              </div>
+                {showCandidate && (
+                  <div className="hud-candidate" key={state!.candidate}>
+                    <span>{state!.candidate}</span>
+                    <span className="votes" aria-label={`${state!.count}/${state!.required} phiếu`}>
+                      {Array.from({ length: state!.required }, (_, i) => (
+                        <i key={i} className={i < state!.count ? "on" : ""} />
+                      ))}
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
           <div className="controls">
-            <button className={`primary ${running ? "danger" : ""}`} onClick={toggle} disabled={state?.phase === "starting"}>
-              {running ? "Dừng nhận diện" : "Bắt đầu nhận diện"}
-            </button>
-            <button onClick={endSentence} disabled={words.length === 0}>Kết thúc câu</button>
-            <button onClick={() => recognizerRef.current?.undo()} disabled={words.length === 0}>Xoá từ cuối</button>
-            <button onClick={() => recognizerRef.current?.clear()} disabled={words.length === 0}>Xoá hết</button>
+            {running ? (
+              <button className="btn btn-stop" onClick={toggle} key="stop">
+                <span className="live-dot" aria-hidden="true" />
+                Dừng
+              </button>
+            ) : (
+              <span aria-hidden="true" />
+            )}
+            <div className="controls-group">
+              <button className="btn btn-ghost" onClick={endSentence} disabled={words.length === 0}>
+                <Icon name="flag" /> Kết thúc câu
+              </button>
+              <button className="btn btn-ghost" onClick={() => recognizerRef.current?.undo()} disabled={words.length === 0}>
+                <Icon name="undo" /> Xoá từ cuối
+              </button>
+              <button className="btn btn-ghost" onClick={() => recognizerRef.current?.clear()} disabled={words.length === 0}>
+                <Icon name="trash" /> Xoá hết
+              </button>
+            </div>
           </div>
 
-          {state?.error && <p className="error">{state.error}</p>}
+          {state?.error && <p className="error" role="alert">{state.error}</p>}
 
-          <div className="card prediction">
-            <div className="card-head">
-              <h2>Dự đoán gần nhất</h2>
-              {state?.latencyMs != null && <span className="muted small">{state.latencyMs} ms</span>}
+          <div className={`insight ${prediction ? "" : "is-empty"}`} aria-live="polite">
+            <div className="insight-head">
+              <span className="insight-title">Mô hình đang thấy</span>
+              {prediction && !prediction.accepted && (
+                <Swap value={prediction.rejection_reason ?? ""} className="insight-reject">
+                  {REJECT_TEXT[prediction.rejection_reason ?? ""] ?? "Chưa chắc chắn"}
+                </Swap>
+              )}
             </div>
-            {prediction ? (
-              <>
-                <p className="pred-label">
-                  {prediction.accepted ? (
-                    <strong>{prediction.label}</strong>
-                  ) : (
-                    <span className="muted">Từ chối: {REJECT_TEXT[prediction.rejection_reason ?? ""] ?? "—"}</span>
-                  )}
-                  {prediction.hand_frames !== undefined && (
-                    <span className="muted small"> · tay trong {prediction.hand_frames}/{prediction.frames} frame</span>
-                  )}
-                </p>
-                <ul className="bars">
-                  {prediction.top.map((item) => (
-                    <li key={item.label}>
-                      <span className="bar-label">{item.label}</span>
-                      <span className="bar"><span style={{ width: percent(item.confidence) }} /></span>
-                      <span className="bar-value">{percent(item.confidence)}</span>
-                    </li>
-                  ))}
-                </ul>
-                <p className="muted small">
-                  Phiếu: {state?.candidate ? `“${state.candidate}” ${state.count}/${state.required}` : "—"}
-                </p>
-              </>
-            ) : (
-              <p className="muted">Chưa có dự đoán.</p>
-            )}
+            <ol className="bars">
+              {(prediction?.top ?? [{ label: "—", confidence: 0 }, { label: "—", confidence: 0 }, { label: "—", confidence: 0 }])
+                .slice(0, 3)
+                .map((item, i) => (
+                  <li key={i} className={i === 0 && prediction?.accepted ? "lead" : ""}>
+                    <span className="bar-label">{item.label}</span>
+                    <span className="bar"><span style={{ transform: `scaleX(${item.confidence})` }} /></span>
+                    <span className="bar-value">{prediction ? percent(item.confidence) : ""}</span>
+                  </li>
+                ))}
+            </ol>
           </div>
         </section>
 
-        <section className="side">
-          <div className="card current">
-            <div className="card-head">
-              <h2>Câu đang ký</h2>
-              <span className={`status status-${sentence.status}`}>
-                {{ idle: "", pending: "đang ghép…", ok: "Groq", fallback: "ghép thô", error: "lỗi Groq" }[sentence.status]}
-              </span>
-            </div>
-            <p className={`sentence ${sentence.text ? "" : "placeholder"}`}>
-              {sentence.text || "Các từ nhận diện được sẽ tự ghép thành câu ở đây."}
-            </p>
-            {sentence.note && <p className="muted small">{sentence.note}</p>}
-            <div className="chips">
-              {words.map((word, i) => (
-                <span key={`${word}-${i}`} className={`chip ${i === words.length - 1 && word === state?.lastCommitted ? "fresh" : ""}`}>
-                  {word}
-                </span>
-              ))}
-            </div>
-            <p className="muted small">
-              {settings.sentenceGapSeconds > 0
-                ? `Nghỉ tay ${settings.sentenceGapSeconds} giây để kết thúc câu.`
-                : "Bấm “Kết thúc câu” để chốt câu."}
-            </p>
+        <section className="caption" aria-label="Phụ đề">
+          <div className="caption-head">
+            <h2>Đang ký</h2>
+            {sentence.status !== "idle" && (
+              <Swap value={sentence.status} className={`caption-status status-${sentence.status}`}>
+                {STATUS_TEXT[sentence.status]}
+              </Swap>
+            )}
           </div>
 
-          <div className="card">
-            <div className="card-head">
-              <h2>Câu hoàn chỉnh</h2>
+          <p className={`caption-text ${sentence.text ? "" : "placeholder"}`} aria-live="polite">
+            <Swap value={sentence.text || "empty"}>
+              {sentence.text || "Câu dịch sẽ hiện ở đây khi bạn bắt đầu ký."}
+            </Swap>
+          </p>
+          {sentence.note && <p className="caption-note">{sentence.note}</p>}
+
+          <div className="tokens" aria-label="Các từ đã nhận diện">
+            {words.map((word, i) => (
+              <span key={`${i}-${word}`} className="token">{word}</span>
+            ))}
+            {showCandidate && (
+              <span
+                key={`ghost-${state!.candidate}`}
+                className="token ghost"
+                style={{ "--fill": state!.count / state!.required } as React.CSSProperties}
+              >
+                {state!.candidate}
+              </span>
+            )}
+          </div>
+          <p className="caption-hint">
+            {settings.sentenceGapSeconds > 0
+              ? `Hạ tay ${settings.sentenceGapSeconds} giây để kết thúc câu.`
+              : "Bấm “Kết thúc câu” để chốt câu."}
+          </p>
+
+          <div className="transcript">
+            <div className="transcript-head">
+              <h2>Hội thoại</h2>
               {history.length > 0 && (
-                <button className="link" onClick={() => setHistory([])}>Xoá lịch sử</button>
+                <button className="link" onClick={() => setHistory([])}>Xoá hội thoại</button>
               )}
             </div>
             {history.length === 0 ? (
-              <p className="muted">Chưa có câu nào.</p>
+              <p className="transcript-empty">Các câu đã hoàn chỉnh sẽ được lưu ở đây để chép hoặc đọc to.</p>
             ) : (
               <ol className="history">
                 {history.map((item) => (
                   <li key={item.id}>
-                    <p className="sentence small-sentence">
-                      {item.text}
-                      {item.status === "pending" && <span className="muted small"> (đang ghép…)</span>}
+                    <p className={`history-text ${item.status === "pending" ? "pending" : ""}`}>
+                      <Swap value={item.status === "pending" ? "p" : item.text}>{item.text}</Swap>
                     </p>
-                    <p className="muted small">
-                      {item.time} · {item.words.join(" | ")}
-                      {item.status === "error" && ` · lỗi Groq: ${item.note}`}
-                      {item.status === "fallback" && " · ghép thô"}
-                    </p>
-                    <div className="row-actions">
-                      <button className="link" onClick={() => void copy(item.id, item.text)}>
-                        {copied === item.id ? "Đã chép" : "Chép"}
-                      </button>
-                      <button className="link" onClick={() => speak(item.text)}>Đọc</button>
+                    <div className="history-meta">
+                      <time>{item.time}</time>
+                      <span className="history-words">{item.words.join(" / ")}</span>
+                      {item.status === "error" && <span className="history-warn">Groq lỗi: {item.note}</span>}
+                      <span className="history-actions">
+                        <button className="icon-button small" onClick={() => void copy(item.id, item.text)}
+                          aria-label={copied === item.id ? "Đã chép" : "Chép câu"}>
+                          <Swap value={copied === item.id ? "c" : "n"}>
+                            <Icon name={copied === item.id ? "check" : "copy"} />
+                          </Swap>
+                        </button>
+                        <button className="icon-button small" onClick={() => speak(item.text)} aria-label="Đọc to">
+                          <Icon name="speaker" />
+                        </button>
+                      </span>
                     </div>
                   </li>
                 ))}
               </ol>
             )}
           </div>
+        </section>
+      </main>
 
-          <details
-            className="card settings"
-            open={settingsOpen}
-            onToggle={(e) => setSettingsOpen((e.target as HTMLDetailsElement).open)}
-          >
-            <summary><h2>Cài đặt</h2></summary>
-            <label>
-              Groq API key
+      <div className={`sheet-backdrop ${settingsOpen ? "open" : ""}`} onClick={() => setSettingsOpen(false)} aria-hidden="true" />
+      <aside
+        className={`sheet ${settingsOpen ? "open" : ""}`}
+        aria-label="Cài đặt"
+        aria-hidden={!settingsOpen}
+        inert={!settingsOpen}
+        ref={sheetRef}
+        tabIndex={-1}
+      >
+        <div className="sheet-head">
+          <h2>Cài đặt</h2>
+          <button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Đóng cài đặt">
+            <Icon name="close" />
+          </button>
+        </div>
+
+        <div className="sheet-body">
+          <section className="group">
+            <h3>Ghép câu</h3>
+            <label className="field">
+              <span>Groq API key</span>
               <input
                 type="password"
                 autoComplete="off"
@@ -437,47 +554,53 @@ export default function Home() {
             </label>
             <label className="check">
               <input type="checkbox" checked={settings.rememberKey} onChange={(e) => update("rememberKey", e.target.checked)} />
-              Ghi nhớ key trên trình duyệt này
+              <span>Ghi nhớ key trên trình duyệt này</span>
             </label>
-            <p className="muted small">
-              Key chỉ được gửi kèm từng yêu cầu ghép câu tới Groq, không lưu trên server. Không có key thì câu được ghép thô.
+            <p className="help">
+              Key chỉ đi kèm từng yêu cầu ghép câu tới Groq, server không lưu. Không có key thì các từ được ghép thô.
             </p>
-            <label>
-              Model Groq
+            <label className="field">
+              <span>Model Groq</span>
               <input value={settings.model} spellCheck={false} onChange={(e) => update("model", e.target.value)} />
             </label>
-            <label>
-              Địa chỉ API dự đoán
-              <input value={settings.apiUrl} spellCheck={false} onChange={(e) => update("apiUrl", e.target.value)} />
-            </label>
-            <fieldset className="speed">
-              <legend>Tốc độ nhận diện</legend>
-              {(Object.keys(SPEED_PRESETS) as Speed[]).map((key) => (
-                <label key={key} className={`speed-option ${settings.speed === key ? "selected" : ""}`}>
-                  <input
-                    type="radio" name="speed" value={key}
-                    checked={settings.speed === key}
-                    onChange={() => update("speed", key)}
-                  />
-                  <span>
-                    <strong>{SPEED_PRESETS[key].label}</strong>
-                    <span className="muted small">{SPEED_PRESETS[key].hint}</span>
-                  </span>
-                </label>
-              ))}
-              <p className="muted small">Nhanh hơn thì kém chính xác hơn. Áp dụng ngay, kể cả khi đang nhận diện; cần server có /api/stream.</p>
+          </section>
+
+          <section className="group">
+            <h3>Nhận diện</h3>
+            <fieldset className="segmented">
+              <legend>Tốc độ</legend>
+              <div
+                className="segmented-track"
+                style={{
+                  "--i": (Object.keys(SPEED_PRESETS) as Speed[]).indexOf(settings.speed),
+                  "--n": Object.keys(SPEED_PRESETS).length,
+                } as React.CSSProperties}
+              >
+                <span className="segmented-thumb" aria-hidden="true" />
+                {(Object.keys(SPEED_PRESETS) as Speed[]).map((key) => (
+                  <label key={key} className={settings.speed === key ? "selected" : ""}>
+                    <input
+                      type="radio" name="speed" value={key}
+                      checked={settings.speed === key}
+                      onChange={() => update("speed", key)}
+                    />
+                    {SPEED_PRESETS[key].label.replace(/\s*\(.*\)/, "")}
+                  </label>
+                ))}
+              </div>
+              <Swap value={settings.speed} className="help">{SPEED_PRESETS[settings.speed].hint}</Swap>
             </fieldset>
             <div className="grid2">
-              <label>
-                Số phiếu để chốt từ
+              <label className="field">
+                <span>Số phiếu để chốt từ</span>
                 <input
                   type="number" min={1} max={6}
                   value={settings.minConsecutive}
                   onChange={(e) => update("minConsecutive", Math.max(1, Math.min(6, Number(e.target.value) || 1)))}
                 />
               </label>
-              <label>
-                Nghỉ tay để kết thúc câu (giây, 0 = tắt)
+              <label className="field">
+                <span>Hạ tay để kết thúc câu (giây)</span>
                 <input
                   type="number" min={0} max={30} step={0.5}
                   value={settings.sentenceGapSeconds}
@@ -485,20 +608,40 @@ export default function Home() {
                 />
               </label>
             </div>
+            <p className="help">Đặt 0 giây để chỉ kết thúc câu bằng nút.</p>
+          </section>
+
+          <section className="group">
+            <h3>Camera và kết nối</h3>
             <label className="check">
               <input type="checkbox" checked={settings.mirrorPreview} onChange={(e) => update("mirrorPreview", e.target.checked)} />
-              Lật gương hình xem trước
+              <span>Lật gương hình xem trước</span>
             </label>
             <label className="check">
               <input type="checkbox" checked={settings.mirrorData} onChange={(e) => update("mirrorData", e.target.checked)} />
-              Lật dữ liệu gửi đi (mirror_data — phải giống lúc thu dữ liệu)
+              <span>Lật ảnh trước khi nhận diện (phải giống lúc thu dữ liệu)</span>
             </label>
-            <button className="link" onClick={() => setSettings({ ...DEFAULT_SETTINGS, groqKey: settings.groqKey, rememberKey: settings.rememberKey })}>
-              Khôi phục mặc định
-            </button>
-          </details>
-        </section>
-      </div>
-    </main>
+            <label className="check">
+              <input type="checkbox" checked={settings.debugCrop} onChange={(e) => update("debugCrop", e.target.checked)} />
+              <span>Hiện khung crop người chính (debug)</span>
+            </label>
+            <label className="field">
+              <span>Địa chỉ API nhận diện</span>
+              <input value={settings.apiUrl} spellCheck={false} onChange={(e) => update("apiUrl", e.target.value)} />
+            </label>
+            {state?.resolution && (
+              <p className="help">
+                Camera: {state.resolution}, pad về 1280×1280. MediaPipe chạy trên trình duyệt
+                {state.delegate ? ` (${state.delegate}${state.detectMs != null ? `, ${state.detectMs} ms/frame` : ""})` : ""}, chỉ gửi landmark lên API.
+              </p>
+            )}
+          </section>
+
+          <button className="link" onClick={() => setSettings({ ...DEFAULT_SETTINGS, groqKey: settings.groqKey, rememberKey: settings.rememberKey })}>
+            Khôi phục mặc định
+          </button>
+        </div>
+      </aside>
+    </div>
   );
 }

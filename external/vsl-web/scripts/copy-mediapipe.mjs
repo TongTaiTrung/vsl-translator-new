@@ -1,4 +1,5 @@
-// Chép WASM của @mediapipe/tasks-vision và 2 model .task dùng ở Python (src/builtin/mediapipe_builtin/models)
+// Chép WASM của @mediapipe/tasks-vision, 2 model .task dùng ở Python và blaze_face_short_range.tflite (cô lập người
+// chính, lib/subject.ts) từ src/builtin/mediapipe_builtin/models
 // vào public/mediapipe/ để trình duyệt chạy đúng cùng model với lúc trích đặc trưng train. Chạy tự động
 // trước `npm run dev` / `npm run build` (predev / prebuild); public/mediapipe/ không commit.
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
@@ -18,7 +19,7 @@ function copy(from, to) {
 }
 
 for (const name of readdirSync(wasmSrc)) copy(join(wasmSrc, name), join(out, "wasm", name));
-for (const name of ["pose_landmarker_full.task", "hand_landmarker.task"]) {
+for (const name of ["pose_landmarker_full.task", "hand_landmarker.task", "blaze_face_short_range.tflite"]) {
   const from = join(modelSrc, name);
   if (!existsSync(from)) throw new Error(`Thiếu model ${from}`);
   copy(from, join(out, name));

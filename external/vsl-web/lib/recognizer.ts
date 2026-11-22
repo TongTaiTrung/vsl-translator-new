@@ -1,8 +1,8 @@
 // Nhận diện liên tục từ webcam: MediaPipe chạy trên trình duyệt, chỉ gửi landmark lên Flask API.
 //
 // - Thu frame ở 15 fps (nhịp lúc thu dữ liệu); cửa sổ dự đoán 30 frame = 2 giây (độ dài một mẫu train).
-// - Mỗi frame được pad về 1280x1280 (giống frame_padding của Python) rồi chạy pose + hand landmarker
-//   (lib/landmarks.ts, chế độ VIDEO giữ tracking giữa các frame). Chỉ landmark (~3 KB JSON/frame) đi lên server,
+// - Mỗi frame chạy pose + hand landmarker trên ảnh crop quanh người chính (lib/subject.ts), toạ độ đổi về canvas
+//   pad 1280x1280 giống frame_padding của Python (lib/landmarks.ts, chế độ VIDEO giữ tracking giữa các frame). Chỉ landmark (~3 KB JSON/frame) đi lên server,
 //   không còn ảnh: server chỉ chạy extract + model, không chạy MediaPipe.
 // - Mở một phiên `POST /api/stream` (phản hồi phải có `landmarks: true`), mỗi frame gửi NGAY khi detect xong
 //   tới `POST /api/stream/<id>` với `predict: false`; mỗi `strideFrames` frame mới bật `predict` → server
@@ -93,6 +93,9 @@ export interface RecognizerOptions {
   mirrorData: boolean;
   /** MediaPipe trên trình duyệt: GPU (WebGL, nhanh) hoặc CPU (WASM). GPU lỗi thì tự về CPU. */
   delegate: Delegate;
+  /** numPoses của PoseLandmarker trên ảnh crop người chính (lib/subject.ts): 1 = tracking ổn định như lúc thu
+   *  dữ liệu, 2 = loại được người đi ngang phía sau. Chỉ áp dụng khi tải MediaPipe (start() đầu tiên). */
+  numPoses: number;
   minConsecutive: number;
   /** <= số này frame có tay: người dùng đang nghỉ. */
   idleHandFrames: number;
@@ -110,6 +113,7 @@ export const DEFAULT_OPTIONS: RecognizerOptions = {
   strideFrames: SPEED_PRESETS.accurate.strideFrames,
   mirrorData: false,
   delegate: "GPU",
+  numPoses: 1,
   minConsecutive: 2,
   idleHandFrames: 3,
   minHandFrames: SPEED_PRESETS.accurate.minHandFrames,
@@ -164,6 +168,7 @@ export class Recognizer {
   private stream: MediaStream | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private detector: LandmarkDetector | null = null;
+  private debugCanvas: HTMLCanvasElement | null = null;
   /** Các frame (landmark) chưa gửi lên server. */
   private buffer: Frame[] = [];
   /** Số frame thu được từ lần dự đoán trước. */
@@ -233,7 +238,8 @@ export class Recognizer {
     this.emit({ phase: "starting", error: null });
     if (!this.detector) {
       try {
-        this.detector = await LandmarkDetector.create(this.options.delegate);
+        this.detector = await LandmarkDetector.create(this.options.delegate, this.options.numPoses);
+        this.detector.setDebugCanvas(this.debugCanvas);
       } catch (err) {
         this.emit({ phase: "stopped", error: `Không tải được MediaPipe: ${(err as Error).message}` });
         return;
@@ -282,6 +288,12 @@ export class Recognizer {
     this.idleSince = null;
     this.emitWords();
     return words;
+  }
+
+  /** Bật (canvas overlay phủ lên <video>) / tắt (null) vẽ khung crop người chính để kiểm tra. */
+  setDebugCanvas(canvas: HTMLCanvasElement | null): void {
+    this.debugCanvas = canvas;
+    this.detector?.setDebugCanvas(canvas);
   }
 
   /** Giải phóng MediaPipe (khi gỡ component); start() sau đó sẽ tải lại. */

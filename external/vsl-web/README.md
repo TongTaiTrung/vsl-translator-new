@@ -29,8 +29,16 @@ hoặc ngay trong phần Cài đặt.
 
 - Webcam mở ở độ phân giải 16:9 lớn nhất (giống `src/features/camera.py`).
 - **MediaPipe chạy trên trình duyệt** (`lib/landmarks.ts`, `@mediapipe/tasks-vision` cùng phiên bản 1.1.1 với
-  MediaPipe Python, chế độ VIDEO, đúng 2 file model `.task` của `src/builtin/mediapipe_builtin/models`).
-  Trước khi detect, mỗi frame được vẽ vào canvas **1280×1280** giống hệt `src/features/frame.py:frame_padding`
+  MediaPipe Python, chế độ VIDEO, đúng 2 file model `.task` của `src/builtin/mediapipe_builtin/models`, thêm
+  `blaze_face_short_range.tflite`).
+  **Chỉ nhận diện người chính** (`lib/subject.ts`, `MainSubjectIsolator`): FaceDetector chạy mỗi 4 frame, chọn mặt
+  to và gần giữa khung nhất (bỏ mặt rộng < 5% khung), nội suy khung crop đầu + thân trên + sải tay, làm mượt EMA;
+  không thấy mặt thì dùng vùng giữa khung. Pose + hand chạy trên ảnh crop đó (cạnh dài ≤ 512 px); tay (tối đa 4)
+  được khoá theo cổ tay của pose chính (trong 0.45 × bề rộng vai), các tay khác bị bỏ. `numPoses` mặc định 1
+  (`RecognizerOptions.numPoses`, 2 để loại cả người đi ngang phía sau trong vùng crop). Bật "Hiện khung crop người
+  chính (debug)" trong Cài đặt để xem khung: liền = khung đã làm mượt, đứt = vùng thực đưa vào model, xanh dương = mặt
+  (xanh lá = đã khoá mặt, cam = vùng mặc định).
+  Toạ độ crop được đổi về canvas **1280×1280** giống hệt `src/features/frame.py:frame_padding`
   (scale đều cho cạnh dài = 1280, đặt giữa, nền đen; lật gương trước nếu bật "Lật ảnh trước khi nhận diện")
   để toạ độ landmark chuẩn hoá cùng tỉ lệ như lúc trích đặc trưng train. Chỉ landmark (pose 33 điểm, 0–2 tay
   21 điểm + world landmark, ~2.7 KB JSON/frame) được gửi lên API, không gửi ảnh; server chỉ chạy `extract` và

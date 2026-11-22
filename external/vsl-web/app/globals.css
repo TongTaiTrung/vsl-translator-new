@@ -26,8 +26,10 @@
   color-scheme: light;
 }
 
+/* Chế độ tối: theo hệ thống, trừ khi người dùng đã chọn (data-theme trên <html>, đặt bởi script trong
+ * layout.tsx trước khi vẽ để không nháy màu). Hai khối giống nhau: một cho hệ thống, một cho lựa chọn. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0d1512;
     --surface: #131d19;
     --ink: #e4ece8;
@@ -42,6 +44,22 @@
     --frame: #070c0a;
     color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d1512;
+  --surface: #131d19;
+  --ink: #e4ece8;
+  --muted: #8d9b96;
+  --faint: #5d6a65;
+  --line: #22302b;
+  --jade: #2fb394;
+  --jade-ink: #06120e;
+  --celadon: #183129;
+  --amber: #e6a649;
+  --danger: #e0735f;
+  --frame: #070c0a;
+  color-scheme: dark;
 }
 
 *,
@@ -247,6 +265,29 @@ p {
   height: 16px;
 }
 
+/* Nút sáng/tối: giao diện sáng hiện mặt trăng (bấm để tối), giao diện tối hiện mặt trời. */
+.theme-toggle .theme-sun {
+  display: none;
+}
+
+:root[data-theme="dark"] .theme-toggle .theme-sun {
+  display: block;
+}
+
+:root[data-theme="dark"] .theme-toggle .theme-moon {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-toggle .theme-sun {
+    display: block;
+  }
+
+  :root:not([data-theme="light"]) .theme-toggle .theme-moon {
+    display: none;
+  }
+}
+
 /* ------------------------------------------------------------------ bố cục chính */
 
 .workspace {
@@ -298,6 +339,24 @@ p {
 
 .frame video.mirror {
   transform: scaleX(-1);
+}
+
+/* Khung crop người chính (lib/subject.ts) khi bật debug: liền = smoothBox, đứt = vùng thực đưa vào model, xanh dương = mặt. */
+.debug-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.debug-overlay.mirror {
+  transform: scaleX(-1);
+}
+
+.frame.phase-stopped .debug-overlay,
+.frame.phase-starting .debug-overlay {
+  display: none;
 }
 
 /* Bốn góc ngắm: thở khi chờ, siết lại khi đang ký. */

@@ -86,6 +86,19 @@ class SentenceTests(unittest.TestCase):
         self.assertEqual(format_labels(words), "xin chào | toi | ten_la | [đánh vần: T-R-U-N-G]")
         self.assertEqual(naive_sentence(words), "Xin chào tôi tên là Trung")
 
+    def test_tone_marks_join_spelling_group(self):
+        words = ["m", "i", "n", "h", "b", "i", "dấu nặng", "n", "g", "u"]
+        self.assertEqual(format_labels(words), "[đánh vần: M-I-N-H-B-I-(dấu nặng)-N-G-U]")
+        self.assertEqual(naive_sentence(words), "Minh bị ngu")
+        self.assertEqual(naive_sentence(["xin chào", "toi", *words]), "Xin chào tôi Minh bị ngu")
+        self.assertIn("Minh bị ngu", build_system_prompt())
+
+    def test_fallback_splits_syllables_and_places_tone(self):
+        self.assertEqual(naive_sentence(["h", "o", "a", "dấu huyền"]), "Hòa")
+        self.assertEqual(naive_sentence(["t", "o", "a", "n", "dấu sắc", "h", "o", "c", "dấu nặng"]), "Toán học")
+        self.assertEqual(naive_sentence(list("anhem")), "Anh em")
+        self.assertEqual(naive_sentence(list("xyz")), "Xyz")
+
     def test_system_prompt_contains_glossary(self):
         prompt = build_system_prompt({"toi": "tôi"})
         self.assertIn('"toi" = "tôi"', prompt)

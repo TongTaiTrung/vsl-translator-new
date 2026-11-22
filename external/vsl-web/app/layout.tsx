@@ -11,7 +11,7 @@ const sans = Be_Vietnam_Pro({
 });
 
 export const metadata: Metadata = {
-  title: "VSL Translator — Phiên dịch ngôn ngữ ký hiệu",
+  title: "UrSound — Phiên dịch ngôn ngữ ký hiệu",
   description: "Phiên dịch ngôn ngữ ký hiệu Việt Nam từ webcam thành câu hoàn chỉnh, theo thời gian thực.",
 };
 

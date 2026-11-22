@@ -324,7 +324,7 @@ export default function Home() {
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true"><i /><i /></span>
-          <span className="brand-name">VSL Translator</span>
+          <span className="brand-name">UrSound</span>
         </div>
         <div className="topbar-right">
           <span className={`health ${health?.ok ? "ok" : health ? "bad" : "wait"}`} title={health?.checkpoint}>

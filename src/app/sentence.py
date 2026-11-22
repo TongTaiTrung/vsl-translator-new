@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import threading
+import unicodedata
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Sequence
 
@@ -27,9 +28,18 @@ Bạn là bộ hậu xử lý của hệ thống dịch Ngôn ngữ Ký hiệu V
 ĐẦU VÀO là chuỗi NHÃN THÔ do mô hình nhận dạng ký hiệu đưa ra, đúng thứ tự người dùng ký, ngăn cách bởi " | ".
 Đặc điểm của nhãn thô:
 - Có thể viết không dấu hoặc dùng "_" thay khoảng trắng. Bảng chú giải bên dưới cho biết nghĩa của các nhãn đã biết.
-- Mục dạng "[đánh vần: T-R-U-N-G]" là các chữ cái đánh vần bằng ngón tay liên tiếp. Ghép chúng thành MỘT từ, \
-thường là tên riêng hoặc từ chưa có ký hiệu riêng (ví dụ T-R-U-N-G → "Trung"). Viết hoa chữ đầu nếu là tên riêng. \
-Chỉ thêm dấu thanh khi chắc chắn đó là tên/từ tiếng Việt phổ biến; nếu không, giữ nguyên các chữ cái.
+- Mục dạng "[đánh vần: ...]" là các chữ cái đánh vần bằng ngón tay liên tiếp, dùng cho tên riêng hoặc từ \
+chưa có ký hiệu riêng (ví dụ T-R-U-N-G → "Trung").
+- Trong mục đánh vần có thể có DẤU THANH dạng "(dấu sắc)", "(dấu huyền)", "(dấu hỏi)", "(dấu ngã)", "(dấu nặng)". \
+Dấu thanh được ký NGAY SAU các chữ cái của âm tiết nó thuộc về: đặt dấu đó lên âm tiết đứng liền trước, đúng vị trí \
+theo chính tả tiếng Việt (B-I-(dấu nặng) → "bị", T-O-A-N-(dấu sắc) → "toán"). Dấu thanh cũng là dấu hiệu kết thúc \
+một âm tiết.
+- MỘT mục đánh vần có thể chứa NHIỀU âm tiết/từ viết liền, không có ký hiệu ngăn cách. Hãy tách chuỗi chữ cái thành \
+các âm tiết tiếng Việt hợp lệ sao cho ghép lại có nghĩa nhất (ví dụ M-I-N-H-B-I-(dấu nặng)-N-G-U → "Minh bị ngu"). \
+Viết hoa chữ đầu của tên riêng; các từ thường viết thường.
+- BẮT BUỘC giữ mọi dấu thanh đã được ký, kể cả khi bỏ dấu cũng ra một tên/từ có thật (H-O-A-(dấu huyền) là "Hòa", \
+không phải "Hoa"). Âm tiết không có dấu thanh đi kèm thì giữ thanh ngang, trừ khi chắc chắn đó là tên/từ tiếng Việt \
+phổ biến bị thiếu dấu.
 - Ngữ pháp ký hiệu khác tiếng Việt nói: thường lược hư từ, trợ từ và từ "là", có thể đưa chủ đề lên trước, \
 từ để hỏi thường đứng cuối.
 - Mô hình nhận dạng đôi khi lặp nhãn; bỏ những lần lặp không có nghĩa.
@@ -51,13 +61,91 @@ Nhãn: toi | địa chỉ
 Kết quả: Địa chỉ của tôi
 Nhãn: cảm ơn | cảm ơn
 Kết quả: Cảm ơn.
+Nhãn: [đánh vần: M-I-N-H-B-I-(dấu nặng)-N-G-U]
+Kết quả: Minh bị ngu.
 """
 
 _THINK_RE = re.compile(r"<think>.*?(</think>|$)", re.DOTALL | re.IGNORECASE)
 
 
+# Nhãn dấu thanh ký trong lúc đánh vần → dấu kết hợp Unicode tương ứng.
+TONE_MARKS: dict[str, str] = {
+    "dấu sắc": "\u0301",
+    "dấu huyền": "\u0300",
+    "dấu hỏi": "\u0309",
+    "dấu ngã": "\u0303",
+    "dấu nặng": "\u0323",
+}
+_VOWELS = set("aăâeêioôơuưy")
+
+
 def _is_letter(label: str) -> bool:
     return len(label) == 1 and label.isalpha()
+
+
+def _is_tone(label: str) -> bool:
+    return unicodedata.normalize("NFC", label).strip().lower() in TONE_MARKS
+
+
+def _spell_token(label: str) -> str:
+    if _is_tone(label):
+        return f"({unicodedata.normalize('NFC', label).strip().lower()})"
+    return label.upper()
+
+
+# Âm tiết tiếng Việt (chưa dấu thanh): phụ âm đầu + 1–3 nguyên âm + phụ âm cuối. Dùng để tách chữ đánh vần liền nhau.
+_SYLLABLE_RE = re.compile(
+    r"^(ngh|ng|gh|gi|kh|nh|ph|th|tr|ch|qu|[bcdđghklmnprstvx])?([aăâeêioôơuưy]{1,3})(ng|nh|ch|[cmnpt])?$")
+_MAX_SYLLABLE = 7  # "nghiêng"
+
+
+def _split_syllables(run: str) -> list[str]:
+    """Tách chuỗi chữ cái liền thành ít âm tiết hợp lệ nhất (ưu tiên âm tiết trước dài hơn); không tách được thì giữ nguyên."""
+    best: list[list[str] | None] = [[]] + [None] * len(run)
+    for end in range(1, len(run) + 1):
+        for start in range(end - 1, max(0, end - _MAX_SYLLABLE) - 1, -1):
+            prev = best[start]
+            if prev is not None and _SYLLABLE_RE.match(run[start:end]):
+                if best[end] is None or len(prev) + 1 < len(best[end]):
+                    best[end] = prev + [run[start:end]]
+    return best[-1] or [run]
+
+
+def _apply_tone(syllable: str, mark: str) -> str:
+    """Đặt dấu thanh lên đúng nguyên âm theo chính tả (kiểu cũ: hòa, thúy)."""
+    match = _SYLLABLE_RE.match(syllable)
+    if not match:
+        idx = max((i for i, c in enumerate(syllable) if c in _VOWELS), default=-1)
+        return unicodedata.normalize("NFC", syllable[:idx + 1] + mark + syllable[idx + 1:]) if idx >= 0 else syllable
+    onset, vowels, coda = (g or "" for g in match.groups())
+    special = [i for i, c in enumerate(vowels) if c in "ăâêôơư"]
+    if special:
+        pos = special[-1]
+    elif coda:
+        pos = len(vowels) - 1
+    else:
+        pos = 1 if len(vowels) == 3 else 0
+    vowels = unicodedata.normalize("NFC", vowels[:pos + 1] + mark + vowels[pos + 1:])
+    return onset + vowels + coda
+
+
+def _spelled_text(items: Sequence[str]) -> str:
+    """Câu dự phòng cho một nhóm đánh vần: tách âm tiết và đặt dấu thanh lên âm tiết ngay trước dấu."""
+    words: list[str] = []
+    run = ""
+    for item in items:
+        if not _is_tone(item):
+            run += item.lower()
+            continue
+        if run:
+            syllables = _split_syllables(run)
+            syllables[-1] = _apply_tone(syllables[-1], TONE_MARKS[unicodedata.normalize("NFC", item).strip().lower()])
+            words += syllables
+            run = ""
+    if run:
+        words += _split_syllables(run)
+    text = " ".join(words)
+    return text[:1].upper() + text[1:]
 
 
 def label_text(label: str, glossary: Mapping[str, str] = DEFAULT_GLOSSARY) -> str:
@@ -70,10 +158,10 @@ def build_system_prompt(glossary: Mapping[str, str] = DEFAULT_GLOSSARY) -> str:
 
 
 def group_labels(words: Sequence[str]) -> list[str | list[str]]:
-    """Gom các chữ cái đơn liên tiếp (đánh vần) thành một nhóm."""
+    """Gom các chữ cái đơn liên tiếp (đánh vần) thành một nhóm; dấu thanh ngay sau chữ cái thuộc nhóm đó."""
     groups: list[str | list[str]] = []
     for word in words:
-        if _is_letter(word):
+        if _is_letter(word) or (_is_tone(word) and groups and isinstance(groups[-1], list)):
             if groups and isinstance(groups[-1], list):
                 groups[-1].append(word)
             else:
@@ -85,7 +173,7 @@ def group_labels(words: Sequence[str]) -> list[str | list[str]]:
 
 def format_labels(words: Sequence[str]) -> str:
     return " | ".join(
-        f"[đánh vần: {'-'.join(letter.upper() for letter in item)}]" if isinstance(item, list) else item
+        f"[đánh vần: {'-'.join(_spell_token(letter) for letter in item)}]" if isinstance(item, list) else item
         for item in group_labels(words)
     )
 
@@ -93,7 +181,7 @@ def format_labels(words: Sequence[str]) -> str:
 def naive_sentence(words: Sequence[str], glossary: Mapping[str, str] = DEFAULT_GLOSSARY) -> str:
     """Câu dự phòng khi không gọi được LLM: dịch nhãn theo chú giải và ghép chữ cái."""
     parts = [
-        "".join(item).capitalize() if isinstance(item, list) else label_text(item, glossary)
+        _spelled_text(item) if isinstance(item, list) else label_text(item, glossary)
         for item in group_labels(words)
     ]
     text = " ".join(parts).strip()

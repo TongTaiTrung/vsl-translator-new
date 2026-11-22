@@ -13,7 +13,9 @@ Endpoint:
         "top_k": 3             # tuỳ chọn
       }
 
-  Thay cho ``frames`` có thể gửi ``features``: mảng ``(frames, FEATURE_DIM)`` feature thô đã trích.
+  Thay cho ``frames`` có thể gửi ``landmarks`` (landmark MediaPipe client đã chạy trên frame pad 1280x1280,
+  định dạng ở ``src/features/landmarks.py``; ``mirror_data`` khi đó bị bỏ qua vì client tự lật ảnh) hoặc
+  ``features``: mảng ``(frames, FEATURE_DIM)`` feature thô đã trích.
 
   Trả về dict của ``VSLPredictor.predict_raw`` (``label``, ``confidence``, ``probability_gap``,
   ``accepted``, ``rejection_reason``, ``top``) cộng ``frames``, ``hand_frames`` (số frame có tay
@@ -23,8 +25,9 @@ Endpoint:
 Luồng liên tục (nhanh hơn nhiều): mỗi client mở một phiên giữ landmarker MediaPipe và cửa sổ feature
 ``expected_frames`` frame trên server, mỗi request chỉ gửi các frame MỚI nên chỉ phải trích chừng đó frame:
 
-- ``POST   /api/stream``        → ``{"session_id", "window", "binary": true}`` (201). 503 khi đã đủ số phiên.
-  ``binary`` báo server nhận multipart và cờ ``predict`` bên dưới.
+- ``POST   /api/stream``        → ``{"session_id", "window", "binary": true, "landmarks": true}`` (201). 503 khi
+  đã đủ số phiên. ``binary`` báo server nhận multipart và cờ ``predict`` bên dưới; ``landmarks`` báo server nhận
+  landmark thay cho ảnh.
 - ``POST   /api/stream/<id>``   → JSON body::
 
       {
@@ -40,6 +43,9 @@ Luồng liên tục (nhanh hơn nhiều): mỗi client mở một phiên giữ l
   Hoặc ``multipart/form-data`` (nhanh hơn: ảnh nhị phân, không base64, trình duyệt không phải gửi
   preflight CORS): mỗi frame là một phần ``frames`` (JPEG/PNG, đúng thứ tự), các tuỳ chọn còn lại nằm
   trong phần ``meta`` dạng chuỗi JSON như trên (không có ``frames``).
+
+  Hoặc JSON có ``landmarks`` thay cho ``frames`` (1–60 frame landmark, như ``/api/predict``): server không chạy
+  MediaPipe (phiên chỉ tạo landmarker khi nhận ảnh) nên mỗi request chỉ còn ``extract`` + model.
 
   Client nhanh nhất gửi từng frame ngay khi thu (``predict: false``) để server trích feature dần, và chỉ
   bật ``predict`` mỗi vài frame: request dự đoán khi đó chỉ còn phải trích 1 frame rồi chạy model.
@@ -78,6 +84,7 @@ from werkzeug.serving import WSGIRequestHandler
 from src.builtin.mediapipe_builtin import LandmarkerLoader, VisionRunningMode
 from src.features.extract import FEATURE_DIM, active_presence, extract
 from src.features.frame import frame_padding
+from src.features.landmarks import dict_to_results
 from src.features.schema import EXPECTED_FRAMES
 from src.model.predict import VSLPredictor
 
@@ -147,15 +154,38 @@ def extract_features(frames_bgr: list[np.ndarray], *, fps: float, mirror_data: b
         _close_later(extractor)
 
 
-class StreamSession:
-    """Phiên của một client: extractor giữ tracking MediaPipe + cửa sổ feature trượt."""
+def landmarks_to_features(frames) -> np.ndarray:
+    """Landmark JSON của từng frame (MediaPipe chạy ở client) → feature thô ``(len(frames), FEATURE_DIM)``."""
+    try:
+        return np.stack([extract(*dict_to_results(frame)) for frame in frames])
+    except ValueError as exc:
+        raise BadRequest(f"Landmark không hợp lệ: {exc}") from None
 
-    def __init__(self, extractor, window: int) -> None:
-        self.extractor = extractor
+
+class StreamSession:
+    """Phiên của một client: extractor giữ tracking MediaPipe + cửa sổ feature trượt.
+
+    Extractor (landmarker MediaPipe, nặng) chỉ được tạo khi phiên nhận ảnh; phiên gửi landmark không cần nó.
+    """
+
+    def __init__(self, factory, window: int) -> None:
+        self._factory = factory
+        self._extractor = None
         self.features: deque[np.ndarray] = deque(maxlen=window)
         self.last_timestamp = -1
         self.lock = threading.Lock()          # mỗi phiên xử lý tuần tự (tracking phụ thuộc thứ tự frame)
         self.touched = time.monotonic()
+
+    @property
+    def extractor(self):
+        if self._extractor is None:
+            self._extractor = self._factory()
+        return self._extractor
+
+    def close(self) -> None:
+        if self._extractor is not None:
+            _close_later(self._extractor)
+            self._extractor = None
 
     def next_timestamps(self, timestamps, count: int, fps: float) -> list[int]:
         """Timestamp ms tăng ngặt cho ``count`` frame mới (VIDEO mode bắt buộc)."""
@@ -187,7 +217,7 @@ class StreamStore:
         now = time.monotonic()
         for sid, session in list(self._sessions.items()):
             if now - session.touched > self.idle_s and not session.lock.locked():
-                _close_later(self._sessions.pop(sid).extractor)
+                self._sessions.pop(sid).close()
 
     def open(self) -> str | None:
         with self._lock:
@@ -195,7 +225,7 @@ class StreamStore:
             if len(self._sessions) >= self.max_sessions:
                 return None
             sid = secrets.token_urlsafe(12)
-            self._sessions[sid] = StreamSession(self.factory(), self.window)
+            self._sessions[sid] = StreamSession(self.factory, self.window)
             return sid
 
     def get(self, sid: str) -> StreamSession | None:
@@ -210,7 +240,7 @@ class StreamStore:
         with self._lock:
             session = self._sessions.pop(sid, None)
         if session is not None:
-            _close_later(session.extractor)
+            session.close()
         return session is not None
 
 
@@ -274,8 +304,9 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
         if expected_frames is not None and n != expected_frames:
             raise BadRequest(f"Cần đúng {expected_frames} frame, nhận {n}")
 
-    def stream_body() -> tuple[dict, list[np.ndarray]]:
-        """Body của /api/stream/<id>: JSON (frame base64) hoặc multipart (frame nhị phân + ``meta`` JSON)."""
+    def stream_body() -> tuple[dict, list[np.ndarray] | None, np.ndarray | None]:
+        """Body của /api/stream/<id>: ``(body, ảnh, None)`` cho JSON (frame base64) hoặc multipart (frame nhị
+        phân + ``meta`` JSON); ``(body, None, feature thô)`` cho JSON ``landmarks``."""
         if request.mimetype == "multipart/form-data":
             try:
                 body = json.loads(request.form.get("meta") or "{}")
@@ -286,12 +317,17 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
             files = request.files.getlist("frames")
             if not 1 <= len(files) <= MAX_STREAM_FRAMES:
                 raise BadRequest(f"'frames' phải là mảng 1–{MAX_STREAM_FRAMES} ảnh")
-            return body, [decode_image(f.read()) for f in files]
+            return body, [decode_image(f.read()) for f in files], None
         body = json_body()
+        if "landmarks" in body:
+            landmarks = body["landmarks"]
+            if not isinstance(landmarks, list) or not 1 <= len(landmarks) <= MAX_STREAM_FRAMES:
+                raise BadRequest(f"'landmarks' phải là mảng 1–{MAX_STREAM_FRAMES} frame")
+            return body, None, landmarks_to_features(landmarks)
         frames = body.get("frames")
         if not isinstance(frames, list) or not 1 <= len(frames) <= MAX_STREAM_FRAMES:
             raise BadRequest(f"'frames' phải là mảng 1–{MAX_STREAM_FRAMES} ảnh base64")
-        return body, [decode_frame(f) for f in frames]
+        return body, [decode_frame(f) for f in frames], None
 
     @app.after_request
     def allow_cors(response):
@@ -333,6 +369,12 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
                 raise BadRequest("'frames' phải là mảng ảnh base64")
             check_count(len(frames), "frames")
             features = feature_extractor([decode_frame(f) for f in frames], fps=fps, mirror_data=mirror_data)
+        elif "landmarks" in body:
+            landmarks = body["landmarks"]
+            if not isinstance(landmarks, list):
+                raise BadRequest("'landmarks' phải là mảng frame landmark")
+            check_count(len(landmarks), "landmarks")
+            features = landmarks_to_features(landmarks)
         elif "features" in body:
             try:
                 features = np.asarray(body["features"], dtype=np.float32)
@@ -342,7 +384,7 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
                 raise BadRequest(f"'features' phải có shape (frames, {FEATURE_DIM}), nhận {features.shape}")
             check_count(features.shape[0], "features")
         else:
-            raise BadRequest("Thiếu 'frames' (hoặc 'features')")
+            raise BadRequest("Thiếu 'frames' (hoặc 'landmarks' / 'features')")
 
         result = run_model(features, top_k)
         result.update(frames=int(features.shape[0]), hand_frames=count_hand_frames(features),
@@ -356,8 +398,8 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
         sid = streams.open()
         if sid is None:
             return jsonify(error=f"Server đã đủ {streams.max_sessions} phiên, thử lại sau"), 503
-        # binary: server nhận multipart + cờ predict (client cũ bỏ qua trường này).
-        return jsonify(session_id=sid, window=streams.window, binary=True), 201
+        # binary: server nhận multipart + cờ predict; landmarks: nhận landmark thay ảnh (client cũ bỏ qua).
+        return jsonify(session_id=sid, window=streams.window, binary=True, landmarks=True), 201
 
     @app.route("/api/stream/<sid>", methods=["POST", "DELETE", "OPTIONS"])
     def stream_frames(sid: str):
@@ -367,14 +409,15 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
             streams.close(sid)
             return "", 204
         started = time.perf_counter()
-        body, decoded = stream_body()                     # lỗi ảnh → 400 trước khi đụng vào phiên
+        body, decoded, given = stream_body()              # lỗi ảnh/landmark → 400 trước khi đụng vào phiên
+        count = len(decoded) if decoded is not None else len(given)
         fps, mirror_data, top_k = _parse_options(body, default_mirror_data)
         timestamps = body.get("timestamps")
         if timestamps is not None and (
-            not isinstance(timestamps, list) or len(timestamps) != len(decoded)
+            not isinstance(timestamps, list) or len(timestamps) != count
             or not all(isinstance(t, (int, float)) and not isinstance(t, bool) and np.isfinite(t) for t in timestamps)
         ):
-            raise BadRequest("'timestamps' phải là mảng số, cùng độ dài với 'frames'")
+            raise BadRequest("'timestamps' phải là mảng số, cùng độ dài với 'frames'/'landmarks'")
         reset, predict_now = body.get("reset", False), body.get("predict", True)
         if not isinstance(reset, bool) or not isinstance(predict_now, bool):
             raise BadRequest("reset/predict phải là true/false")
@@ -387,8 +430,11 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
         with session.lock:
             if reset:
                 session.features.clear()
-            for frame, ts in zip(decoded, session.next_timestamps(timestamps, len(decoded), fps)):
-                session.features.append(session.extractor.extract(frame, timestamp_ms=ts, mirror_data=mirror_data))
+            if given is not None:
+                session.features.extend(given)              # MediaPipe đã chạy ở client
+            else:
+                for frame, ts in zip(decoded, session.next_timestamps(timestamps, count, fps)):
+                    session.features.append(session.extractor.extract(frame, timestamp_ms=ts, mirror_data=mirror_data))
             session.touched = time.monotonic()
             buffered = len(session.features)
             recent = np.stack(list(session.features)[-window_size:])

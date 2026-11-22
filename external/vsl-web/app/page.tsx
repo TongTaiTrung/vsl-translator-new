@@ -97,7 +97,7 @@ async function composeSentence(words: string[], settings: Settings): Promise<Sen
 
 const PHASE_TEXT: Record<Phase, string> = {
   stopped: "Camera đang tắt",
-  starting: "Đang mở camera",
+  starting: "Đang tải MediaPipe, mở camera",
   buffering: "Đang chuẩn bị",
   idle: "Đưa tay lên để ký",
   entering: "Đang vào ký hiệu",
@@ -214,7 +214,7 @@ export default function Home() {
       onSentenceEnd: (words) => void finishSentence(words),
     });
     recognizerRef.current = recognizer;
-    return () => recognizer.stop();
+    return () => recognizer.dispose();
   }, [updateCurrent, finishSentence]);
 
   // Nạp cài đặt đã lưu (chỉ chạy trên trình duyệt).
@@ -371,7 +371,7 @@ export default function Home() {
                   <Swap value={phase}>{PHASE_TEXT[phase]}</Swap>
                 </div>
                 {state?.latencyMs != null && (
-                  <span className="hud-latency" title={state.mode === "stream" ? "Luồng liên tục" : "Gửi cả cửa sổ (server cũ)"}>
+                  <span className="hud-latency" title={`Từ lúc chụp frame tới lúc có kết quả; MediaPipe ${state.delegate ?? ""} trên trình duyệt ${state.detectMs ?? "–"} ms/frame`}>
                     {state.latencyMs} ms
                   </span>
                 )}
@@ -610,13 +610,18 @@ export default function Home() {
             </label>
             <label className="check">
               <input type="checkbox" checked={settings.mirrorData} onChange={(e) => update("mirrorData", e.target.checked)} />
-              <span>Lật ảnh gửi đi (phải giống lúc thu dữ liệu)</span>
+              <span>Lật ảnh trước khi nhận diện (phải giống lúc thu dữ liệu)</span>
             </label>
             <label className="field">
               <span>Địa chỉ API nhận diện</span>
               <input value={settings.apiUrl} spellCheck={false} onChange={(e) => update("apiUrl", e.target.value)} />
             </label>
-            {state?.resolution && <p className="help">Camera: {state.resolution}{state.mode ? `, chế độ ${state.mode}` : ""}</p>}
+            {state?.resolution && (
+              <p className="help">
+                Camera: {state.resolution}, pad về 1280×1280. MediaPipe chạy trên trình duyệt
+                {state.delegate ? ` (${state.delegate}${state.detectMs != null ? `, ${state.detectMs} ms/frame` : ""})` : ""}, chỉ gửi landmark lên API.
+              </p>
+            )}
           </section>
 
           <button className="link" onClick={() => setSettings({ ...DEFAULT_SETTINGS, groqKey: settings.groqKey, rememberKey: settings.rememberKey })}>

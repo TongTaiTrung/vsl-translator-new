@@ -9,7 +9,8 @@ import cv2
 import numpy as np
 
 from src.app.server import create_app
-from src.features.extract import _PALM_Y, FEATURE_DIM, REST_Y, SEQ_FEATURE_DIM
+from src.features.extract import _PALM_Y, FEATURE_DIM, REST_Y, SEQ_FEATURE_DIM, active_presence, extract
+from src.features.landmarks import dict_to_results, results_to_dict
 from src.model.predict import VSLPredictor
 from src.model.training import Config, Normalizer, VSLNet, default_groups, save_ensemble
 
@@ -19,6 +20,45 @@ def encode_frame(frame: np.ndarray, data_url: bool = True) -> str:
     assert ok
     text = base64.b64encode(buffer.tobytes()).decode()
     return f"data:image/jpeg;base64,{text}" if data_url else text
+
+
+def fake_landmarks(hand: bool = True, seed: int = 0) -> dict:
+    """Landmark một frame: người đứng giữa khung (vai rộng 0.2), có/không một tay giơ trước ngực."""
+    rng = np.random.default_rng(seed)
+    pose = np.column_stack([rng.uniform(0.4, 0.6, 33), rng.uniform(0.2, 0.4, 33), rng.uniform(-0.1, 0.1, 33),
+                            np.ones(33)])
+    pose[11, :2], pose[12, :2] = (0.6, 0.5), (0.4, 0.5)          # vai trái / phải
+    pose[23, :2], pose[24, :2] = (0.57, 0.9), (0.43, 0.9)        # hông
+    pose[13, :2], pose[15, :2] = (0.65, 0.7), (0.58, 0.55)       # khuỷu, cổ tay trái
+    pose[14, :2], pose[16, :2] = (0.35, 0.7), (0.3, 0.85)
+    out = {"pose": pose.tolist(), "hands": [], "hands_world": []}
+    if hand:
+        img = np.column_stack([0.58 + rng.uniform(-0.04, 0.04, 21), 0.5 + rng.uniform(-0.06, 0.0, 21),
+                               rng.uniform(-0.02, 0.02, 21)])
+        img[0] = (0.58, 0.55, 0.0)                               # cổ tay trùng cổ tay pose
+        out["hands"] = [img.tolist()]
+        out["hands_world"] = [((img - img[0]) * 0.4).tolist()]
+    return out
+
+
+class LandmarkTests(unittest.TestCase):
+    def test_round_trip_and_extract(self):
+        frame = fake_landmarks()
+        pose_res, hand_res = dict_to_results(frame)
+        self.assertEqual(results_to_dict(pose_res, hand_res), frame)
+        feature = extract(pose_res, hand_res)
+        self.assertEqual(feature.shape, (FEATURE_DIM,))
+        self.assertEqual(active_presence(feature).tolist(), [True, False])
+        self.assertTrue(np.isnan(extract(*dict_to_results({"pose": None, "hands": []}))).all())
+
+    def test_rejects_malformed_frames(self):
+        good = fake_landmarks()
+        bad = [[], {"pose": good["pose"][:32]}, {"pose": [[0, 0, float("nan"), 1]] * 33},
+               {"pose": None, "hands": good["hands"] * 3}, {"pose": None, "hands": [[[0, 0]] * 21]},
+               {**good, "hands_world": []}, {"pose": "x"}]
+        for frame in bad:
+            with self.subTest(frame=str(frame)[:40]), self.assertRaises(ValueError):
+                dict_to_results(frame)
 
 
 class ServerTests(unittest.TestCase):
@@ -82,6 +122,16 @@ class ServerTests(unittest.TestCase):
         response = self.client.post("/api/predict", json={"features": np.zeros((30, FEATURE_DIM)).tolist()})
         self.assertEqual(response.status_code, 200, response.get_json())
         self.assertEqual(self.calls, [])
+
+    def test_predict_accepts_landmarks(self):
+        landmarks = [fake_landmarks(hand=i % 3 != 0, seed=i) for i in range(30)]
+        response = self.client.post("/api/predict", json={"landmarks": landmarks, "mirror_data": True})
+        self.assertEqual(response.status_code, 200, response.get_json())
+        body = response.get_json()
+        self.assertEqual((body["frames"], body["hand_frames"]), (30, 20))
+        self.assertEqual(self.calls, [])                          # không chạy MediaPipe trên server
+        for bad in ([fake_landmarks()] * 29, [{"pose": [[0, 0, 0]] * 33}] * 30, "x"):
+            self.assertEqual(self.client.post("/api/predict", json={"landmarks": bad}).status_code, 400)
 
     def test_rejects_bad_requests(self):
         good = encode_frame(self.frame)
@@ -230,6 +280,23 @@ class StreamTests(unittest.TestCase):
                 response = self.client.post(f"/api/stream/{sid}", data=data, content_type="multipart/form-data")
                 self.assertEqual(response.status_code, 400)
 
+    def test_landmark_frames_skip_server_mediapipe(self):
+        response = self.client.post("/api/stream")
+        self.assertTrue(response.get_json()["landmarks"])
+        sid = response.get_json()["session_id"]
+        send = lambda frames, **extra: self.client.post(f"/api/stream/{sid}", json={"landmarks": frames, **extra})
+        body = send([fake_landmarks(seed=i) for i in range(29)], predict=False).get_json()
+        self.assertEqual((body["ready"], body["buffered"], body["hand_frames"]), (False, 29, 29))
+        body = send([fake_landmarks(hand=False)], timestamps=[123.0]).get_json()
+        self.assertEqual((body["predicted"], body["frames"], body["hand_frames"]), (True, 30, 29))
+        self.assertIn(body["label"], ("xin chào", "cảm ơn"))
+        body = send([fake_landmarks(hand=False)] * 2, reset=True, window=10).get_json()
+        self.assertEqual((body["ready"], body["buffered"], body["hand_frames"]), (False, 2, 0))
+        self.assertEqual(FakeStreamExtractor.instances, [])       # phiên landmark không tạo landmarker
+        for bad in ([], [fake_landmarks()] * 61, [{"pose": None, "hands": [[[0, 0, 0]]]}]):
+            self.assertEqual(send(bad).status_code, 400)
+        self.assertEqual(send([fake_landmarks()], timestamps=[1, 2]).status_code, 400)
+
     def test_cors_preflight_is_cacheable(self):
         response = self.client.options("/api/stream")
         self.assertEqual(response.status_code, 204)
@@ -288,7 +355,7 @@ class StreamTests(unittest.TestCase):
                 response = self.client.post(f"/api/stream/{sid}", json=body)
                 self.assertEqual(response.status_code, 400)
                 self.assertIn("error", response.get_json())
-        self.assertEqual(FakeStreamExtractor.instances[0].timestamps, [])
+        self.assertEqual([e.timestamps for e in FakeStreamExtractor.instances], [])
 
 
 if __name__ == "__main__":

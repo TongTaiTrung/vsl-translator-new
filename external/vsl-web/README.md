@@ -27,23 +27,26 @@ hoặc ngay trong phần Cài đặt.
 
 ## Cách hoạt động
 
-- Webcam mở ở độ phân giải 16:9 lớn nhất (giống `src/features/camera.py`); frame được thu nhỏ về cạnh dài
-  1280 rồi nén JPEG bất đồng bộ (`OffscreenCanvas.convertToBlob` / `canvas.toBlob`) để không chặn luồng
-  giao diện.
-- Thu 15 fps, cửa sổ dự đoán 30 frame (2 giây). App mở một phiên `POST /api/stream` (phản hồi có
-  `binary: true`) rồi gửi **từng frame ngay khi chụp** tới `POST /api/stream/<id>` dạng `multipart/form-data`
-  (mỗi frame một phần `frames` + chuỗi JSON `meta`), không base64. Chỉ mỗi `strideFrames` frame mới gửi
-  `predict: true`; các request còn lại chỉ trích đặc trưng (`predicted: false` trong phản hồi). Server giữ
-  tracking MediaPipe và cửa sổ 30 frame, mỗi frame chỉ trích một lần. Multipart là “simple request” nên không
-  có preflight CORS; preflight của JSON được cache 1 ngày (`Access-Control-Max-Age`), và server bật HTTP/1.1
-  keep-alive.
-- Độ trễ đo trên máy dev (từ lúc frame được chụp tới lúc có kết quả, request có dự đoán): **~53 ms trung vị,
-  p90 ~89 ms**, so với ~197 ms trước đây (gửi lô 5 frame base64 và chạy model trên MPS). Server mặc định chạy
-  model trên CPU 1 luồng (`--device cpu --torch-threads 1`): ensemble nhỏ nên CPU 1 luồng (~13 ms) nhanh hơn
-  MPS (~33–70 ms) và CPU nhiều luồng (~59 ms). Đổi bằng `--device mps` hoặc `--torch-threads 0` (mặc định
-  PyTorch) nếu dùng model lớn hơn.
-- Server cũ không có `/api/stream` thì app tự gửi cả cửa sổ tới `POST /api/predict`; server không trả
-  `binary` thì app gửi JSON base64. Luôn chỉ một request đang chạy; HUD trên video hiện độ trễ.
+- Webcam mở ở độ phân giải 16:9 lớn nhất (giống `src/features/camera.py`).
+- **MediaPipe chạy trên trình duyệt** (`lib/landmarks.ts`, `@mediapipe/tasks-vision` cùng phiên bản 1.1.1 với
+  MediaPipe Python, chế độ VIDEO, đúng 2 file model `.task` của `src/builtin/mediapipe_builtin/models`).
+  Trước khi detect, mỗi frame được vẽ vào canvas **1280×1280** giống hệt `src/features/frame.py:frame_padding`
+  (scale đều cho cạnh dài = 1280, đặt giữa, nền đen; lật gương trước nếu bật "Lật ảnh trước khi nhận diện")
+  để toạ độ landmark chuẩn hoá cùng tỉ lệ như lúc trích đặc trưng train. Chỉ landmark (pose 33 điểm, 0–2 tay
+  21 điểm + world landmark, ~2.7 KB JSON/frame) được gửi lên API, không gửi ảnh; server chỉ chạy `extract` và
+  model. Mặc định dùng GPU (WebGL, ~34 ms/frame trên máy dev; CPU/WASM ~57 ms), GPU lỗi thì tự chuyển CPU.
+- WASM và model được `scripts/copy-mediapipe.mjs` chép vào `public/mediapipe/` (không commit) tự động trước
+  `npm run dev` / `npm run build`; chạy tay bằng `npm run mediapipe`. Lần mở camera đầu tiên tải ~17 MB model.
+- Thu 15 fps, cửa sổ dự đoán 30 frame (2 giây). App mở một phiên `POST /api/stream` (phản hồi phải có
+  `landmarks: true`) rồi gửi **từng frame ngay khi detect xong** tới `POST /api/stream/<id>` dạng JSON
+  `{ landmarks, timestamps, predict, ... }`. Chỉ mỗi `strideFrames` frame mới gửi `predict: true`; các request
+  còn lại chỉ thêm frame vào cửa sổ (`predicted: false`). Server giữ cửa sổ 30 frame; phiên nhận landmark không
+  tạo landmarker MediaPipe trên server. Preflight CORS của JSON được cache 1 ngày (`Access-Control-Max-Age`),
+  server bật HTTP/1.1 keep-alive. Định dạng landmark: `src/features/landmarks.py`.
+- Độ trễ đo trên máy dev (từ lúc chụp frame tới lúc có kết quả, gồm MediaPipe trên trình duyệt): ~50 ms; server
+  chỉ còn ~18 ms mỗi request dự đoán. Server mặc định chạy model trên CPU 1 luồng (`--device cpu
+  --torch-threads 1`). Luôn chỉ một request đang chạy; HUD trên video hiện độ trễ (di chuột để xem thời gian
+  MediaPipe mỗi frame).
 - **Tốc độ nhận diện** (Cài đặt, `SPEED_PRESETS` trong `lib/recognizer.ts`): đánh đổi độ chính xác lấy tốc độ.
   Server dự đoán trên `window` frame gần nhất ngay khi có `min_frames` frame (`predict_raw` nội suy về 30).
   Thời gian từ lúc bắt đầu ký tới lúc chốt từ, đo trên trình duyệt:
@@ -55,7 +58,7 @@ hoặc ngay trong phần Cài đặt.
   | Rất nhanh | 15 frame | 8 frame | 2 frame | ~0.8 s |
 
   Cửa sổ ngắn hơn thì model thấy ít ký hiệu hơn, dễ nhầm hơn lúc đưa tay lên hoặc chuyển ký hiệu. Giảm
-  `Số phiếu để chốt từ` xuống 1 còn nhanh hơn nữa. Chế độ `window` (server cũ) luôn dùng 30 frame.
+  `Số phiếu để chốt từ` xuống 1 còn nhanh hơn nữa.
 - Mỗi phản hồi là một phiếu (`lib/voter.ts`, port từ `src/app/voting.py`): cùng nhãn đủ `Số phiếu để chốt từ`
   lần liên tiếp thì chốt từ. `hand_frames` trong phản hồi phân biệt nghỉ tay / đang vào ký hiệu / đang ký.
 - Nghỉ tay liên tục 3 giây (chỉnh được) sau khi đã có từ thì kết thúc câu. Câu được ghép bằng Groq qua route

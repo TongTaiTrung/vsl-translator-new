@@ -5,3 +5,6 @@ next-env.d.ts
 *.tsbuildinfo
 .env*.local
 .env
+
+# chép từ node_modules + src/builtin bởi scripts/copy-mediapipe.mjs
+/public/mediapipe/

@@ -16,8 +16,10 @@ const SYSTEM_PROMPT_TEMPLATE = `Bạn là bộ hậu xử lý của hệ thống
 - Có thể viết không dấu hoặc dùng "_" thay khoảng trắng. Bảng chú giải bên dưới cho biết nghĩa của các nhãn đã biết.
 - Mục dạng "[đánh vần: ...]" là các chữ cái đánh vần bằng ngón tay liên tiếp, dùng cho tên riêng hoặc từ chưa có ký hiệu riêng (ví dụ T-R-U-N-G → "Trung").
 - Trong mục đánh vần có thể có DẤU THANH dạng "(dấu sắc)", "(dấu huyền)", "(dấu hỏi)", "(dấu ngã)", "(dấu nặng)". Dấu thanh được ký NGAY SAU các chữ cái của âm tiết nó thuộc về: đặt dấu đó lên âm tiết đứng liền trước, đúng vị trí theo chính tả tiếng Việt (B-I-(dấu nặng) → "bị", T-O-A-N-(dấu sắc) → "toán"). Dấu thanh cũng là dấu hiệu kết thúc một âm tiết.
+- Trong mục đánh vần còn có DẤU CHỮ dạng "(dấu â,ô,ê)" (dấu mũ) và "(dấu ơ,ư)" (dấu móc). Dấu chữ biến nguyên âm đứng gần nhất phía trước nó thành chữ có dấu: "(dấu â,ô,ê)" đổi a→â, o→ô, e→ê; "(dấu ơ,ư)" đổi o→ơ, u→ư (T-H-O-(dấu ơ,ư) → "Thơ", C-O-(dấu â,ô,ê)-N-G → "công", H-O-(dấu ơ,ư)-N → "hơn"). Dấu chữ là một phần của chữ cái, KHÔNG phải một từ và KHÔNG kết thúc âm tiết.
 - MỘT mục đánh vần có thể chứa NHIỀU âm tiết/từ viết liền, không có ký hiệu ngăn cách. Hãy tách chuỗi chữ cái thành các âm tiết tiếng Việt hợp lệ sao cho ghép lại có nghĩa nhất (ví dụ M-I-N-H-B-I-(dấu nặng)-N-G-U → "Minh bị ngu"). Viết hoa chữ đầu của tên riêng; các từ thường viết thường.
 - BẮT BUỘC giữ mọi dấu thanh đã được ký, kể cả khi bỏ dấu cũng ra một tên/từ có thật (H-O-A-(dấu huyền) là "Hòa", không phải "Hoa"). Âm tiết không có dấu thanh đi kèm thì giữ thanh ngang, trừ khi chắc chắn đó là tên/từ tiếng Việt phổ biến bị thiếu dấu.
+- TUYỆT ĐỐI không viết nguyên văn tên dấu ("dấu ơ,ư", "dấu â,ô,ê", "dấu nặng"...) vào kết quả, kể cả khi nhãn dấu đứng riêng ngoài mục đánh vần: luôn đặt dấu đó lên chữ cái liền trước.
 - Ngữ pháp ký hiệu khác tiếng Việt nói: thường lược hư từ, trợ từ và từ "là", có thể đưa chủ đề lên trước, từ để hỏi thường đứng cuối.
 - Mô hình nhận dạng đôi khi lặp nhãn; bỏ những lần lặp không có nghĩa.
 
@@ -40,6 +42,8 @@ Nhãn: cảm ơn | cảm ơn
 Kết quả: Cảm ơn.
 Nhãn: [đánh vần: M-I-N-H-B-I-(dấu nặng)-N-G-U]
 Kết quả: Minh bị ngu.
+Nhãn: xin chào | toi | ten_la | [đánh vần: T-H-O-(dấu ơ,ư)]
+Kết quả: Xin chào, tôi tên là Thơ.
 `;
 
 type Group = string | string[];
@@ -54,10 +58,40 @@ export const TONE_MARKS: Record<string, string> = {
 };
 const VOWELS = new Set([..."aăâeêioôơuưy"]);
 
+// Nhãn dấu chữ (mũ, móc) → nguyên âm gốc được đổi thành chữ có dấu.
+export const VOWEL_MARKS: Record<string, Record<string, string>> = {
+  "dấu â,ô,ê": { a: "â", o: "ô", e: "ê" },
+  "dấu ơ,ư": { o: "ơ", u: "ư" },
+};
+
 const isLetter = (label: string) => [...label].length === 1 && /^\p{L}$/u.test(label);
-const toneKey = (label: string) => label.normalize("NFC").trim().toLowerCase();
+// Tên lớp trong dữ liệu khác tên chuẩn của dấu (lớp "dấu sắt" được thu với tên gõ sai).
+export const MARK_ALIASES: Record<string, string> = {
+  "dấu sắt": "dấu sắc",
+};
+const toneKey = (label: string) => {
+  const key = label.normalize("NFC").trim().toLowerCase();
+  return MARK_ALIASES[key] ?? key;
+};
 const isTone = (label: string) => toneKey(label) in TONE_MARKS;
-const spellToken = (label: string) => (isTone(label) ? `(${toneKey(label)})` : label.toUpperCase());
+const isVowelMark = (label: string) => toneKey(label) in VOWEL_MARKS;
+const isMark = (label: string) => isTone(label) || isVowelMark(label);
+const spellToken = (label: string) => (isMark(label) ? `(${toneKey(label)})` : label.toUpperCase());
+
+/** Đổi nguyên âm gốc gần cuối nhất (a/o/e/u) thành chữ có dấu mũ/móc, giữ nguyên dấu thanh nếu đã có. */
+function applyVowelMark(text: string, label: string): string {
+  const mapping = VOWEL_MARKS[toneKey(label)];
+  const chars = text.normalize("NFD");
+  for (let i = chars.length - 1; i >= 0; i--) {
+    if (chars[i] in mapping && !"\u0302\u031b\u0306".includes(chars[i + 1] ?? "x")) {
+      return (chars.slice(0, i) + mapping[chars[i]].normalize("NFD") + chars.slice(i + 1)).normalize("NFC");
+    }
+  }
+  return text;
+}
+
+// "ưo" (dạng NFD) → "ươ"
+const fixUo = (run: string) => run.normalize("NFD").replace(/u\u031bo(?!\u031b)/g, "u\u031bo\u031b").normalize("NFC");
 
 // Âm tiết tiếng Việt (chưa dấu thanh): phụ âm đầu + 1–3 nguyên âm + phụ âm cuối. Dùng để tách chữ đánh vần liền nhau.
 const SYLLABLE_RE =
@@ -99,23 +133,28 @@ function applyTone(syllable: string, mark: string): string {
   return onset + insertAt(vowels, pos, mark) + coda;
 }
 
-/** Câu dự phòng cho một nhóm đánh vần: tách âm tiết và đặt dấu thanh lên âm tiết ngay trước dấu. */
+/** Câu dự phòng cho một nhóm đánh vần: tách âm tiết, đổi chữ theo dấu mũ/móc, đặt dấu thanh lên âm tiết ngay trước dấu. */
 function spelledText(items: readonly string[]): string {
   const words: string[] = [];
   let run = "";
   for (const item of items) {
+    if (isVowelMark(item)) {
+      if (run) run = applyVowelMark(run, item);
+      else if (words.length) words[words.length - 1] = applyVowelMark(words[words.length - 1], item); // dấu chữ ký sau dấu thanh
+      continue;
+    }
     if (!isTone(item)) {
       run += item.toLowerCase();
       continue;
     }
     if (run) {
-      const syllables = splitSyllables(run);
+      const syllables = splitSyllables(fixUo(run));
       syllables[syllables.length - 1] = applyTone(syllables[syllables.length - 1], TONE_MARKS[toneKey(item)]);
       words.push(...syllables);
       run = "";
     }
   }
-  if (run) words.push(...splitSyllables(run));
+  if (run) words.push(...splitSyllables(fixUo(run)));
   const text = words.join(" ");
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
@@ -131,12 +170,12 @@ export function buildSystemPrompt(glossary = DEFAULT_GLOSSARY): string {
   return SYSTEM_PROMPT_TEMPLATE.replace("{glossary}", lines || "- (không có)");
 }
 
-/** Gom các chữ cái đơn liên tiếp (đánh vần) thành một nhóm; dấu thanh ngay sau chữ cái thuộc nhóm đó. */
+/** Gom các chữ cái đơn liên tiếp (đánh vần) thành một nhóm; dấu thanh và dấu chữ ngay sau chữ cái thuộc nhóm đó. */
 export function groupLabels(words: readonly string[]): Group[] {
   const groups: Group[] = [];
   for (const word of words) {
     const last = groups[groups.length - 1];
-    if (isLetter(word) || (isTone(word) && Array.isArray(last))) {
+    if (isLetter(word) || (isMark(word) && Array.isArray(last))) {
       if (Array.isArray(last)) last.push(word);
       else groups.push([word]);
     } else {

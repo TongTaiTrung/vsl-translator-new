@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Be_Vietnam_Pro } from "next/font/google";
+import { THEME_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
 // Be Vietnam Pro: thiết kế cho tiếng Việt, dấu thanh rõ ở cỡ lớn (phụ đề) lẫn cỡ nhỏ.
@@ -25,8 +26,12 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // suppressHydrationWarning: script trong <head> đặt data-theme trước khi React hydrate.
   return (
-    <html lang="vi" className={sans.variable}>
+    <html lang="vi" className={sans.variable} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );

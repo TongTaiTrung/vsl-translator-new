@@ -1,0 +1,1539 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VSL Translator Overview</title>
+<meta name="description" content="Tổng quan trực quan dự án dịch Ngôn ngữ Ký hiệu Việt Nam: kiến trúc, đặc trưng, mô hình, huấn luyện, suy luận realtime và triển khai web, kèm mô phỏng tương tác.">
+<style>
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --surface-2: #eef1f5; --text: #15181d; --muted: #5b6470; --border: #dce1e8;
+  --accent: #0f766e; --accent-soft: #d5f5ef; --accent-text: #ffffff;
+  --pos: #2563eb; --shape: #7c3aed; --orient: #ea580c; --pres: #64748b; --motion: #16a34a;
+  --left: #2563eb; --right: #ea580c; --shared: #16a34a;
+  --ok: #15803d; --warn: #b45309; --bad: #dc2626; --skin: #e9d7c6; --skin-line: #a88b72;
+  --shadow: 0 1px 2px rgba(15,23,42,.06), 0 4px 16px rgba(15,23,42,.05);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1117; --surface: #151b23; --surface-2: #1d2531; --text: #e6edf3; --muted: #97a3b0; --border: #2b3542;
+    --accent: #2dd4bf; --accent-soft: #123a36; --accent-text: #04201d;
+    --pos: #60a5fa; --shape: #a78bfa; --orient: #fb923c; --pres: #94a3b8; --motion: #4ade80;
+    --left: #60a5fa; --right: #fb923c; --shared: #4ade80;
+    --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --skin: #4a3c33; --skin-line: #a3896f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.25);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1117; --surface: #151b23; --surface-2: #1d2531; --text: #e6edf3; --muted: #97a3b0; --border: #2b3542;
+  --accent: #2dd4bf; --accent-soft: #123a36; --accent-text: #04201d;
+  --pos: #60a5fa; --shape: #a78bfa; --orient: #fb923c; --pres: #94a3b8; --motion: #4ade80;
+  --left: #60a5fa; --right: #fb923c; --shared: #4ade80;
+  --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --skin: #4a3c33; --skin-line: #a3896f;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.25);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 64px; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
+code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; }
+code { background: var(--surface-2); padding: .1em .35em; border-radius: 4px; }
+a { color: var(--accent); }
+h1, h2, h3 { line-height: 1.25; margin: 0 0 .5em; }
+h2 { font-size: 1.55rem; letter-spacing: -.01em; }
+h3 { font-size: 1.08rem; }
+p { margin: 0 0 .9em; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+button, select, input { font: inherit; color: inherit; }
+
+/* Top bar */
+.topbar { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+.topbar .wrap { display: flex; align-items: center; gap: 12px; height: 52px; }
+.brand { font-weight: 700; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
+.brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.nav { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0; }
+.nav::-webkit-scrollbar { display: none; }
+.nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; white-space: nowrap; font-size: .9rem; }
+.nav a:hover, .nav a.on { color: var(--text); background: var(--surface-2); }
+.icon-btn { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; display: grid; place-items: center; flex: none; }
+
+/* Hero */
+.hero { padding: 48px 0 24px; }
+.hero h1 { font-size: clamp(1.9rem, 4.5vw, 2.8rem); letter-spacing: -.02em; }
+.hero .lead { font-size: 1.08rem; color: var(--muted); max-width: 760px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 24px; }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow); }
+.kpi b { display: block; font-size: 1.6rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.kpi span { color: var(--muted); font-size: .85rem; }
+.flowline { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .9rem; }
+.flowline span { background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
+.flowline i { color: var(--muted); font-style: normal; }
+
+section { padding: 40px 0 16px; }
+.sec-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.sec-num { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
+.sub { color: var(--muted); max-width: 820px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); min-width: 0; }
+.card + .card { margin-top: 16px; }
+.lab-title { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-weight: 650; }
+.badge { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 999px; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 860px) { .grid2, .grid3 { grid-template-columns: minmax(0, 1fr); } }
+.muted { color: var(--muted); }
+.small { font-size: .85rem; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: .9rem; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+.btn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: var(--surface); padding: 6px 12px; cursor: pointer; font-size: .88rem; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button.on { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+label.ctl { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: .86rem; color: var(--muted); }
+label.ctl input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+label.ctl output { color: var(--text); font-variant-numeric: tabular-nums; font-family: ui-monospace, Menlo, monospace; }
+.ctls { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px 18px; margin: 12px 0; }
+canvas { display: block; width: 100%; touch-action: none; border-radius: 10px; }
+.chip { display: inline-block; font-size: .78rem; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); white-space: nowrap; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+pre.json { background: var(--surface-2); border-radius: 10px; padding: 12px; margin: 0; overflow-x: auto; font-size: .8rem; line-height: 1.5; }
+.note { border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 9%, transparent); padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: .9rem; }
+
+/* Pipeline */
+.pipe { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; counter-reset: step; }
+.pnode { position: relative; text-align: left; border: 1px solid var(--border); background: var(--surface); border-radius: 12px; padding: 12px 12px 10px; cursor: pointer; transition: border-color .2s, transform .2s, background .2s; min-height: 104px; }
+.pnode:hover { border-color: var(--accent); }
+.pnode .n { font-size: .72rem; color: var(--muted); font-weight: 700; }
+.pnode .t { font-weight: 650; display: block; margin: 2px 0 6px; line-height: 1.3; overflow-wrap: anywhere; }
+.pnode .s { font-family: ui-monospace, Menlo, monospace; font-size: .74rem; color: var(--muted); }
+.pnode.sel { border-color: var(--accent); background: var(--accent-soft); }
+.pnode.active { border-color: var(--accent); transform: translateY(-3px); box-shadow: 0 0 0 3px var(--accent-soft); }
+.pnode.done .n::after { content: " ✓"; color: var(--ok); }
+.pnode .layer { position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%; }
+.packet { margin-top: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: .9rem; }
+.packet .box { font-family: ui-monospace, Menlo, monospace; background: var(--surface-2); border-radius: 8px; padding: 6px 10px; border: 1px dashed var(--border); min-width: 0; overflow-wrap: anywhere; }
+.detail { margin-top: 14px; }
+.detail .files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+/* Module map */
+.mods { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.mod { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--surface); transition: opacity .2s, border-color .2s, box-shadow .2s; cursor: default; }
+.mod h4 { margin: 0 0 4px; font-size: .95rem; font-family: ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+.mod p { font-size: .84rem; color: var(--muted); margin: 0 0 6px; }
+.mod .files { font-size: .74rem; color: var(--muted); font-family: ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+.mods.focus .mod { opacity: .35; }
+.mods.focus .mod.me { opacity: 1; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.mods.focus .mod.uses { opacity: 1; border-color: var(--pos); }
+.mods.focus .mod.usedby { opacity: 1; border-color: var(--orient); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .82rem; color: var(--muted); margin-top: 10px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+/* Feature strip */
+.fstrip { display: grid; grid-template-columns: repeat(auto-fill, minmax(8px, 1fr)); gap: 2px; margin: 10px 0; }
+.fstrip div { height: 18px; border-radius: 2px; transition: opacity .15s, transform .15s; }
+.fstrip.hl div { opacity: .18; }
+.fstrip.hl div.on { opacity: 1; }
+.fstrip div:hover { transform: scaleY(1.35); }
+.glegend { display: flex; flex-wrap: wrap; gap: 6px; }
+.glegend button { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 3px 10px; font-size: .8rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.glegend button i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.glegend button.on { border-color: var(--text); }
+.readout { font-family: ui-monospace, Menlo, monospace; font-size: .82rem; background: var(--surface-2); border-radius: 8px; padding: 8px 10px; min-height: 2.4em; overflow-wrap: anywhere; }
+
+/* Contact bars */
+.cbars { display: grid; grid-template-columns: auto 1fr 1fr; gap: 3px 8px; font-size: .78rem; align-items: center; }
+.cbars .h { font-weight: 700; color: var(--muted); font-size: .72rem; text-transform: uppercase; }
+.bar { height: 10px; background: var(--surface-2); border-radius: 3px; overflow: hidden; position: relative; }
+.bar > span { position: absolute; inset: 0 auto 0 0; border-radius: 3px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: .84rem; margin-top: 10px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-family: ui-monospace, Menlo, monospace; text-align: right; overflow-wrap: anywhere; }
+
+/* Steps */
+.steps { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.stepdesc { font-size: .9rem; min-height: 3em; }
+
+/* Model stack */
+.stack { display: flex; flex-direction: column; gap: 0; align-items: stretch; }
+.layer-b { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; background: var(--surface); cursor: pointer; display: flex; justify-content: space-between; gap: 10px; align-items: center; transition: border-color .15s, background .15s; text-align: left; width: 100%; }
+.layer-b:hover, .layer-b.sel { border-color: var(--accent); background: var(--accent-soft); }
+.layer-b b { font-size: .92rem; }
+.layer-b .shape { font-family: ui-monospace, Menlo, monospace; font-size: .76rem; color: var(--muted); white-space: nowrap; }
+.arrow-d { text-align: center; color: var(--muted); font-size: .8rem; line-height: 1.3; }
+
+/* k-fold */
+.kgrid { display: grid; grid-template-columns: 74px 1fr; gap: 6px 10px; align-items: center; font-size: .82rem; }
+.kgrid .cls { color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kgroups { display: flex; flex-wrap: wrap; gap: 8px; }
+.kg { display: flex; gap: 2px; align-items: center; padding: 3px; border-radius: 6px; border: 1px solid transparent; }
+.kg .o { width: 16px; height: 16px; border-radius: 50%; }
+.kg .a { width: 9px; height: 9px; border-radius: 50%; }
+.st-train { background: var(--pos); opacity: .55; }
+.st-val { background: var(--ok); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 35%, transparent); }
+.st-valaug { background: transparent; border: 1.5px dashed var(--muted); }
+.st-leak { background: var(--bad); box-shadow: 0 0 0 2px color-mix(in srgb, var(--bad) 35%, transparent); }
+
+/* Prob bars */
+.pbars { display: grid; grid-template-columns: 72px 1fr 52px; gap: 6px 10px; align-items: center; font-size: .85rem; }
+.pbars .bar { height: 16px; }
+.verdict { font-weight: 700; padding: 8px 12px; border-radius: 8px; margin: 12px 0; font-size: .95rem; }
+.v-ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.v-bad { background: color-mix(in srgb, var(--bad) 13%, transparent); color: var(--bad); }
+.v-warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+
+/* Realtime */
+.rt-state { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 10px; margin-top: 12px; }
+.rt-state .cell { background: var(--surface-2); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+.rt-state .cell > span { display: block; font-size: .74rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.rt-state .cell b { font-variant-numeric: tabular-nums; font-size: .98rem; overflow-wrap: anywhere; }
+.words { display: flex; flex-wrap: wrap; gap: 6px; min-height: 30px; align-items: center; }
+.words .w { background: var(--accent); color: var(--accent-text); border-radius: 6px; padding: 2px 9px; font-weight: 600; font-size: .88rem; animation: pop .3s ease; }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+.sentence { font-size: 1.15rem; font-weight: 650; min-height: 1.6em; }
+.votebar { display: flex; gap: 3px; }
+.votebar i { width: 14px; height: 8px; border-radius: 2px; background: var(--border); }
+.votebar i.f { background: var(--accent); }
+
+/* Deploy */
+.lat { display: flex; height: 30px; border-radius: 8px; overflow: hidden; margin: 8px 0; font-size: .76rem; color: #fff; font-weight: 600; }
+.lat div { display: flex; align-items: center; justify-content: center; white-space: nowrap; overflow: hidden; transition: flex-basis .4s; }
+.dlist { counter-reset: d; list-style: none; padding: 0; margin: 0; font-size: .88rem; }
+.dlist li { padding: 6px 8px 6px 34px; position: relative; border-radius: 8px; transition: background .2s; }
+.dlist li::before { counter-increment: d; content: counter(d); position: absolute; left: 6px; top: 7px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface-2); text-align: center; font-size: .72rem; line-height: 20px; font-weight: 700; }
+.dlist li.on { background: var(--accent-soft); }
+.dlist li.on::before { background: var(--accent); color: var(--accent-text); }
+
+/* Results */
+.dots { position: relative; height: 34px; margin: 6px 0 2px; }
+.dots .track { position: absolute; left: 0; right: 0; top: 16px; height: 2px; background: var(--border); }
+.dots .d { position: absolute; top: 9px; width: 16px; height: 16px; margin-left: -8px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface); }
+.axis { display: flex; justify-content: space-between; font-size: .74rem; color: var(--muted); }
+.hbars { display: grid; grid-template-columns: minmax(90px, auto) 1fr 56px; gap: 6px 10px; font-size: .84rem; align-items: center; }
+.hbars .bar { height: 12px; }
+.f1grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+.f1grid div { border-radius: 8px; padding: 6px 8px; font-size: .78rem; border: 1px solid var(--border); }
+.f1grid b { display: block; font-size: .9rem; font-variant-numeric: tabular-nums; }
+
+/* Timeline (versions) */
+.tl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 760px) { .tl { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.tl div { border-top: 3px solid var(--border); padding-top: 8px; font-size: .86rem; }
+.tl div.cur { border-color: var(--accent); }
+.tl b { display: block; }
+
+/* Workflow */
+.wf { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.wf button { text-align: left; border: 1px solid var(--border); background: var(--surface); border-radius: 12px; padding: 12px; cursor: pointer; }
+.wf button.sel { border-color: var(--accent); background: var(--accent-soft); }
+.wf button b { display: block; font-family: ui-monospace, Menlo, monospace; font-size: .84rem; }
+.wf button span { font-size: .8rem; color: var(--muted); }
+.tree { font-family: ui-monospace, Menlo, monospace; font-size: .8rem; white-space: pre; overflow-x: auto; background: var(--surface-2); border-radius: 10px; padding: 12px; margin: 0; line-height: 1.55; }
+.cmd { display: flex; gap: 8px; align-items: stretch; margin-bottom: 8px; }
+.cmd pre { flex: 1; margin: 0; background: var(--surface-2); padding: 8px 10px; border-radius: 8px; overflow-x: auto; font-size: .8rem; min-width: 0; }
+.cmd .btn { flex: none; font-size: .78rem; }
+.risk { border-left: 3px solid var(--bad); }
+.plan { border-left: 3px solid var(--accent); }
+ul.clean { padding-left: 18px; margin: 0; }
+ul.clean li { margin-bottom: 6px; }
+footer { padding: 40px 0 60px; color: var(--muted); font-size: .85rem; }
+details summary { cursor: pointer; font-weight: 600; }
+details { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; background: var(--surface); }
+details + details { margin-top: 6px; }
+details p { margin: 6px 0 2px; font-size: .88rem; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap">
+    <div class="brand"><span class="dot"></span>VSL Translator</div>
+    <nav class="nav" id="nav">
+      <a href="#kien-truc">Kiến trúc</a>
+      <a href="#dac-trung">Đặc trưng</a>
+      <a href="#chuoi">Xử lý chuỗi</a>
+      <a href="#mo-hinh">Mô hình</a>
+      <a href="#huan-luyen">Huấn luyện</a>
+      <a href="#suy-luan">Từ chối</a>
+      <a href="#realtime">Realtime</a>
+      <a href="#trien-khai">Triển khai</a>
+      <a href="#ket-qua">Kết quả</a>
+      <a href="#quy-trinh">Quy trình</a>
+      <a href="#han-che">Hạn chế</a>
+    </nav>
+    <button class="icon-btn" id="themeBtn" title="Đổi giao diện sáng / tối" aria-label="Đổi giao diện sáng / tối">◐</button>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ================= HERO ================= -->
+<div class="hero">
+  <span class="badge">Tổng quan dự án · web app UrSound · nhánh feat/vsl-web</span>
+  <h1 style="margin-top:12px">Dịch Ngôn ngữ Ký hiệu Việt Nam từ webcam</h1>
+  <p class="lead">Từ khung hình camera đến câu tiếng Việt hoàn chỉnh: MediaPipe lấy landmark, 277 đặc trưng mỗi frame theo 4 thành tố ký hiệu, ensemble 6 mô hình biết từ chối khi không chắc, bỏ phiếu chốt từ, rồi LLM ghép câu. Mọi khối bên dưới đều bấm, kéo hoặc chạy thử được.</p>
+  <div class="kpis">
+    <div class="kpi"><b>18</b><span>lớp ký hiệu (từ, chữ cái, dấu thanh)</span></div>
+    <div class="kpi"><b>277 → 316</b><span>đặc trưng / frame → / bước chuỗi</span></div>
+    <div class="kpi"><b>6</b><span>model trong ensemble (5 fold + 1 full)</span></div>
+    <div class="kpi"><b>99,66%</b><span>CV accuracy (OOF, 1.798 mẫu)</span></div>
+    <div class="kpi"><b>≈ 50 ms</b><span>độ trễ web, từ chụp frame tới kết quả</span></div>
+  </div>
+  <div class="flowline" aria-label="Luồng xử lý">
+    <span>Webcam</span><i>→</i><span>1280×1280</span><i>→</i><span>MediaPipe</span><i>→</i><span>(T, 277)</span><i>→</i><span>(30, 316)</span><i>→</i><span>Ensemble + từ chối</span><i>→</i><span>WordVoter</span><i>→</i><span>LLM → câu</span>
+  </div>
+</div>
+
+<!-- ================= 1. KIẾN TRÚC ================= -->
+<section id="kien-truc">
+  <div class="sec-head"><span class="sec-num">01</span><h2>Kiến trúc tổng thể</h2></div>
+  <p class="sub">Một luồng xử lý duy nhất dùng chung cho thu thập, huấn luyện và phục vụ, nên đặc trưng lúc train và lúc chạy thật không bao giờ lệch nhau. Bấm vào từng khối để xem chi tiết, hoặc chạy gói dữ liệu đi qua toàn bộ pipeline.</p>
+
+  <div class="card">
+    <div class="lab-title"><span class="badge">Mô phỏng</span>Pipeline từng bước</div>
+    <div class="pipe" id="pipe"></div>
+    <div class="packet">
+      <button class="btn primary" id="pipePlay">▶ Chạy gói dữ liệu</button>
+      <span class="muted small">Dữ liệu tại bước hiện tại:</span>
+      <span class="box" id="pipePacket">—</span>
+    </div>
+    <div class="detail" id="pipeDetail"></div>
+    <div class="legend">
+      <span><i style="background:var(--pos)"></i>Thu nhận &amp; landmark</span>
+      <span><i style="background:var(--shape)"></i>Đặc trưng</span>
+      <span><i style="background:var(--orient)"></i>Mô hình &amp; suy luận</span>
+      <span><i style="background:var(--motion)"></i>Ứng dụng</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="lab-title"><span class="badge">Tương tác</span>Bản đồ module</div>
+    <p class="muted small" style="margin-top:-4px">Di chuột (hoặc chạm) vào một module: <b style="color:var(--pos)">viền xanh</b> là module nó dùng, <b style="color:var(--orient)">viền cam</b> là module dùng nó.</p>
+    <div class="mods" id="mods"></div>
+  </div>
+</section>
+
+<!-- ================= 2. ĐẶC TRƯNG ================= -->
+<section id="dac-trung">
+  <div class="sec-head"><span class="sec-num">02</span><h2>Đặc trưng: 4 thành tố của ký hiệu</h2></div>
+  <p class="sub">Mọi toạ độ được đưa về <b>hệ trục thân</b>: gốc ở giữa hai vai, đơn vị là độ rộng vai, nên người cao hay thấp, đứng gần hay xa camera đều cho cùng thang đo. Mỗi frame được mô tả theo vị trí, thủ hình, hướng bàn tay và cờ hiện diện (<code>src/features/extract.py</code>, <code>FEATURE_VERSION = 5</code>).</p>
+
+  <div class="card">
+    <div class="lab-title"><span class="badge">Mô phỏng</span>Kéo bàn tay để xem đặc trưng tiếp xúc cơ thể</div>
+    <div class="grid2">
+      <div>
+        <canvas id="bodyCv" aria-label="Mô phỏng người ký: kéo bàn tay trái hoặc phải"></canvas>
+        <div class="row" style="margin-top:10px">
+          <span class="small muted">Ký mẫu:</span>
+          <button class="btn" data-pose="toi">tôi</button>
+          <button class="btn" data-pose="xinchao">xin chào</button>
+          <button class="btn" data-pose="camon">cảm ơn</button>
+          <button class="btn" data-pose="diachi">địa chỉ</button>
+          <button class="btn" data-pose="rest">nghỉ tay</button>
+          <button class="btn" id="mirrorBtn" title="LEFT_MIRROR: đổi cột trái ↔ phải, trục x đổi dấu">⇋ Lật gương</button>
+        </div>
+        <div class="ctls">
+          <label class="ctl">Độ duỗi ngón <output id="extOut">1.00</output><input type="range" id="extIn" min="0" max="1" step="0.01" value="1"></label>
+          <label class="ctl">Độ xoè <output id="sprOut">0.60</output><input type="range" id="sprIn" min="0" max="1" step="0.01" value="0.6"></label>
+          <label class="ctl">Tay gần camera (hand_scale) <output id="depOut">1.00</output><input type="range" id="depIn" min="0.7" max="1.5" step="0.01" value="1"></label>
+        </div>
+      </div>
+      <div>
+        <div class="cbars" id="cbars"></div>
+        <dl class="kv" id="fkv"></dl>
+        <p class="small muted" style="margin-top:10px">Độ gần = <code>exp(−γ·d²)</code> trên 6 điểm (tâm lòng bàn tay + 5 đầu ngón), lấy giá trị lớn nhất. γ lớn ở mặt (18) và nhỏ ở bụng (4), vì vùng mặt chật hơn. Tay có tâm lòng bàn tay thấp hơn <code>REST_Y = 0.9</code> vai bị coi là đang nghỉ và bị bỏ qua cả lúc train lẫn lúc chạy.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="lab-title"><span class="badge">Tương tác</span>Bố cục vector: 277 cột thô + 39 cột chuyển động = 316</div>
+    <div class="row" style="justify-content:space-between">
+      <div class="seg" id="fsMode"><button class="on" data-m="group">Theo thành tố</button><button data-m="side">Theo phía tay</button></div>
+      <span class="small muted">Bấm một nhóm để làm nổi bật; di chuột lên ô để xem cột.</span>
+    </div>
+    <div class="fstrip" id="fstrip"></div>
+    <div class="glegend" id="glegend"></div>
+    <div class="readout" id="fsRead" style="margin-top:10px">Di chuột lên một ô…</div>
+    <p class="small muted" style="margin-top:10px"><code>FEATURE_SLICES</code>, <code>SIDE_COLUMNS</code> và <code>LEFT_MIRROR</code> được suy ra từ bảng nhóm này. <code>training.py</code>, <code>diagnostics.py</code> và <code>augment.py</code> đều lấy chỉ số cột từ đó, không hard-code số cột.</p>
+  </div>
+
+  <div class="card">
+    <div class="lab-title">Tiến hoá bộ đặc trưng</div>
+    <div class="tl">
+      <div><b>v2</b><span class="muted">131 chiều/frame, chuỗi (30, 170).</span></div>
+      <div><b>v3</b><span class="muted">Bỏ tay đang nghỉ (<code>REST_Y</code>), tách cột trái / phải / chung.</span></div>
+      <div><b>v4</b><span class="muted"><code>hand_local</code>: 20 điểm trong hệ lòng bàn tay, bất biến khi lật gương. <code>face_vec</code>: tay − mũi.</span></div>
+      <div class="cur"><b>v5 · hiện tại</b><span class="muted"><code>hand_scale</code> thay cho z của pose; giảm trọng số z khi đo tiếp xúc (<code>CONTACT_Z = 0.25</code>) để tách <code>toi</code> và <code>m</code>.</span></div>
+    </div>
+    <p class="small muted" style="margin:12px 0 0">Đổi extractor → tăng <code>FEATURE_VERSION</code> → chạy <code>reextract.py</code> trên toàn bộ video gốc → kiểm tra lại slices trong <code>training.py</code>.</p>
+  </div>
+</section>
+
+<!-- ================= 3. CHUỖI ================= -->
+<section id="chuoi">
+  <div class="sec-head"><span class="sec-num">03</span><h2>Xử lý chuỗi: <code>process_sequence</code></h2></div>
+  <p class="sub">Clip dài T frame, có chỗ mất tay (NaN) và gai do detect sai, được làm sạch rồi co giãn về đúng 30 bước, cuối cùng ghép thêm 39 cột vận tốc. Cùng một hàm chạy cho dataset, API và luồng realtime.</p>
+  <div class="card">
+    <div class="lab-title"><span class="badge">Mô phỏng</span>Một cột đặc trưng (ví dụ: toạ độ y tâm lòng bàn tay) qua từng bước</div>
+    <div class="steps seg" id="seqSteps" style="flex-wrap:wrap">
+      <button class="on" data-s="0">1 · Thô</button><button data-s="1">2 · Lấp gap</button><button data-s="2">3 · Khử gai</button><button data-s="3">4 · Co giãn → 30</button><button data-s="4">5 · + Chuyển động</button>
+    </div>
+    <canvas id="seqCv" aria-label="Biểu đồ tín hiệu qua các bước xử lý chuỗi"></canvas>
+    <div class="stepdesc" id="seqDesc" style="margin-top:10px"></div>
+    <div class="ctls">
+      <label class="ctl">Số frame gốc T <output id="tOut">40</output><input type="range" id="tIn" min="18" max="70" step="1" value="40"></label>
+      <label class="ctl">max_gap (frame) <output id="gapOut">6</output><input type="range" id="gapIn" min="0" max="12" step="1" value="6"></label>
+      <label class="ctl">Ngưỡng gai (spike_threshold) <output id="spkOut">0.45</output><input type="range" id="spkIn" min="0.1" max="1.2" step="0.01" value="0.45"></label>
+    </div>
+    <div class="row"><button class="btn" id="seqNew">↻ Tạo tín hiệu mới</button><span class="small muted" id="seqStat"></span></div>
+  </div>
+</section>
+
+<!-- ================= 4. MÔ HÌNH ================= -->
+<section id="mo-hinh">
+  <div class="sec-head"><span class="sec-num">04</span><h2>Mô hình</h2></div>
+  <p class="sub">Ba kiến trúc trong cùng <code>src/model/training.py</code>, chọn bằng <code>Config.arch</code> / CLI <code>--arch</code>. Checkpoint hiện tại dùng <b>VSLNet</b> (~260k tham số mỗi model). Bấm từng lớp để xem nó làm gì.</p>
+  <div class="card">
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+      <div class="seg" id="archTabs"><button class="on" data-a="vslnet">VSLNet</button><button data-a="handpair">HandPairNet</button><button data-a="former">SignFormer</button></div>
+      <span class="small muted" id="archNote"></span>
+    </div>
+    <div class="grid2">
+      <div class="stack" id="archStack"></div>
+      <div>
+        <div class="readout" id="archRead" style="min-height:6em;font-family:inherit;font-size:.9rem"></div>
+        <h3 style="margin-top:16px">Ensemble</h3>
+        <p class="small muted">5 model fold + 1 model train trên toàn bộ dữ liệu. Xác suất của 6 model được lấy trung bình, rồi chia logit cho nhiệt độ <code>T</code> (temperature scaling fit trên OOF) và so với ngưỡng từ chối. Kết quả lưu ở <code>runs/&lt;tên&gt;/ensemble.pt</code>, kèm <code>metrics.json</code>, <code>folds.json</code> và tuỳ chọn ONNX.</p>
+        <div class="row" id="ensRow"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 5. HUẤN LUYỆN ================= -->
+<section id="huan-luyen">
+  <div class="sec-head"><span class="sec-num">05</span><h2>Huấn luyện &amp; chống rò rỉ</h2></div>
+  <p class="sub">Bản augment gần như là bản sao của mẫu gốc. Nếu bản sao nằm ở tập train còn bản gốc nằm ở tập val, model chỉ cần "nhớ" là đạt điểm cao. Dự án chặn điều này bằng <code>origin_sample_id</code> + <code>StratifiedGroupKFold</code> + <code>validation_mask</code>.</p>
+  <div class="card">
+    <div class="lab-title"><span class="badge">Mô phỏng</span>Chia fold: theo nhóm và ngẫu nhiên</div>
+    <div class="row" style="justify-content:space-between">
+      <div class="seg" id="kMode"><button class="on" data-k="group">StratifiedGroupKFold (đúng)</button><button data-k="random">Chia ngẫu nhiên từng mẫu (sai)</button></div>
+      <div class="row"><span class="small muted">Fold val:</span><div class="seg" id="kFold"></div></div>
+    </div>
+    <div class="kgrid" id="kgrid" style="margin-top:14px"></div>
+    <div class="legend">
+      <span><i class="st-train" style="border-radius:50%"></i>Train</span>
+      <span><i class="st-val" style="border-radius:50%"></i>Val (bản gốc, được chấm)</span>
+      <span><i class="st-valaug" style="border-radius:50%"></i>Augment thuộc nhóm val (không train, không chấm)</span>
+      <span><i class="st-leak" style="border-radius:50%"></i>Rò rỉ: bản sao của mẫu val nằm trong train</span>
+    </div>
+    <div class="verdict" id="kVerdict"></div>
+    <p class="small muted" style="margin:0">Mỗi cụm là một nhóm: chấm lớn là clip gốc, 3 chấm nhỏ là bản augment (cùng <code>origin_sample_id</code>). Không bao giờ augment một bản augment. Fine-tune (<code>vsl_model_finetuner</code>) giữ đúng fold cũ theo <code>folds.json</code>.</p>
+  </div>
+
+  <div class="grid2" style="margin-top:16px">
+    <div class="card">
+      <h3>Công thức huấn luyện</h3>
+      <details open><summary>Hàm mất mát</summary><p>Cross-entropy + label smoothing 0.1 + <b>hard-negative margin</b> (margin 0.8, trọng số 0.25): phạt lớp đối thủ mạnh nhất của từng mẫu, nhắm thẳng vào các cặp khó như cảm ơn / xin chào.</p></details>
+      <details><summary>Tối ưu</summary><p>AdamW (lr 2e-3, weight decay 0.05), warmup 5 epoch + cosine, EMA 0.99, grad clip 1.0, early stopping (patience 30). <code>select_after_warmup = 5</code>: chỉ chọn checkpoint từ epoch 10 trở đi, vì EMA hay được chọn nhầm giữa giai đoạn warmup.</p></details>
+      <details><summary>Augment online (<code>Augmenter</code>)</summary><p>Time-warp, nhiễu, che frame, và <b>chèn tay gây nhiễu</b> (xác suất 0.4) vào clip một tay. <code>distractor_geometry</code> tính lại cột liên-tay khi chèn, để tay lạ trông như thật.</p></details>
+      <details><summary><code>AdaptiveController</code></summary><p>Theo dõi khoảng cách train/val trong lúc train và tự chỉnh dropout cùng cường độ augment / mixup.</p></details>
+      <details><summary><code>presence_norm</code></summary><p>Thống kê chuẩn hoá của mỗi tay chỉ tính trên frame có tay đó; tay vắng được đặt bằng 0. Nhờ vậy số 0 của tay vắng không kéo lệch trung bình. HandPairNet và SignFormer bắt buộc bật.</p></details>
+      <details><summary>Sau cross-validation</summary><p>Fit temperature scaling và ngưỡng từ chối trên logit OOF, train thêm model full-data, ghi <code>confusion_pairs</code> và <code>closest_rivals</code> vào <code>metrics.json</code>.</p></details>
+    </div>
+    <div class="card">
+      <h3>Chẩn đoán vượt ra ngoài accuracy</h3>
+      <p class="small muted">Accuracy CV đã bão hoà gần 100%, nên <code>src/model/diagnostics.py</code> đo những gì nó che mất. Ladder (<code>runs/experiments/p2</code>, <code>p3</code>) chạy 3 seed trên cùng fold, mỗi bước thêm đúng một thay đổi.</p>
+      <ul class="clean small">
+        <li><b>distractor_flip_rate</b>: chèn tay trái của người khác vào clip một tay, đếm tỉ lệ đổi nhãn.</li>
+        <li><b>Open-set</b>: bỏ hẳn một lớp khi train, xem model có nhận nhầm nó thành lớp khác không.</li>
+        <li><b>Hard-pair separation</b>, <b>độ bền với nhiễu</b>.</li>
+      </ul>
+      <div style="margin-top:12px">
+        <div class="small muted">distractor_flip_rate (thấp hơn là tốt hơn)</div>
+        <div class="hbars" style="margin-top:6px">
+          <span>Trước</span><div class="bar"><span style="width:100%;background:var(--bad)"></span></div><span class="mono">0.115</span>
+          <span>S6: presence_norm + distractor_geometry</span><div class="bar"><span style="width:22.6%;background:var(--ok)"></span></div><span class="mono">0.026</span>
+        </div>
+        <p class="small muted" style="margin-top:8px">Giảm 4,4 lần (3,3σ qua 3 seed). S6 hiện là cấu hình mặc định của notebook.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 6. TỪ CHỐI ================= -->
+<section id="suy-luan">
+  <div class="sec-head"><span class="sec-num">06</span><h2>Suy luận &amp; từ chối</h2></div>
+  <p class="sub"><code>VSLPredictor</code> không bắt buộc phải trả lời. Nó từ chối khi xác suất cao nhất thấp (<code>low_confidence</code>) hoặc hai lớp đứng đầu quá sát nhau (<code>ambiguous</code>). Ngưỡng thực tế là <code>max(reject_threshold, min_confidence)</code> = max(0.20, 0.65).</p>
+  <div class="card">
+    <div class="lab-title"><span class="badge">Thử nghiệm</span>Chỉnh logit, nhiệt độ và ngưỡng</div>
+    <div class="row" style="margin-bottom:10px">
+      <span class="small muted">Tình huống:</span>
+      <button class="btn" data-sc="clear">Ký rõ ràng</button>
+      <button class="btn" data-sc="pair">cảm ơn / xin chào sát nhau</button>
+      <button class="btn" data-sc="weak">Không chắc</button>
+      <button class="btn" data-sc="none">Không phải ký hiệu</button>
+    </div>
+    <div class="grid2">
+      <div>
+        <div class="ctls" id="logitCtls" style="margin-top:0"></div>
+        <div class="ctls">
+          <label class="ctl">Nhiệt độ T <output id="tempOut">1.00</output><input type="range" id="tempIn" min="0.5" max="3" step="0.05" value="1"></label>
+          <label class="ctl">min_confidence <output id="mcOut">0.65</output><input type="range" id="mcIn" min="0.2" max="0.95" step="0.01" value="0.65"></label>
+          <label class="ctl">min_probability_gap <output id="mgOut">0.08</output><input type="range" id="mgIn" min="0" max="0.4" step="0.01" value="0.08"></label>
+        </div>
+      </div>
+      <div>
+        <div class="pbars" id="pbars"></div>
+        <div class="verdict" id="rejVerdict"></div>
+        <pre class="json" id="rejJson"></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 7. REALTIME ================= -->
+<section id="realtime">
+  <div class="sec-head"><span class="sec-num">07</span><h2>Realtime: từ frame đến câu</h2></div>
+  <p class="sub">Camera chạy 15 fps. Server giữ cửa sổ trượt gồm các frame gần nhất và dự đoán mỗi vài frame. Mỗi dự đoán được chấp nhận là một <b>phiếu</b>: cùng một nhãn thắng đủ số phiếu liên tiếp thì <code>WordVoter</code> chốt từ. Từ vừa chốt bị chặn cho tới khi tay rời khung, nên giữ nguyên tay không lặp từ. Nghỉ tay 3 giây thì kết thúc câu và gửi đi ghép bằng LLM.</p>
+  <div class="card">
+    <div class="lab-title"><span class="badge">Mô phỏng</span>Người dùng ký "xin chào · tôi · tên là · T-R-U-N-G"</div>
+    <div class="row" style="justify-content:space-between">
+      <div class="row">
+        <button class="btn primary" id="rtPlay">▶ Chạy</button>
+        <button class="btn" id="rtReset">↺ Làm lại</button>
+        <div class="seg" id="rtSpeed"><button data-v="1" class="on">1×</button><button data-v="2">2×</button><button data-v="4">4×</button></div>
+      </div>
+      <div class="seg" id="rtPreset"><button data-p="accurate" class="on">Chuẩn</button><button data-p="fast">Nhanh</button><button data-p="fastest">Rất nhanh</button></div>
+    </div>
+    <div class="ctls">
+      <label class="ctl">Số phiếu để chốt từ <output id="votesOut">2</output><input type="range" id="votesIn" min="1" max="5" step="1" value="2"></label>
+      <label class="ctl">Hạt giống ngẫu nhiên <output id="seedOut">7</output><input type="range" id="seedIn" min="1" max="40" step="1" value="7"></label>
+    </div>
+    <canvas id="rtCv" aria-label="Dòng thời gian mô phỏng nhận dạng realtime"></canvas>
+    <div class="legend" style="margin-top:6px">
+      <span><i style="background:var(--accent);opacity:.3"></i>Cửa sổ dự đoán hiện tại</span>
+      <span><i style="background:var(--ok);border-radius:50%"></i>Chấp nhận, đúng ký hiệu trong cửa sổ</span>
+      <span><i style="background:var(--bad);border-radius:50%"></i>Chấp nhận nhưng nhầm</span>
+      <span><i style="border:1.5px solid var(--warn);border-radius:50%"></i>Bị từ chối</span>
+      <span>Bấm / kéo trên dòng thời gian để tua</span>
+    </div>
+    <div class="rt-state">
+      <div class="cell"><span>Thời gian</span><b id="rtTime">0.00 s</b></div>
+      <div class="cell"><span>Cửa sổ / frame có tay</span><b id="rtBuf">0 / 0</b></div>
+      <div class="cell"><span>Dự đoán gần nhất</span><b id="rtPred">—</b></div>
+      <div class="cell"><span>Ứng viên &amp; phiếu</span><b id="rtCand">—</b><div class="votebar" id="rtVotes"></div></div>
+      <div class="cell"><span>Đang chặn (blocked)</span><b id="rtBlocked">—</b></div>
+    </div>
+    <div style="margin-top:14px">
+      <div class="small muted">Chuỗi từ đã chốt</div>
+      <div class="words" id="rtWords"></div>
+    </div>
+    <div style="margin-top:10px">
+      <div class="small muted">Câu (ghép thô → LLM)</div>
+      <div class="sentence" id="rtSentence"><span class="muted">—</span></div>
+      <div class="small muted" id="rtNaive"></div>
+    </div>
+    <p class="small muted" style="margin-top:12px">Dự đoán trong mô phỏng được sinh theo độ "thuần" của cửa sổ (tỉ lệ frame thuộc cùng một ký hiệu), không chạy model thật. Mục đích là để thấy cửa sổ, ngưỡng, phiếu và nghỉ tay tương tác với nhau thế nào. Cửa sổ ngắn chốt nhanh hơn nhưng dễ nhầm lúc chuyển ký hiệu.</p>
+  </div>
+  <div class="card">
+    <h3>Các mức tốc độ (<code>SPEED_PRESETS</code> trong <code>lib/recognizer.ts</code>)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Mức</th><th class="num">Cửa sổ</th><th class="num">Bắt đầu dự đoán</th><th class="num">Gửi predict mỗi</th><th class="num">Tối thiểu frame có tay</th><th class="num">Chốt từ sau</th></tr></thead>
+      <tbody>
+        <tr><td>Chuẩn</td><td class="num">30 frame (2 s)</td><td class="num">30</td><td class="num">5</td><td class="num">12</td><td class="num">~1.5 s</td></tr>
+        <tr><td>Nhanh</td><td class="num">20 frame</td><td class="num">12</td><td class="num">3</td><td class="num">8</td><td class="num">~1.0 s</td></tr>
+        <tr><td>Rất nhanh</td><td class="num">15 frame</td><td class="num">8</td><td class="num">2</td><td class="num">6</td><td class="num">~0.8 s</td></tr>
+      </tbody>
+    </table></div>
+    <p class="small muted" style="margin:10px 0 0">Trên CLI Python còn có <b>nhánh nhanh</b> (<code>src/app/fast.py</code>, <code>--fast</code>): mỗi frame chỉ chạy 1 model (~1/6 chi phí). Phiếu "mạnh" (≥ 0.9, gap ≥ 0.5) được chốt sớm sau 3 phiếu, và cả ensemble xác nhận lại (≥ 0.85, gap ≥ 0.4) ngay trước khi chốt.</p>
+  </div>
+</section>
+
+<!-- ================= 8. TRIỂN KHAI ================= -->
+<section id="trien-khai">
+  <div class="sec-head"><span class="sec-num">08</span><h2>Triển khai: web app + Flask API</h2></div>
+  <p class="sub">MediaPipe chạy <b>trên trình duyệt</b> (<code>@mediapipe/tasks-vision</code>, cùng 2 file <code>.task</code> với Python). Trình duyệt chỉ gửi landmark (~2,7 KB JSON/frame), không gửi ảnh. Server chỉ chạy <code>extract</code> và model.</p>
+  <div class="grid2">
+    <div class="card">
+      <div class="lab-title"><span class="badge">Mô phỏng</span>Luồng request</div>
+      <svg id="seqSvg" viewBox="0 0 560 420" role="img" aria-label="Sơ đồ tuần tự giữa trình duyệt, Flask, Next và Groq" style="width:100%;height:auto"></svg>
+      <div class="row" style="margin-top:8px"><button class="btn" id="seqPlayBtn">⏸ Tạm dừng</button><span class="small muted">Tự chạy lần lượt từng bước.</span></div>
+    </div>
+    <div class="card">
+      <ol class="dlist" id="dlist"></ol>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h3 style="margin:0">Độ trễ mỗi frame (đo trên máy dev)</h3>
+      <div class="seg" id="latMode"><button class="on" data-l="gpu">MediaPipe GPU (WebGL)</button><button data-l="cpu">CPU (WASM)</button></div>
+    </div>
+    <div class="lat" id="latBar"></div>
+    <p class="small muted" id="latNote" style="margin:0"></p>
+  </div>
+  <div class="card">
+    <h3>Flask API (<code>src/app/server.py</code>)</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Endpoint</th><th>Chức năng</th></tr></thead>
+      <tbody>
+        <tr><td><code>GET /</code></td><td>Trang test (webcam hoặc file video)</td></tr>
+        <tr><td><code>GET /api/health</code></td><td>Trạng thái, checkpoint, danh sách lớp</td></tr>
+        <tr><td><code>POST /api/predict</code></td><td>Gửi đủ một clip (frame, feature hoặc landmark) → một kết quả</td></tr>
+        <tr><td><code>POST /api/stream</code></td><td>Mở phiên; server giữ cửa sổ 30 frame. Phản hồi có <code>landmarks: true</code> thì không tạo MediaPipe trên server</td></tr>
+        <tr><td><code>POST /api/stream/&lt;id&gt;</code></td><td>Chỉ gửi frame mới; <code>predict: true</code> mỗi <code>strideFrames</code> frame</td></tr>
+        <tr><td><code>DELETE /api/stream/&lt;id&gt;</code></td><td>Đóng phiên (cũng tự đóng khi rảnh quá lâu)</td></tr>
+      </tbody>
+    </table></div>
+    <p class="small muted" style="margin:10px 0 0">Groq API key do người dùng nhập, nằm trên trình duyệt và được gửi trong header <code>x-groq-key</code>. Route <code>/api/compose</code> chỉ chuyển tiếp, không lưu và không ghi log. Không có key thì câu được ghép thô.</p>
+  </div>
+</section>
+
+<!-- ================= 9. KẾT QUẢ ================= -->
+<section id="ket-qua">
+  <div class="sec-head"><span class="sec-num">09</span><h2>Kết quả</h2></div>
+  <p class="sub">Checkpoint mới nhất: <code>runs/vsl_ft_20261122_003810</code>, fine-tune từ <code>vsl_20261122_003052</code> (97,2% trên 1.702 mẫu) sau khi thêm 31 clip gốc mới. 18 lớp, 1.798 mẫu, 6 model, VSLNet.</p>
+  <div class="grid3">
+    <div class="card">
+      <h3>Accuracy từng fold</h3>
+      <div class="dots" id="foldDots"><div class="track"></div></div>
+      <div class="axis"><span>95%</span><span>96%</span><span>97%</span><span>98%</span><span>99%</span><span>100%</span></div>
+      <p class="small muted" style="margin:10px 0 0">Trung bình <b>99,66% ± 0,69</b>; macro-F1 <b>99,63%</b>. Lỗi OOF duy nhất: <b>cảm ơn → xin chào</b> (1 mẫu).</p>
+    </div>
+    <div class="card" style="grid-column: span 2">
+      <h3>Đối thủ gần nhất của mỗi lớp (<code>closest_rivals</code>)</h3>
+      <p class="small muted" style="margin-top:-4px">Xác suất trung bình model dành cho lớp đối thủ trên các mẫu OOF của lớp đó. Càng cao càng dễ nhầm.</p>
+      <div class="hbars" id="rivals"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>F1 từng lớp</h3>
+    <div class="f1grid" id="f1grid"></div>
+  </div>
+  <div class="card">
+    <h3>Lịch sử các run chính</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Run</th><th class="num">Lớp</th><th class="num">Mẫu</th><th class="num">CV accuracy</th><th>Nhầm lẫn</th></tr></thead>
+      <tbody>
+        <tr><td><code>vsl_v3_s6</code></td><td class="num">12</td><td class="num">540</td><td class="num">99,4%</td><td>cảm ơn → xin chào (1)</td></tr>
+        <tr><td><code>vsl_v4_s6</code></td><td class="num">14</td><td class="num">630</td><td class="num">100%</td><td>không có</td></tr>
+        <tr><td><code>vsl_v5_20261119</code></td><td class="num">16</td><td class="num">1.600</td><td class="num">99,6%</td><td>cảm ơn → xin chào (1)</td></tr>
+        <tr><td><code>vsl_20261122_003052</code></td><td class="num">18</td><td class="num">1.702</td><td class="num">97,2%</td><td>thêm lớp <code>b</code>, <code>y</code></td></tr>
+        <tr><td><b><code>vsl_ft_20261122_003810</code></b></td><td class="num">18</td><td class="num">1.798</td><td class="num"><b>99,66%</b></td><td>cảm ơn → xin chào (1)</td></tr>
+      </tbody>
+    </table></div>
+    <p class="small muted" style="margin:10px 0 0">Python CLI: từ frame cuối tới khi có dự đoán p50 ≈ 23 ms, p95 ≈ 42 ms. MediaPipe chiếm hơn 95% chi phí (~34 ms/frame trên M3).</p>
+  </div>
+</section>
+
+<!-- ================= 10. QUY TRÌNH ================= -->
+<section id="quy-trinh">
+  <div class="sec-head"><span class="sec-num">10</span><h2>Quy trình làm việc</h2></div>
+  <p class="sub">Các notebook trong <code>notebooks/</code> chạy theo thứ tự, từ root dự án hoặc từ <code>notebooks/</code>. Bấm một bước để xem nó đọc gì và ghi gì.</p>
+  <div class="card">
+    <div class="wf" id="wf"></div>
+    <div class="readout" id="wfRead" style="margin-top:12px;font-family:inherit;font-size:.9rem"></div>
+  </div>
+  <div class="grid2" style="margin-top:16px">
+    <div class="card">
+      <h3>Bố cục dữ liệu (<code>DataHandler</code>)</h3>
+<pre class="tree">data/
+├── raw/&lt;lớp&gt;/&lt;id&gt;.mp4            <span class="muted"># video gốc, tên lớp NFC</span>
+└── processed/&lt;lớp&gt;/&lt;id&gt;/
+    ├── 0.npz … N.npz              <span class="muted"># 277 đặc trưng thô / frame</span>
+    └── meta.json                  <span class="muted"># fps, version, origin_sample_id…</span>
+runs/&lt;tên&gt;/
+├── ensemble.pt                    <span class="muted"># 6 model + normalizer + T + ngưỡng</span>
+├── metrics.json                   <span class="muted"># cv, confusion_pairs, closest_rivals</span>
+└── folds.json                     <span class="muted"># để fine-tune giữ đúng fold</span></pre>
+      <p class="small muted" style="margin:10px 0 0"><code>augment.py</code> và <code>reextract.py</code> gọi trực tiếp các helper tĩnh private của <code>DataHandler</code> (<code>_read_meta</code>, <code>_frame_paths</code>, <code>_load_feature</code>). Đổi chữ ký của chúng sẽ làm hỏng cả hai module.</p>
+    </div>
+    <div class="card">
+      <h3>Lệnh thường dùng</h3>
+      <div id="cmds"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 11. HẠN CHẾ ================= -->
+<section id="han-che">
+  <div class="sec-head"><span class="sec-num">11</span><h2>Hạn chế &amp; hướng phát triển</h2></div>
+  <div class="grid2">
+    <div class="card risk">
+      <h3>Rủi ro hiện tại</h3>
+      <ul class="clean small">
+        <li><b>CV đang đánh giá quá cao.</b> Mỗi lớp gần như chỉ được quay trong một buổi, với một người ký. Buổi quay trùng với lớp, nên model có thể học bối cảnh quay thay vì ký hiệu. Cặp cảm ơn / xin chào quay chung buổi cũng chính là cặp khó tách nhất.</li>
+        <li>Augment chỉ là nhiễu đặc trưng, gần như nhân bản mẫu gốc.</li>
+        <li>Chưa có dữ liệu âm ("không ký"), nên ngưỡng từ chối chưa được hiệu chỉnh thật.</li>
+        <li>Nhiệt độ chạm biên 1.0: xác suất chưa thật sự được hiệu chỉnh.</li>
+        <li>Từ vựng nhỏ (18 lớp), chưa có đặc trưng phi thủ công (mặt, miệng), chưa nhận dạng câu liên tục thật sự.</li>
+      </ul>
+    </div>
+    <div class="card plan">
+      <h3>Lộ trình</h3>
+      <ul class="clean small">
+        <li><b>Ưu tiên cao:</b> thu dữ liệu nhiều buổi, nhiều người ký; tách tập test theo buổi quay. Thu dữ liệu âm để hiệu chỉnh ngưỡng từ chối.</li>
+        <li><b>Trung hạn:</b> kiểm chứng SignFormer và cosine head trên ladder v4 (F2, F3); mở rộng từ vựng; thêm đặc trưng mặt và miệng.</li>
+        <li><b>Dài hạn:</b> mô hình causal cho streaming, phân đoạn câu liên tục; triển khai ONNX / on-device.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</main>
+<footer class="wrap">Tạo từ mã nguồn trong repo (<code>src/</code>, <code>external/vsl-web</code>, <code>runs/vsl_ft_20261122_003810/metrics.json</code>) ngày 22/11/2026. Các mô phỏng chạy hoàn toàn trên trang, không gọi model hay API thật.</footer>
+
+<script>
+(() => {
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const root = document.documentElement;
+const C = n => getComputedStyle(root).getPropertyValue(n).trim();
+const renderers = [];
+const rerender = () => renderers.forEach(f => f());
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const fmt = (v, d = 2) => (Math.abs(v) < 1e-9 ? 0 : v).toFixed(d);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function fitCanvas(cv, aspect) {
+  const w = cv.clientWidth || 600, h = Math.round(w * aspect), d = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * d) || cv.height !== Math.round(h * d)) { cv.width = Math.round(w * d); cv.height = Math.round(h * d); }
+  cv.style.height = h + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(d, 0, 0, d, 0, 0);
+  return { ctx, w, h };
+}
+function segment(el, onPick) {
+  el.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b || !el.contains(b)) return;
+    $$('button', el).forEach(x => x.classList.toggle('on', x === b)); onPick(b);
+  });
+}
+
+/* ---------- theme ---------- */
+try { const t = localStorage.getItem('vsl-theme'); if (t) root.dataset.theme = t; } catch (e) {}
+$('#themeBtn').addEventListener('click', () => {
+  const cur = root.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  root.dataset.theme = cur === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem('vsl-theme', root.dataset.theme); } catch (e) {}
+  rerender();
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', rerender);
+let rzT; window.addEventListener('resize', () => { clearTimeout(rzT); rzT = setTimeout(rerender, 80); });
+
+/* ---------- nav highlight ---------- */
+const navLinks = $$('#nav a');
+const io = new IntersectionObserver(es => es.forEach(e => {
+  if (e.isIntersecting) navLinks.forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id));
+}), { rootMargin: '-45% 0px -50% 0px' });
+$$('main section').forEach(s => io.observe(s));
+
+/* ================= 1. PIPELINE ================= */
+const PIPE = [
+  { t: 'Camera / video', s: 'BGR 16:9 · 15 fps', L: 'pos', pk: 'frame uint8 [1080, 1920, 3]',
+    d: 'Webcam mở ở độ phân giải 16:9 lớn nhất. <code>StreamConfig.target_fps = 15</code> bỏ bớt frame đến quá nhanh, vì lấp gap và khử gai tính theo số frame, phải khớp với tốc độ lúc thu dữ liệu.', f: ['src/features/camera.py', 'src/app/realtime.py'], io: 'thiết bị → BGR uint8' },
+  { t: 'frame_padding', s: '→ 1280 × 1280', L: 'pos', pk: 'canvas uint8 [1280, 1280, 3]',
+    d: 'Scale đều để cạnh dài bằng 1280, đặt giữa trên nền đen. Toạ độ landmark chuẩn hoá [0, 1] nhờ vậy luôn cùng tỉ lệ, kể cả video cũ 720×720. Web app vẽ đúng canvas này trước khi detect.', f: ['src/features/frame.py', 'external/vsl-web/lib/landmarks.ts'], io: '(H, W, 3) → (1280, 1280, 3)' },
+  { t: 'MediaPipe Pose + Hand', s: '33 + 2 × 21 điểm', L: 'pos', pk: 'pose 33×(x,y,z,vis) · hands ≤2×21×3 (+world)',
+    d: '<code>LandmarkerLoader</code> bọc 2 model <code>.task</code> đóng gói sẵn, chế độ VIDEO; timestamp phải tăng nghiêm ngặt. Trên web, cùng model chạy bằng <code>@mediapipe/tasks-vision</code> (WebGL, tự chuyển CPU khi lỗi).', f: ['src/builtin/mediapipe_builtin/landmarkers_loader.py', 'defs.py', 'models/*.task'], io: 'ảnh → landmark' },
+  { t: 'extract()', s: '(T, 277)', L: 'shape', pk: 'float32 [277] mỗi frame (NaN khi mất pose)',
+    d: 'Dựng hệ trục thân từ hai vai, ghép tay detect với cổ tay pose, rồi tính vị trí (61), thủ hình (196), hướng bàn tay (18), hiện diện (2). Thủ hình lấy từ <code>hand_world_landmarks</code> (mét).', f: ['src/features/extract.py', 'src/features/schema.py'], io: 'landmark → (277,)' },
+  { t: 'process_sequence()', s: '(30, 316)', L: 'shape', pk: 'float32 [30, 316]',
+    d: 'Bỏ tay nghỉ, lấp gap ≤ 6 frame, khử gai 1 frame, co giãn về 30 bước, thêm 39 cột vận tốc. Hàm dùng chung cho train và serve.', f: ['src/features/extract.py'], io: '(T, 277) → (30, 316)' },
+  { t: 'Normalizer + Ensemble', s: '6 × VSLNet', L: 'orient', pk: 'logits [6, 18] → p̄ [18]',
+    d: 'Chuẩn hoá presence-aware rồi chạy 5 model fold + 1 model full-data, lấy trung bình xác suất.', f: ['src/model/training.py', 'src/model/predict.py'], io: '(30, 316) → p (18,)' },
+  { t: 'Hiệu chỉnh + từ chối', s: 'conf ≥ 0.65 · gap ≥ 0.08', L: 'orient', pk: '{label, confidence, probability_gap, accepted, rejection_reason, top}',
+    d: 'Temperature scaling fit trên OOF. Kết quả bị từ chối nếu <code>low_confidence</code> hoặc <code>ambiguous</code>. Kết quả dạng JSON, dùng thẳng cho API.', f: ['src/model/predict.py'], io: 'p → kết quả JSON' },
+  { t: 'WordVoter', s: 'N phiếu liên tiếp', L: 'motion', pk: "['xin chào', 'toi', 'ten_la', 't', 'r', 'u', 'n', 'g']",
+    d: 'Một nhãn phải thắng N phiếu liên tiếp mới được chốt. Từ vừa chốt bị chặn cho tới khi tay rời khung hoặc một từ khác được chốt. Có bản Python và bản TypeScript.', f: ['src/app/voting.py', 'external/vsl-web/lib/voter.ts'], io: 'chuỗi kết quả → chuỗi từ' },
+  { t: 'SentenceComposer', s: 'LLM trên Groq', L: 'motion', pk: '"Xin chào, tôi tên là Trung."',
+    d: 'Gom chữ cái đánh vần (và dấu thanh) thành từ, thêm hư từ, không bịa thông tin. Không có key hoặc lỗi mạng thì ghép thô bằng <code>naive_sentence</code>.', f: ['src/app/sentence.py', 'external/vsl-web/app/api/compose/route.ts'], io: 'chuỗi nhãn → câu' },
+];
+const pipeEl = $('#pipe');
+PIPE.forEach((p, i) => {
+  const b = document.createElement('button');
+  b.className = 'pnode'; b.type = 'button';
+  b.innerHTML = `<span class="layer" style="background:var(--${p.L})"></span><span class="n">BƯỚC ${i + 1}</span><span class="t">${p.t}</span><span class="s">${p.s}</span>`;
+  b.addEventListener('click', () => selectPipe(i));
+  pipeEl.appendChild(b);
+});
+function selectPipe(i) {
+  $$('.pnode', pipeEl).forEach((n, j) => n.classList.toggle('sel', j === i));
+  const p = PIPE[i];
+  $('#pipeDetail').innerHTML = `<h3>${i + 1}. ${p.t} <span class="chip mono">${esc(p.io)}</span></h3><p class="small">${p.d}</p><div class="files">${p.f.map(f => `<span class="chip mono">${f}</span>`).join('')}</div>`;
+  $('#pipePacket').textContent = p.pk;
+}
+selectPipe(0);
+let pipeTimer = null;
+$('#pipePlay').addEventListener('click', () => {
+  const nodes = $$('.pnode', pipeEl);
+  if (pipeTimer) { clearInterval(pipeTimer); pipeTimer = null; }
+  nodes.forEach(n => n.classList.remove('done', 'active'));
+  let i = 0;
+  const step = () => {
+    nodes.forEach((n, j) => { n.classList.toggle('active', j === i); n.classList.toggle('done', j < i); });
+    selectPipe(i);
+    i++;
+    if (i > nodes.length) { clearInterval(pipeTimer); pipeTimer = null; nodes.forEach(n => n.classList.remove('active')); nodes.forEach(n => n.classList.add('done')); }
+  };
+  step(); pipeTimer = setInterval(() => { if (i >= nodes.length) { clearInterval(pipeTimer); pipeTimer = null; nodes.forEach(n => { n.classList.remove('active'); n.classList.add('done'); }); return; } step(); }, 950);
+});
+
+/* ---------- module map ---------- */
+const MODS = [
+  { id: 'mp', n: 'builtin/mediapipe_builtin', r: 'LandmarkerLoader bọc model Pose + Hand .task, quản lý IMAGE/VIDEO mode và timestamp.', f: 'landmarkers_loader.py · defs.py · stream_process.py', u: [] },
+  { id: 'feat', n: 'features', r: 'frame_padding, extract (277), process_sequence (30, 316), schema và các slice cột.', f: 'frame.py · extract.py · schema.py · landmarks.py · camera.py', u: ['mp'] },
+  { id: 'data', n: 'data', r: 'DataHandler (raw mp4 + processed npz), thu thập, trích lại, augment.', f: 'data_reader.py · data_collect.py · reextract.py · augment.py', u: ['feat', 'mp'] },
+  { id: 'train', n: 'model/training', r: 'Config, Normalizer, Augmenter, AdaptiveController, 3 kiến trúc, run_training → ensemble.pt.', f: 'training.py', u: ['feat'] },
+  { id: 'pred', n: 'model/predict', r: 'VSLPredictor, VSLStreamSession, StreamConfig, logic từ chối.', f: 'predict.py', u: ['train', 'feat', 'mp'] },
+  { id: 'diag', n: 'model/diagnostics · evaluation', r: 'Flip rate, open-set, hard pairs, độ bền nhiễu; metric và confusion.', f: 'diagnostics.py · evaluation.py', u: ['train', 'feat'] },
+  { id: 'app', n: 'app', r: 'Realtime CLI, nhánh nhanh, WordVoter, SentenceComposer, Flask server, simulate.', f: 'realtime.py · fast.py · voting.py · sentence.py · server.py · simulate.py', u: ['pred', 'feat', 'viz'] },
+  { id: 'viz', n: 'visualization', r: 'Vẽ landmark pose và bàn tay lên frame BGR để xem trước.', f: 'landmarks.py', u: ['mp'] },
+  { id: 'web', n: 'external/vsl-web', r: 'Next.js 16 + React 19: MediaPipe trên trình duyệt, voter TS, /api/compose → Groq.', f: 'lib/landmarks.ts · recognizer.ts · voter.ts · sentence.ts · app/page.tsx', u: ['app'] },
+  { id: 'nb', n: 'notebooks', r: 'Quy trình từng bước: thu thập → trích lại → augment → train → realtime.', f: '*.ipynb', u: ['data', 'train', 'pred', 'app', 'viz', 'diag'] },
+  { id: 'exp', n: 'runs/experiments', r: 'Ladder p2 / p3: 3 seed, cùng fold, compare.py cho delta theo cặp.', f: 'p2/ladder.py · p3/compare.py · v3_snapshot/', u: ['train', 'diag'] },
+  { id: 'tests', n: 'tests', r: 'unittest theo module; chạy bằng tên module có dấu chấm (không có __init__.py).', f: 'test_*.py', u: ['feat', 'data', 'train', 'pred', 'app'] },
+];
+const modsEl = $('#mods');
+MODS.forEach(m => {
+  const d = document.createElement('div');
+  d.className = 'mod'; d.tabIndex = 0; d.dataset.id = m.id;
+  d.innerHTML = `<h4>${m.n}</h4><p>${m.r}</p><div class="files">${m.f}</div>`;
+  const on = () => {
+    modsEl.classList.add('focus');
+    $$('.mod', modsEl).forEach(x => {
+      const o = MODS.find(k => k.id === x.dataset.id);
+      x.classList.toggle('me', o.id === m.id);
+      x.classList.toggle('uses', m.u.includes(o.id));
+      x.classList.toggle('usedby', o.u.includes(m.id));
+    });
+  };
+  d.addEventListener('mouseenter', on); d.addEventListener('focus', on); d.addEventListener('click', on);
+  modsEl.appendChild(d);
+});
+const offMods = () => modsEl.classList.remove('focus');
+modsEl.addEventListener('mouseleave', offMods);
+document.addEventListener('click', e => { if (!modsEl.contains(e.target)) offMods(); });
+
+/* ================= 2. BODY / CONTACT SIM ================= */
+const ANCH = [
+  ['trán', 0, -1.076, 18], ['mũi', 0, -0.8, 18], ['miệng', 0, -0.68, 18], ['cằm', 0, -0.536, 18],
+  ['má trái', 0.11, -0.765, 18], ['má phải', -0.11, -0.765, 18], ['cổ', 0, -0.268, 10],
+  ['ngực', 0, 0.35, 6], ['bụng', 0, 0.9, 4], ['vai trái', 0.5, 0, 8], ['vai phải', -0.5, 0, 8],
+];
+const REST_Y = 0.9;
+const body = { L: { x: 0.42, y: 1.2 }, R: { x: -0.42, y: 1.2 }, ext: 1, spr: 0.6, dep: 1, anim: null };
+const bodyCv = $('#bodyCv');
+const VIEW = { x0: -1.25, x1: 1.25, y0: -1.45, y1: 1.45 };
+function bodyAspect() { return (VIEW.y1 - VIEW.y0) / (VIEW.x1 - VIEW.x0) * 0.86; }
+function handGeom(side) {
+  const h = body[side], s = side === 'R' ? 1 : -1, dep = body.dep;
+  const r = 0.085 * dep, k = (0.35 + 0.65 * body.ext) * dep;
+  const defs = [[-90 + s * 62, 0.15], [-90 + s * 22 * body.spr + s * 4, 0.21], [-90 + s * 6 * body.spr, 0.235], [-90 - s * 8 * body.spr, 0.215], [-90 - s * 22 * body.spr - s * 4, 0.17]];
+  const tips = [], bases = [];
+  defs.forEach(([a, len], i) => {
+    const rad = a * Math.PI / 180, dx = Math.cos(rad), dy = Math.sin(rad);
+    const bx = h.x + dx * r * (i === 0 ? 0.8 : 1), by = h.y + dy * r * (i === 0 ? 0.6 : 1);
+    bases.push([bx, by]); tips.push([bx + dx * len * k, by + dy * len * k]);
+  });
+  return { r, tips, bases };
+}
+function handActive(side) { return body[side].y <= REST_Y; }
+function contacts(side) {
+  const g = handGeom(side), pts = [[body[side].x, body[side].y], ...g.tips];
+  return ANCH.map(([, ax, ay, gm]) => Math.max(...pts.map(([px, py]) => Math.exp(-gm * ((ax - px) ** 2 + (ay - py) ** 2)))));
+}
+function drawBody() {
+  const aspect = bodyAspect();
+  const { ctx, w, h } = fitCanvas(bodyCv, aspect);
+  const sx = w / (VIEW.x1 - VIEW.x0), sy = h / (VIEW.y1 - VIEW.y0);
+  const X = x => (x - VIEW.x0) * sx, Y = y => (y - VIEW.y0) * sy, S = v => v * sx;
+  ctx.fillStyle = C('--surface-2'); ctx.fillRect(0, 0, w, h);
+  // rest zone
+  ctx.fillStyle = C('--bad'); ctx.globalAlpha = 0.07; ctx.fillRect(0, Y(REST_Y), w, h - Y(REST_Y)); ctx.globalAlpha = 1;
+  ctx.setLineDash([6, 5]); ctx.strokeStyle = C('--bad'); ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(0, Y(REST_Y)); ctx.lineTo(w, Y(REST_Y)); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = C('--bad'); ctx.font = '600 11px system-ui'; ctx.fillText('REST_Y = 0.9 · tay dưới vạch bị bỏ qua', 8, Y(REST_Y) + 15);
+  // torso
+  const skin = C('--skin'), line = C('--skin-line');
+  ctx.fillStyle = skin; ctx.strokeStyle = line; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(X(-0.55), Y(0.02)); ctx.lineTo(X(0.55), Y(0.02)); ctx.lineTo(X(0.4), Y(1.5)); ctx.lineTo(X(-0.4), Y(1.5)); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(X(-0.1), Y(-0.5)); ctx.lineTo(X(0.1), Y(-0.5)); ctx.lineTo(X(0.13), Y(0.03)); ctx.lineTo(X(-0.13), Y(0.03)); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(X(0), Y(-0.83), S(0.24), S(0.31), 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  // face details
+  ctx.fillStyle = line;
+  [[-0.09, -0.9], [0.09, -0.9]].forEach(([x, y]) => { ctx.beginPath(); ctx.arc(X(x), Y(y), S(0.018), 0, 7); ctx.fill(); });
+  ctx.beginPath(); ctx.arc(X(0), Y(-0.71), S(0.06), 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+  // body frame axes
+  ctx.strokeStyle = C('--muted'); ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
+  ctx.beginPath(); ctx.moveTo(X(-1.15), Y(0)); ctx.lineTo(X(1.15), Y(0)); ctx.moveTo(X(0), Y(-1.4)); ctx.lineTo(X(0), Y(1.4)); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = C('--muted'); ctx.font = '10px ui-monospace, Menlo, monospace';
+  ctx.fillText('gốc = giữa hai vai · 1 đơn vị = độ rộng vai', X(-1.2), Y(-1.36));
+  ctx.fillText('+x (trái người ký)', X(0.68), Y(-0.04));
+  // arms (2-bone IK)
+  ['L', 'R'].forEach(side => {
+    const sh = side === 'L' ? [0.5, 0.02] : [-0.5, 0.02], hd = body[side], s = side === 'L' ? 1 : -1;
+    const dx = hd.x - sh[0], dy = hd.y - sh[1], dist = Math.hypot(dx, dy), a = 0.6;
+    let ex, ey;
+    if (dist >= 2 * a) { ex = sh[0] + dx / 2; ey = sh[1] + dy / 2; }
+    else { const m = Math.sqrt(a * a - (dist / 2) ** 2), mx = sh[0] + dx / 2, my = sh[1] + dy / 2; const nx = -dy / dist, ny = dx / dist; const sign = (nx * s > 0) ? 1 : -1; ex = mx + nx * m * sign; ey = my + ny * m * sign; }
+    ctx.strokeStyle = line; ctx.lineCap = 'round'; ctx.lineWidth = S(0.13);
+    ctx.beginPath(); ctx.moveTo(X(sh[0]), Y(sh[1])); ctx.lineTo(X(ex), Y(ey)); ctx.lineTo(X(hd.x), Y(hd.y)); ctx.stroke();
+    ctx.strokeStyle = skin; ctx.lineWidth = S(0.1);
+    ctx.beginPath(); ctx.moveTo(X(sh[0]), Y(sh[1])); ctx.lineTo(X(ex), Y(ey)); ctx.lineTo(X(hd.x), Y(hd.y)); ctx.stroke();
+  });
+  // anchors glow
+  const cL = handActive('L') ? contacts('L') : ANCH.map(() => 0), cR = handActive('R') ? contacts('R') : ANCH.map(() => 0);
+  ANCH.forEach(([n, ax, ay], i) => {
+    const v = Math.max(cL[i], cR[i]);
+    if (v > 0.03) { ctx.fillStyle = C('--accent'); ctx.globalAlpha = 0.18 + 0.5 * v; ctx.beginPath(); ctx.arc(X(ax), Y(ay), S(0.04 + 0.08 * v), 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+    ctx.fillStyle = C('--accent'); ctx.beginPath(); ctx.arc(X(ax), Y(ay), 3, 0, 7); ctx.fill();
+  });
+  // nose → palm face_vec, inter-hand
+  const nose = ANCH[1];
+  ['L', 'R'].forEach(side => {
+    if (!handActive(side)) return;
+    ctx.strokeStyle = C(side === 'L' ? '--left' : '--right'); ctx.globalAlpha = 0.45; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(X(nose[1]), Y(nose[2])); ctx.lineTo(X(body[side].x), Y(body[side].y)); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  });
+  if (handActive('L') && handActive('R')) {
+    ctx.strokeStyle = C('--shared'); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(X(body.R.x), Y(body.R.y)); ctx.lineTo(X(body.L.x), Y(body.L.y)); ctx.stroke();
+  }
+  // hands
+  ['L', 'R'].forEach(side => {
+    const g = handGeom(side), hd = body[side], col = C(side === 'L' ? '--left' : '--right'), act = handActive(side);
+    ctx.globalAlpha = act ? 1 : 0.4;
+    ctx.strokeStyle = col; ctx.lineWidth = S(0.035) * body.dep; ctx.lineCap = 'round';
+    g.tips.forEach((t, i) => { ctx.beginPath(); ctx.moveTo(X(g.bases[i][0]), Y(g.bases[i][1])); ctx.lineTo(X(t[0]), Y(t[1])); ctx.stroke(); });
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(X(hd.x), Y(hd.y), S(g.r), 0, 7); ctx.fill();
+    g.tips.forEach(t => { ctx.fillStyle = C('--surface'); ctx.beginPath(); ctx.arc(X(t[0]), Y(t[1]), 2.4, 0, 7); ctx.fill(); });
+    ctx.fillStyle = C('--surface'); ctx.font = '700 11px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(side === 'L' ? 'T' : 'P', X(hd.x), Y(hd.y)); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.globalAlpha = 1;
+  });
+  ctx.fillStyle = C('--muted'); ctx.font = '11px system-ui';
+  ctx.fillText('Kéo chấm T (tay trái) hoặc P (tay phải)', 8, h - 8);
+  updateFeatPanel(cL, cR);
+}
+function updateFeatPanel(cL, cR) {
+  const aL = handActive('L'), aR = handActive('R');
+  let html = `<span class="h">Vùng (γ)</span><span class="h" style="color:var(--left)">Tay trái${aL ? '' : ' · nghỉ'}</span><span class="h" style="color:var(--right)">Tay phải${aR ? '' : ' · nghỉ'}</span>`;
+  ANCH.forEach(([n, , , g], i) => {
+    html += `<span>${n} <span class="muted">(${g})</span></span>`;
+    html += `<div class="bar" title="${fmt(cL[i])}"><span style="width:${cL[i] * 100}%;background:var(--left)"></span></div>`;
+    html += `<div class="bar" title="${fmt(cR[i])}"><span style="width:${cR[i] * 100}%;background:var(--right)"></span></div>`;
+  });
+  $('#cbars').innerHTML = html;
+  const nose = ANCH[1];
+  const fv = s => handActive(s) ? `(${fmt(body[s].x - nose[1])}, ${fmt(body[s].y - nose[2])})` : '0 (vắng)';
+  const iv = aL && aR ? `(${fmt(body.L.x - body.R.x)}, ${fmt(body.L.y - body.R.y)})` : '0 (thiếu một tay)';
+  const pp = aL && aR ? fmt(Math.exp(-8 * ((body.L.x - body.R.x) ** 2 + (body.L.y - body.R.y) ** 2))) : '0';
+  const ext = fmt(body.ext), hs = fmt(0.42 * body.dep);
+  $('#fkv').innerHTML = `
+    <dt>presence [T, P]</dt><dd>[${aL ? 1 : 0}, ${aR ? 1 : 0}]</dd>
+    <dt>face_vec trái (tay − mũi)</dt><dd>${fv('L')}</dd>
+    <dt>face_vec phải</dt><dd>${fv('R')}</dd>
+    <dt>inter_hand_vec (T − P)</dt><dd>${iv}</dd>
+    <dt>hand_contact lòng–lòng*</dt><dd>${pp}</dd>
+    <dt>handshape: độ duỗi 5 ngón</dt><dd>[${Array(5).fill(ext).join(', ')}]</dd>
+    <dt>hand_scale (cỡ lòng / vai)*</dt><dd>${hs}</dd>`;
+}
+renderers.push(drawBody);
+let drag = null;
+function toBody(e) { const r = bodyCv.getBoundingClientRect(); return { x: VIEW.x0 + (e.clientX - r.left) / r.width * (VIEW.x1 - VIEW.x0), y: VIEW.y0 + (e.clientY - r.top) / r.height * (VIEW.y1 - VIEW.y0) }; }
+bodyCv.addEventListener('pointerdown', e => {
+  const p = toBody(e); let best = null, bd = 0.3;
+  ['L', 'R'].forEach(s => { const d = Math.hypot(body[s].x - p.x, body[s].y - p.y); if (d < bd) { bd = d; best = s; } });
+  if (best) { drag = best; body.anim = null; bodyCv.setPointerCapture(e.pointerId); }
+});
+bodyCv.addEventListener('pointermove', e => {
+  const p = toBody(e);
+  if (drag) { body[drag].x = clamp(p.x, -1.15, 1.15); body[drag].y = clamp(p.y, -1.35, 1.38); drawBody(); }
+  else { const near = ['L', 'R'].some(s => Math.hypot(body[s].x - p.x, body[s].y - p.y) < 0.3); bodyCv.style.cursor = near ? 'grab' : 'default'; }
+});
+['pointerup', 'pointercancel'].forEach(t => bodyCv.addEventListener(t, () => { drag = null; }));
+[['extIn', 'extOut', 'ext'], ['sprIn', 'sprOut', 'spr'], ['depIn', 'depOut', 'dep']].forEach(([i, o, k]) => {
+  $('#' + i).addEventListener('input', e => { body[k] = +e.target.value; $('#' + o).textContent = fmt(body[k]); drawBody(); });
+});
+const POSES = {
+  toi: { R: [[-0.42, 1.2], [0.0, 0.33]], L: [[0.42, 1.2], [0.42, 1.2]], loop: false, ext: 1, spr: 0.1 },
+  xinchao: { R: [[-0.1, -1.0], [-0.65, -0.75]], L: [[0.42, 1.2], [0.42, 1.2]], loop: true, ext: 1, spr: 0.2 },
+  camon: { R: [[-0.03, -0.53], [-0.35, 0.1]], L: [[0.42, 1.2], [0.42, 1.2]], loop: true, ext: 1, spr: 0.15 },
+  diachi: { R: [[-0.42, 1.2], [0.02, 0.38]], L: [[0.42, 1.2], [0.18, 0.5]], loop: false, ext: 0.35, spr: 0.3 },
+  rest: { R: [[body.R.x, body.R.y], [-0.42, 1.2]], L: [[body.L.x, body.L.y], [0.42, 1.2]], loop: false },
+};
+function animatePose(key) {
+  const P = POSES[key];
+  const from = { L: [body.L.x, body.L.y], R: [body.R.x, body.R.y] };
+  if (P.ext != null) { body.ext = P.ext; $('#extIn').value = P.ext; $('#extOut').textContent = fmt(P.ext); }
+  if (P.spr != null) { body.spr = P.spr; $('#sprIn').value = P.spr; $('#sprOut').textContent = fmt(P.spr); }
+  const t0 = performance.now(), id = {}; body.anim = id;
+  const ease = t => t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+  const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  const tick = now => {
+    if (body.anim !== id) return;
+    const el = (now - t0) / 1000;
+    let a, b, t;
+    if (el < 0.7) { t = ease(el / 0.7); ['L', 'R'].forEach(s => { const p = lerp(from[s], P[s][0], t); body[s].x = p[0]; body[s].y = p[1]; }); }
+    else {
+      const e2 = el - 0.7, period = 1.3;
+      if (!P.loop && e2 > period) { ['L', 'R'].forEach(s => { body[s].x = P[s][1][0]; body[s].y = P[s][1][1]; }); drawBody(); return; }
+      const ph = (e2 % (2 * period)) / period; t = ease(ph <= 1 ? ph : 2 - ph);
+      ['L', 'R'].forEach(s => { const p = lerp(P[s][0], P[s][1], t); body[s].x = p[0]; body[s].y = p[1]; });
+    }
+    drawBody(); requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+$$('[data-pose]').forEach(b => b.addEventListener('click', () => {
+  if (b.dataset.pose === 'rest') { POSES.rest.R[0] = [body.R.x, body.R.y]; POSES.rest.L[0] = [body.L.x, body.L.y]; }
+  animatePose(b.dataset.pose);
+}));
+$('#mirrorBtn').addEventListener('click', () => {
+  body.anim = null;
+  const L = { ...body.L }, R = { ...body.R };
+  body.L = { x: -R.x, y: R.y }; body.R = { x: -L.x, y: L.y }; drawBody();
+});
+const fkvNote = document.createElement('p'); fkvNote.className = 'small muted'; fkvNote.style.margin = '6px 0 0';
+fkvNote.textContent = '* Giá trị minh hoạ trong mặt phẳng 2D; extractor thật dùng toạ độ 3D, world landmark và γ riêng.';
+$('#fkv').after(fkvNote);
+
+/* ---------- feature strip ---------- */
+const GROUPS = [
+  ['hand_pos', 18, 'pos', 'LR', 'Mỗi tay: tâm lòng bàn tay, đầu ngón cái, đầu ngón trỏ (3 điểm × 3) trong hệ trục thân'],
+  ['inter_hand_vec', 3, 'pos', 'S', 'Vector tâm bàn tay trái − phải'],
+  ['body_contact', 22, 'pos', 'LR', 'Mỗi tay: độ gần 11 vùng cơ thể, z giảm trọng số CONTACT_Z'],
+  ['hand_contact', 4, 'pos', 'S', 'Tay–tay: lòng–lòng, cái–cái, trỏ–trỏ, cặp điểm gần nhất'],
+  ['face_vec', 12, 'pos', 'LR', 'Mỗi tay: tâm lòng bàn tay − mũi, đầu ngón trỏ − mũi'],
+  ['hand_scale', 2, 'pos', 'LR', 'Mỗi tay: cỡ lòng bàn tay trên ảnh / độ rộng vai (proxy độ sâu)'],
+  ['handshape', 76, 'shape', 'LR', 'Mỗi tay 38: 15 cos khớp, 5 độ duỗi, 4 độ xoè, 8 tiếp xúc đầu ngón, 3 vị trí ngón cái, 3 thứ tự đầu ngón'],
+  ['hand_local', 120, 'shape', 'LR', 'Mỗi tay 60: 20 điểm (bỏ cổ tay) trong hệ trục lòng bàn tay, đơn vị palm_size'],
+  ['orientation', 18, 'orient', 'LR', 'Mỗi tay 9: palm_dir, palm_normal, 3 góc cổ tay so với cẳng tay'],
+  ['presence', 2, 'pres', 'LR', 'Cờ tay trái / phải có được detect (sau khi bỏ tay nghỉ)'],
+  ['motion: Δhand_pos', 18, 'motion', 'LR', 'Vận tốc vị trí tay (thêm trong process_sequence)'],
+  ['motion: Δinter_hand', 3, 'motion', 'S', 'Vận tốc vector liên-tay'],
+  ['motion: Δorientation', 18, 'motion', 'LR', 'Vận tốc hướng bàn tay'],
+];
+const FAM = { pos: 'Vị trí', shape: 'Thủ hình', orient: 'Hướng bàn tay', pres: 'Hiện diện', motion: 'Chuyển động' };
+const cols = [];
+GROUPS.forEach(([n, k, fam, sd, desc], gi) => { for (let j = 0; j < k; j++) { const side = sd === 'S' ? 'S' : (j < k / 2 ? 'L' : 'R'); cols.push({ gi, n, fam, side, j, desc, k }); } });
+const fstrip = $('#fstrip'), sideVar = { L: '--left', R: '--right', S: '--shared' }, sideName = { L: 'tay trái', R: 'tay phải', S: 'chung' };
+let fsMode = 'group', fsSel = null;
+cols.forEach((c, i) => {
+  const d = document.createElement('div');
+  d.addEventListener('mouseenter', () => { $('#fsRead').innerHTML = `cột <b>${i}</b> · <b>${c.n}</b> [${c.j}/${c.k}] · ${FAM[c.fam]} · ${sideName[c.side]}${i >= 277 ? ' · <i>chỉ có ở chuỗi (30, 316)</i>' : ''}<br><span class="muted">${c.desc}</span>`; });
+  fstrip.appendChild(d);
+});
+function paintStrip() {
+  [...fstrip.children].forEach((d, i) => {
+    const c = cols[i];
+    d.style.background = fsMode === 'group' ? `var(--${c.fam})` : `var(${sideVar[c.side]})`;
+    d.style.opacity = '';
+    d.classList.toggle('on', fsSel === null ? false : (fsMode === 'group' ? c.gi === fsSel : c.side === fsSel));
+    if (i >= 277) d.style.backgroundImage = 'repeating-linear-gradient(45deg, transparent 0 3px, rgba(255,255,255,.35) 3px 5px)'; else d.style.backgroundImage = '';
+  });
+  fstrip.classList.toggle('hl', fsSel !== null);
+  const lg = $('#glegend');
+  if (fsMode === 'group') {
+    lg.innerHTML = GROUPS.map(([n, k, fam], gi) => `<button data-g="${gi}" class="${fsSel === gi ? 'on' : ''}"><i style="background:var(--${fam})"></i>${n} · ${k}</button>`).join('');
+  } else {
+    const cnt = { L: 0, R: 0, S: 0 }; cols.forEach(c => cnt[c.side]++);
+    lg.innerHTML = ['L', 'R', 'S'].map(s => `<button data-g="${s}" class="${fsSel === s ? 'on' : ''}"><i style="background:var(${sideVar[s]})"></i>${sideName[s]} · ${cnt[s]}</button>`).join('');
+  }
+}
+$('#glegend').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const g = fsMode === 'group' ? +b.dataset.g : b.dataset.g;
+  fsSel = fsSel === g ? null : g; paintStrip();
+  if (fsSel !== null && fsMode === 'group') { const G = GROUPS[fsSel]; $('#fsRead').innerHTML = `<b>${G[0]}</b> · ${G[1]} cột · ${FAM[G[2]]}<br><span class="muted">${G[4]}</span>`; }
+});
+segment($('#fsMode'), b => { fsMode = b.dataset.m; fsSel = null; paintStrip(); $('#fsRead').innerHTML = fsMode === 'side' ? 'Khi lật gương (<code>LEFT_MIRROR</code>), cột trái và phải đổi chỗ cho nhau và các thành phần x đổi dấu. <code>hand_local</code> dùng hệ trục lòng bàn tay bất biến khi lật gương.' : 'Di chuột lên một ô…'; });
+paintStrip();
+
+/* ================= 3. PROCESS_SEQUENCE SIM ================= */
+const seq = { T: 40, gap: 6, spk: 0.45, step: 0, seed: 3, raw: [] };
+function genSignal() {
+  const r = mulberry32(seq.seed), T = seq.T, a = [];
+  const ph = r() * 2;
+  for (let i = 0; i < T; i++) { const t = i / (T - 1); a.push(0.5 + 0.35 * Math.sin(2 * Math.PI * (t * 1.2 + ph)) + 0.15 * Math.sin(2 * Math.PI * t * 3.1) + (r() - 0.5) * 0.04); }
+  const g1 = Math.floor(T * (0.2 + 0.08 * r())); for (let i = g1; i < g1 + 4 && i < T; i++) a[i] = NaN;
+  const g2 = Math.floor(T * (0.58 + 0.06 * r())); for (let i = g2; i < g2 + 9 && i < T - 1; i++) a[i] = NaN;
+  const sp = [Math.floor(T * 0.45), Math.floor(T * 0.85)];
+  sp.forEach((s, k) => { if (!isNaN(a[s]) && !isNaN(a[s - 1]) && !isNaN(a[s + 1])) a[s] += (k ? -0.75 : 0.8); });
+  seq.raw = a;
+}
+function fillGaps(a, maxGap) {
+  const o = a.slice(), n = o.length, pres = o.map(v => (isNaN(v) ? 0 : 1)); let i = 0, long = 0, short = 0;
+  while (i < n) {
+    if (!isNaN(o[i])) { i++; continue; }
+    let j = i; while (j < n && isNaN(o[j])) j++;
+    const len = j - i, L = i - 1, R = j;
+    if (len <= maxGap && (L >= 0 || R < n)) {
+      for (let k = i; k < j; k++) { o[k] = L < 0 ? o[R] : R >= n ? o[L] : o[L] + (o[R] - o[L]) * (k - L) / (R - L); pres[k] = 1; }
+      short++;
+    } else { for (let k = i; k < j; k++) o[k] = 0; long++; }
+    i = j;
+  }
+  return { o, pres, short, long };
+}
+function despike(a, thr, pres) {
+  const o = a.slice(); let n = 0; const at = [];
+  for (let i = 1; i < o.length - 1; i++) {
+    if (!pres[i - 1] || !pres[i] || !pres[i + 1]) continue;
+    const p = a[i] - a[i - 1], q = a[i + 1] - a[i];
+    if (Math.abs(p) > thr && Math.abs(q) > thr && Math.sign(p) !== Math.sign(q) && Math.abs(a[i + 1] - a[i - 1]) < thr) { o[i] = (a[i - 1] + a[i + 1]) / 2; n++; at.push(i); }
+  }
+  return { o, n, at };
+}
+function resample(a, L) { const n = a.length, o = []; for (let i = 0; i < L; i++) { const x = i * (n - 1) / (L - 1), k = Math.floor(x), f = x - k; o.push(k + 1 < n ? a[k] * (1 - f) + a[k + 1] * f : a[n - 1]); } return o; }
+const seqCv = $('#seqCv');
+function drawSeq() {
+  const isMob = seqCv.clientWidth < 520;
+  const { ctx, w, h } = fitCanvas(seqCv, isMob ? 0.75 : 0.36);
+  const raw = seq.raw, fg = fillGaps(raw, seq.gap), ds = despike(fg.o, seq.spk, fg.pres), rs = resample(ds.o, 30), presR = resample(fg.pres, 30).map(v => (v >= 0.5 ? 1 : 0));
+  const motion = rs.map((v, i) => (i === 0 ? 0 : v - rs[i - 1]));
+  const st = seq.step;
+  ctx.fillStyle = C('--surface-2'); ctx.fillRect(0, 0, w, h);
+  const pad = { l: 34, r: 12, t: 14, b: 24 };
+  const twoPanels = st === 4;
+  const mainH = twoPanels ? (h - pad.t - pad.b) * 0.62 : (h - pad.t - pad.b);
+  const ymin = -0.45, ymax = 1.55;
+  const n = st >= 3 ? 30 : raw.length;
+  const X = i => pad.l + i / (n - 1) * (w - pad.l - pad.r);
+  const Y = v => pad.t + (1 - (v - ymin) / (ymax - ymin)) * mainH;
+  // grid
+  ctx.strokeStyle = C('--border'); ctx.lineWidth = 1; ctx.fillStyle = C('--muted'); ctx.font = '10px ui-monospace, Menlo, monospace';
+  [0, 0.5, 1].forEach(v => { ctx.beginPath(); ctx.moveTo(pad.l, Y(v)); ctx.lineTo(w - pad.r, Y(v)); ctx.stroke(); ctx.fillText(v.toFixed(1), 4, Y(v) + 3); });
+  ctx.fillText(st >= 3 ? 'bước 0 … 29' : `frame 0 … ${raw.length - 1}`, pad.l, h - 6);
+  // NaN bands
+  if (st < 3) {
+    let i = 0;
+    while (i < raw.length) {
+      if (!isNaN(raw[i])) { i++; continue; }
+      let j = i; while (j < raw.length && isNaN(raw[j])) j++;
+      const len = j - i, filled = st >= 1 && len <= seq.gap;
+      ctx.fillStyle = filled ? C('--accent') : C('--bad'); ctx.globalAlpha = 0.12;
+      ctx.fillRect(X(i - 0.5), pad.t, X(j - 0.5) - X(i - 0.5), mainH); ctx.globalAlpha = 1;
+      ctx.fillStyle = filled ? C('--accent') : C('--bad'); ctx.font = '600 10px system-ui';
+      ctx.fillText(st === 0 ? `NaN × ${len}` : filled ? `nội suy ${len}` : `${len} > max_gap → 0, presence 0`, X(i - 0.4), pad.t + 11);
+      i = j;
+    }
+  }
+  const line = (arr, col, lw, dots, presArr) => {
+    ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath(); let pen = false;
+    arr.forEach((v, i) => { if (isNaN(v) || (presArr && !presArr[i])) { pen = false; return; } if (!pen) { ctx.moveTo(X(i), Y(v)); pen = true; } else ctx.lineTo(X(i), Y(v)); });
+    ctx.stroke();
+    if (dots) arr.forEach((v, i) => { if (isNaN(v)) return; ctx.fillStyle = (presArr && !presArr[i]) ? C('--bad') : col; ctx.beginPath(); ctx.arc(X(i), Y(v), dots, 0, 7); ctx.fill(); });
+  };
+  if (st === 0) line(raw, C('--muted'), 1.5, 3);
+  if (st === 1) { line(raw, C('--border'), 1, 0); line(fg.o, C('--accent'), 2, 2.6, fg.pres); }
+  if (st === 2) {
+    line(fg.o, C('--border'), 1, 0, fg.pres); line(ds.o, C('--accent'), 2, 2.6, fg.pres);
+    ds.at.forEach(i => { ctx.strokeStyle = C('--warn'); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(X(i), Y(fg.o[i]), 6, 0, 7); ctx.stroke(); ctx.setLineDash([2, 2]); ctx.beginPath(); ctx.moveTo(X(i), Y(fg.o[i])); ctx.lineTo(X(i), Y(ds.o[i])); ctx.stroke(); ctx.setLineDash([]); });
+  }
+  if (st >= 3) line(rs, C('--accent'), 2, 3, presR);
+  if (twoPanels) {
+    const top = pad.t + mainH + 18, mh = h - pad.b - top, mx = Math.max(0.05, ...motion.map(Math.abs));
+    const MY = v => top + mh / 2 - v / mx * (mh / 2 - 2);
+    ctx.strokeStyle = C('--border'); ctx.beginPath(); ctx.moveTo(pad.l, MY(0)); ctx.lineTo(w - pad.r, MY(0)); ctx.stroke();
+    ctx.fillStyle = C('--motion'); ctx.font = '600 10px system-ui'; ctx.fillText('vận tốc (Δ) → cột motion', pad.l + 4, top - 4);
+    const bw = (w - pad.l - pad.r) / 30 * 0.6;
+    motion.forEach((v, i) => { ctx.fillStyle = C('--motion'); const y0 = MY(0), y1 = MY(v); ctx.fillRect(X(i) - bw / 2, Math.min(y0, y1), bw, Math.abs(y1 - y0) || 1); });
+  }
+  const D = [
+    `Tín hiệu thô <b>${raw.length}</b> frame. Có 2 đoạn mất tay (NaN) và 2 gai do detect sai đúng 1 frame. Trước bước này, tay có lòng bàn tay dưới <code>REST_Y</code> đã bị đánh dấu vắng mặt (<code>_drop_resting_hands</code>).`,
+    `<code>_fill_gaps</code>: đoạn NaN ≤ <code>max_gap = ${seq.gap}</code> được nội suy tuyến tính (<b>${fg.short}</b> đoạn). Đoạn dài hơn được đặt về 0 và cờ presence = 0 (<b>${fg.long}</b> đoạn), vì đoán bừa qua một khoảng dài sẽ bịa ra chuyển động.`,
+    `Khử gai: một điểm lệch hơn ngưỡng so với <i>cả hai</i> lân cận, theo hai chiều ngược nhau, trong khi hai lân cận lại khớp nhau, thì bị thay bằng trung bình lân cận. Đã sửa <b>${ds.n}</b> điểm. Cử động thật (lệch kéo dài nhiều frame) được giữ nguyên. Cột thủ hình không bị làm mờ để giữ cử động rung / búng ngón.`,
+    `Co giãn thời gian bằng nội suy tuyến tính: ${raw.length} frame → đúng <b>30</b> bước (<code>EXPECTED_FRAMES</code>). Ký nhanh hay chậm đều ra cùng độ dài.`,
+    `Thêm <b>39</b> cột vận tốc (Δ của <code>hand_pos</code>, <code>inter_hand_vec</code>, <code>orientation</code>): 277 + 39 = <b>316</b>. Kết quả: <code>(30, 316)</code>, đầu vào của mô hình.`,
+  ];
+  $('#seqDesc').innerHTML = D[st];
+  $('#seqStat').textContent = `nội suy ${fg.short} đoạn · bỏ ${fg.long} đoạn dài · sửa ${ds.n} gai`;
+}
+renderers.push(drawSeq);
+segment($('#seqSteps'), b => { seq.step = +b.dataset.s; drawSeq(); });
+[['tIn', 'tOut', 'T', 0, true], ['gapIn', 'gapOut', 'gap', 0, false], ['spkIn', 'spkOut', 'spk', 2, false]].forEach(([i, o, k, d, regen]) => {
+  $('#' + i).addEventListener('input', e => { seq[k] = +e.target.value; $('#' + o).textContent = (+e.target.value).toFixed(d); if (regen) genSignal(); drawSeq(); });
+});
+$('#seqNew').addEventListener('click', () => { seq.seed = Math.floor(Math.random() * 1e6); genSignal(); drawSeq(); });
+genSignal();
+
+/* ================= 4. MODEL ================= */
+const ARCH = {
+  vslnet: { note: 'đang dùng · ~260k tham số / model', L: [
+    ['Đầu vào', '(B, 30, 316)', 'Chuỗi đã qua <code>Normalizer</code>. Với <code>presence_norm</code>, thống kê của mỗi tay chỉ tính trên frame có tay đó; tay vắng = 0.'],
+    ['GroupStem', '(B, 30, 128)', 'Mỗi nhóm cột (theo <code>default_groups</code>) có encoder riêng: Linear(n → clip(n/2, 8, 64)) + LayerNorm + GELU. Nhóm presence bị nhân 0.25 để model không dùng "một tay hay hai tay" làm lối tắt nhận lớp. Ghép lại rồi chiếu về d_model = 128. Group-dropout khi train giúp chịu được việc mất tay.'],
+    ['MultiScaleBlock × 2', '(B, 30, 128)', 'Ba nhánh Conv1D song song với kernel 3 / 5 / 9 (≈ 0.2 / 0.33 / 0.6 giây), residual, drop_path 0.1. Bắt chuyển động ở nhiều tốc độ khác nhau.'],
+    ['BiGRU (hidden 96)', '(B, 30, 192)', 'GRU hai chiều đọc toàn bộ chuỗi, chạy được với mọi độ dài T.'],
+    ['Pooling: attention + mean + max', '(B, 576)', 'Ba cách gộp theo thời gian được ghép lại: attention học frame nào quan trọng, mean cho tư thế trung bình, max cho đỉnh chuyển động.'],
+    ['LayerNorm → Dropout → Head', '(B, 18)', 'Head tuyến tính (mặc định) hoặc cosine (<code>head="cosine"</code>). Ra logit cho 18 lớp.'],
+  ] },
+  handpair: { note: 'arch="handpair" · cần presence_norm', L: [
+    ['Đầu vào', '(B, 30, 316)', 'Tách thành cột tay trái, tay phải và cột chung bằng <code>SIDE_COLUMNS</code>; tay trái được lật gương bằng <code>LEFT_MIRROR</code> về cùng hệ với tay phải.'],
+    ['Stem tay dùng chung trọng số', '2 × (B, 30, d_hand)', 'Cùng một Linear cho cả hai tay (học một lần, áp cho cả hai), cộng embedding phía tay. Tay vắng được thay bằng <b>token absent</b> học được thay vì vector 0.'],
+    ['Stem liên-tay', '(B, 30, d_inter)', 'Linear + LayerNorm + GELU trên các cột chung (inter_hand_vec, hand_contact).'],
+    ['Chiếu + MultiScaleBlock', '(B, 30, 128)', 'Ghép [tay T, tay P, liên-tay] → d_model, một khối Conv đa tỉ lệ.'],
+    ['BiGRU + pooling', '(B, 576)', 'Giống VSLNet.'],
+    ['Head', '(B, 18)', 'Linear hoặc cosine.'],
+  ] },
+  former: { note: 'arch="former" · đã có unit test, chưa kiểm chứng trên ladder', L: [
+    ['Đầu vào', '(B, 30, 316)', 'Dùng thêm cấu trúc điểm của <code>hand_local</code>: 20 điểm × 3 cho mỗi tay.'],
+    ['Point-attention encoder', '(B, 30, 2, d)', 'Attention trên 20 điểm của bàn tay ở từng frame, học quan hệ giữa các ngón thay vì một vector phẳng. Tay vắng dùng token absent.'],
+    ['Trộn với đặc trưng khác', '(B, 30, 128)', 'Ghép với vị trí, hướng, liên-tay rồi chiếu về d_model.'],
+    ['Conv block', '(B, 30, 128)', 'Bắt chuyển động cục bộ trước khi attention theo thời gian.'],
+    ['2 × Transformer pre-LN', '(B, 30, 128)', 'Self-attention theo thời gian, stochastic depth (<code>drop_path</code>).'],
+    ['Pooling + Head', '(B, 18)', 'Gộp theo thời gian rồi phân lớp.'],
+  ] },
+};
+let archKey = 'vslnet';
+function drawArch() {
+  const A = ARCH[archKey], st = $('#archStack');
+  $('#archNote').textContent = A.note;
+  st.innerHTML = '';
+  A.L.forEach(([n, s, d], i) => {
+    if (i) { const a = document.createElement('div'); a.className = 'arrow-d'; a.textContent = '↓'; st.appendChild(a); }
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'layer-b';
+    b.innerHTML = `<b>${n}</b><span class="shape">${s}</span>`;
+    b.addEventListener('click', () => { $$('.layer-b', st).forEach(x => x.classList.toggle('sel', x === b)); $('#archRead').innerHTML = `<b>${n}</b> <span class="chip mono">${s}</span><p style="margin:6px 0 0">${d}</p>`; });
+    st.appendChild(b);
+  });
+  st.querySelector('.layer-b').click();
+}
+segment($('#archTabs'), b => { archKey = b.dataset.a; drawArch(); });
+drawArch();
+$('#ensRow').innerHTML = ['fold 1', 'fold 2', 'fold 3', 'fold 4', 'fold 5', 'full-data'].map(f => `<span class="chip">${f}</span>`).join('') + '<span class="muted">→ p̄ → ÷T → ngưỡng</span>';
+
+/* ================= 5. K-FOLD ================= */
+const KCLS = ['xin chào', 'cảm ơn', 'toi', 'h', 'k', 'm'], KN = 5, KAUG = 3, KF = 5;
+let kMode = 'group', kFold = 0;
+const kFoldEl = $('#kFold');
+kFoldEl.innerHTML = Array.from({ length: KF }, (_, i) => `<button data-f="${i}" class="${i ? '' : 'on'}">${i + 1}</button>`).join('');
+segment(kFoldEl, b => { kFold = +b.dataset.f; drawK(); });
+segment($('#kMode'), b => { kMode = b.dataset.k; drawK(); });
+function drawK() {
+  const r = mulberry32(11);
+  let html = '', leaks = 0, val = 0, train = 0;
+  KCLS.forEach((c, ci) => {
+    html += `<div class="cls" title="${c}">${c}</div><div class="kgroups">`;
+    for (let g = 0; g < KN; g++) {
+      const gf = (g + ci) % KF;
+      const of = kMode === 'group' ? gf : Math.floor(r() * KF);
+      const oVal = of === kFold;
+      let cell = `<span class="o ${oVal ? 'st-val' : 'st-train'}" title="clip gốc #${g}"></span>`;
+      if (oVal) val++; else train++;
+      for (let a = 0; a < KAUG; a++) {
+        const af = kMode === 'group' ? gf : Math.floor(r() * KF);
+        let cls;
+        if (af === kFold) cls = 'st-valaug';
+        else if (oVal) { cls = 'st-leak'; leaks++; train++; }
+        else { cls = 'st-train'; train++; }
+        cell += `<span class="a ${cls}"></span>`;
+      }
+      html += `<span class="kg">${cell}</span>`;
+    }
+    html += '</div>';
+  });
+  $('#kgrid').innerHTML = html;
+  const v = $('#kVerdict');
+  if (leaks) { v.className = 'verdict v-bad'; v.textContent = `${leaks} bản augment của mẫu val nằm trong tập train. Model đã thấy bản gần như y hệt, nên val accuracy bị thổi phồng.`; }
+  else { v.className = 'verdict v-ok'; v.textContent = `0 rò rỉ: ${val} clip gốc được chấm ở val, ${train} mẫu dùng để train. Augment của nhóm val bị loại khỏi cả train lẫn chấm điểm.`; }
+}
+drawK();
+
+/* ================= 6. REJECTION ================= */
+const RCLS = ['xin chào', 'cảm ơn', 'h', 'k', 'toi'];
+const rej = { z: [6, 2, 0, 0, -1], T: 1, mc: 0.65, mg: 0.08 };
+const SCN = { clear: [6.5, 2, 0.5, 0, -1], pair: [4.2, 4.0, 0.5, 0.2, -1], weak: [2.2, 1.2, 1.0, 0.6, 0.4], none: [0.6, 0.3, 0.5, 0.2, 0.4] };
+const lc = $('#logitCtls');
+lc.innerHTML = RCLS.map((c, i) => `<label class="ctl">logit "${c}" <output id="zo${i}">${fmt(rej.z[i], 1)}</output><input type="range" id="zi${i}" min="-3" max="9" step="0.1" value="${rej.z[i]}"></label>`).join('');
+RCLS.forEach((c, i) => $('#zi' + i).addEventListener('input', e => { rej.z[i] = +e.target.value; $('#zo' + i).textContent = fmt(rej.z[i], 1); drawRej(); }));
+[['tempIn', 'tempOut', 'T'], ['mcIn', 'mcOut', 'mc'], ['mgIn', 'mgOut', 'mg']].forEach(([i, o, k]) => $('#' + i).addEventListener('input', e => { rej[k] = +e.target.value; $('#' + o).textContent = fmt(rej[k]); drawRej(); }));
+$$('[data-sc]').forEach(b => b.addEventListener('click', () => { rej.z = SCN[b.dataset.sc].slice(); rej.z.forEach((v, i) => { $('#zi' + i).value = v; $('#zo' + i).textContent = fmt(v, 1); }); drawRej(); }));
+function drawRej() {
+  const m = Math.max(...rej.z), e = rej.z.map(v => Math.exp((v - m) / rej.T)), s = e.reduce((a, b) => a + b, 0), p = e.map(v => v / s);
+  const order = p.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0]);
+  const top = order[0], second = order[1], gap = top[0] - second[0];
+  const thr = Math.max(0.2, rej.mc), confident = top[0] >= thr, accepted = confident && gap >= rej.mg;
+  const reason = accepted ? null : (!confident ? 'low_confidence' : 'ambiguous');
+  $('#pbars').innerHTML = order.map(([v, i], k) => `<span>${RCLS[i]}</span><div class="bar"><span style="width:${v * 100}%;background:${k === 0 ? (accepted ? 'var(--ok)' : 'var(--warn)') : 'var(--pres)'}"></span><span style="left:${thr * 100}%;width:2px;background:var(--text);opacity:.6"></span></div><span class="mono">${fmt(v, 3)}</span>`).join('');
+  const vd = $('#rejVerdict');
+  if (accepted) { vd.className = 'verdict v-ok'; vd.textContent = `Chấp nhận "${RCLS[top[1]]}": ${fmt(top[0], 3)} ≥ ${fmt(thr)} và gap ${fmt(gap, 3)} ≥ ${fmt(rej.mg)}`; }
+  else if (reason === 'low_confidence') { vd.className = 'verdict v-bad'; vd.textContent = `Từ chối · low_confidence: ${fmt(top[0], 3)} < ngưỡng ${fmt(thr)}`; }
+  else { vd.className = 'verdict v-warn'; vd.textContent = `Từ chối · ambiguous: gap ${fmt(gap, 3)} < ${fmt(rej.mg)} ("${RCLS[top[1]]}" và "${RCLS[second[1]]}" quá sát nhau)`; }
+  $('#rejJson').textContent = JSON.stringify({ label: accepted ? RCLS[top[1]] : null, confidence: +top[0].toFixed(4), probability_gap: +gap.toFixed(4), accepted, rejection_reason: reason, top: order.slice(0, 3).map(([v, i]) => ({ label: RCLS[i], confidence: +v.toFixed(4) })) }, null, 2);
+}
+drawRej();
+
+/* ================= 7. REALTIME SIM ================= */
+const FPS = 15;
+const SCRIPT = [[null, 0.8], ['xin chào', 2.0], [null, 0.5], ['toi', 1.9], ['~', 0.3], ['ten_la', 2.2], [null, 0.5], ['t', 1.8], [null, 0.5], ['r', 1.8], [null, 0.5], ['u', 1.8], [null, 0.5], ['n', 1.8], [null, 0.5], ['g', 1.8], [null, 3.6]];
+const FRAMES = []; SCRIPT.forEach(([l, d]) => { for (let i = 0; i < Math.round(d * FPS); i++) FRAMES.push(l); });
+const PRESETS = { accurate: { W: 30, min: 30, stride: 5, minHand: 12 }, fast: { W: 20, min: 12, stride: 3, minHand: 8 }, fastest: { W: 15, min: 8, stride: 2, minHand: 6 } };
+const RIVAL = { 'xin chào': 'cảm ơn', 'cảm ơn': 'xin chào', toi: 'm', ten_la: 'm', t: 'i', r: 'u', u: 'k', n: 'm', g: 'h', '~': 'h' };
+const GLOSS = { toi: 'tôi', ten_la: 'tên là', age: 'tuổi' };
+const isLetter = l => l.length === 1;
+function naiveSentence(words) {
+  const parts = []; let run = [];
+  const flush = () => { if (run.length) { const s = run.join(''); parts.push(s[0].toUpperCase() + s.slice(1)); run = []; } };
+  words.forEach(w => { if (isLetter(w)) run.push(w); else { flush(); parts.push(GLOSS[w] || w.replace(/_/g, ' ')); } });
+  flush(); const t = parts.join(' ').trim(); return t ? t[0].toUpperCase() + t.slice(1) : '';
+}
+function labelsText(words) {
+  const out = []; let run = [];
+  const flush = () => { if (run.length) { out.push(`[đánh vần: ${run.map(x => x.toUpperCase()).join('-')}]`); run = []; } };
+  words.forEach(w => { if (isLetter(w)) run.push(w); else { flush(); out.push(w); } }); flush(); return out.join(' | ');
+}
+function llmSentence(words) { const n = naiveSentence(words); return n === 'Xin chào tôi tên là Trung' ? 'Xin chào, tôi tên là Trung.' : n + '.'; }
+class Voter {
+  constructor(n) { this.n = n; this.seq = []; this.cand = null; this.count = 0; this.blocked = null; }
+  vote(l) { if (l === null) { this.interrupt(); return null; } if (l === this.cand) this.count++; else { this.cand = l; this.count = 1; } if (l === this.blocked || this.count < this.n) return null; this.seq.push(l); this.blocked = l; this.interrupt(); return l; }
+  interrupt() { this.cand = null; this.count = 0; }
+  release() { this.interrupt(); this.blocked = null; }
+}
+function simulate(pk, nv, seed) {
+  const P = PRESETS[pk], r = mulberry32(seed), v = new Voter(nv), snaps = [], preds = [], commits = [], sentences = [];
+  let rest = 0, last = null;
+  for (let i = 0; i < FRAMES.length; i++) {
+    const lab = FRAMES[i], hand = lab !== null;
+    rest = hand ? 0 : rest + 1;
+    if (!hand && rest === 2) v.release();
+    const start = Math.max(0, i - P.W + 1), win = FRAMES.slice(start, i + 1), buf = win.length, hf = win.filter(x => x !== null).length;
+    if (hand && i % P.stride === 0 && buf >= P.min && hf >= P.minHand) {
+      const cnt = {}; win.forEach(x => { if (x !== null) cnt[x] = (cnt[x] || 0) + 1; });
+      const ent = Object.entries(cnt).sort((a, b) => b[1] - a[1]);
+      let [top, tc] = ent[0]; const purity = tc / hf, cov = Math.min(1, hf / (0.75 * P.W));
+      let conf = 0.1 + 0.88 * purity ** 2 * (0.55 + 0.45 * cov) + (r() - 0.5) * 0.1;
+      let label = top;
+      if (top === '~') { label = 'h'; conf = 0.3 + r() * 0.25; }
+      else if (r() < (purity < 0.85 ? 0.3 * (1 - purity) : 0) + (P.W < 30 && hf < 0.6 * P.W ? 0.15 : 0)) { label = RIVAL[top] || 'h'; conf = 0.45 + r() * 0.45; }
+      conf = clamp(conf, 0.05, 0.995);
+      const p2 = (1 - conf) * (0.55 + 0.35 * r()), gap = conf - p2;
+      const acc = conf >= 0.65 && gap >= 0.08;
+      last = { i, label, conf, gap, acc, reason: acc ? null : (conf < 0.65 ? 'low_confidence' : 'ambiguous'), ok: label === lab || label === top };
+      preds.push(last);
+      const c = v.vote(acc ? label : null);
+      if (c) commits.push({ i, w: c });
+    }
+    if (!hand && rest === Math.round(3 * FPS) && v.seq.length) { sentences.push({ i, words: v.seq.slice() }); v.seq = []; v.release(); }
+    snaps.push({ buf, hf, last, cand: v.cand, count: v.count, blocked: v.blocked, words: v.seq.slice(), sent: sentences.length ? sentences[sentences.length - 1] : null, hand });
+  }
+  return { snaps, preds, commits, sentences, P };
+}
+const rt = { preset: 'accurate', votes: 2, seed: 7, speed: 1, pos: 0, playing: false, sim: null, lastT: 0, shownWords: 0 };
+const rtCv = $('#rtCv');
+const labColor = (() => { const pal = ['--pos', '--shape', '--orient', '--motion', '--left', '--right']; const m = {}; let k = 0; return l => (m[l] || (m[l] = pal[k++ % pal.length])); })();
+function rtRebuild() { rt.sim = simulate(rt.preset, rt.votes, rt.seed); rt.pos = Math.min(rt.pos, FRAMES.length - 1); rt.shownWords = -1; drawRt(); }
+function drawRt() {
+  const sim = rt.sim, N = FRAMES.length, fi = clamp(Math.floor(rt.pos) || 0, 0, N - 1), isMob = rtCv.clientWidth < 560;
+  const { ctx, w, h } = fitCanvas(rtCv, isMob ? 0.62 : 0.26);
+  ctx.fillStyle = C('--surface-2'); ctx.fillRect(0, 0, w, h);
+  const padL = isMob ? 64 : 92, padR = 10, X = i => padL + i / N * (w - padL - padR);
+  const lanes = [['Ký hiệu thật', 0.16], ['Có tay', 0.36], ['Dự đoán', 0.56], ['Chốt từ', 0.78]];
+  const lh = h * 0.14;
+  ctx.font = `${isMob ? 10 : 11}px system-ui`; ctx.fillStyle = C('--muted');
+  lanes.forEach(([n, y]) => ctx.fillText(n, 8, h * y + 4));
+  // window shade
+  const W = sim.P.W, ws = Math.max(0, fi - W + 1);
+  ctx.fillStyle = C('--accent'); ctx.globalAlpha = 0.1; ctx.fillRect(X(ws), 4, X(fi + 1) - X(ws), h - 8); ctx.globalAlpha = 1;
+  // truth lane
+  let i = 0;
+  while (i < N) {
+    let j = i; while (j < N && FRAMES[j] === FRAMES[i]) j++;
+    const l = FRAMES[i];
+    if (l !== null) {
+      ctx.fillStyle = l === '~' ? C('--pres') : C(labColor(l)); ctx.globalAlpha = l === '~' ? 0.4 : 0.85;
+      ctx.fillRect(X(i), h * 0.16 - lh / 2, X(j) - X(i) - 1, lh); ctx.globalAlpha = 1;
+      const tw = X(j) - X(i);
+      if (tw > 18) { ctx.fillStyle = '#fff'; ctx.font = `600 ${isMob ? 9 : 11}px system-ui`; const t = l === '~' ? '' : l; ctx.save(); ctx.beginPath(); ctx.rect(X(i), 0, tw - 2, h); ctx.clip(); ctx.fillText(t, X(i) + 3, h * 0.16 + 4); ctx.restore(); }
+    }
+    i = j;
+  }
+  // hand lane
+  for (let k = 0; k < N; k++) if (FRAMES[k] !== null) { ctx.fillStyle = C('--muted'); ctx.globalAlpha = k <= fi ? 0.7 : 0.2; ctx.fillRect(X(k), h * 0.36 - 3, X(k + 1) - X(k) + 0.5, 6); }
+  ctx.globalAlpha = 1;
+  // preds
+  sim.preds.forEach(p => {
+    if (p.i > fi) return;
+    const x = X(p.i + 0.5), y = h * 0.56;
+    ctx.beginPath(); ctx.arc(x, y, p.acc ? 4 : 3, 0, 7);
+    if (p.acc) { ctx.fillStyle = p.ok ? C('--ok') : C('--bad'); ctx.fill(); }
+    else { ctx.strokeStyle = C('--warn'); ctx.lineWidth = 1.2; ctx.stroke(); }
+  });
+  // commits
+  sim.commits.forEach((c, k) => {
+    if (c.i > fi) return;
+    const x = X(c.i + 0.5), ty = h * (isMob && k % 2 ? 0.88 : 0.8);
+    ctx.strokeStyle = C('--accent'); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, h * 0.62); ctx.lineTo(x, ty - 10); ctx.stroke();
+    ctx.fillStyle = C('--accent'); ctx.font = `700 ${isMob ? 9 : 11}px system-ui`; ctx.fillText(c.w, x - 4, ty);
+  });
+  sim.sentences.forEach(s => { if (s.i > fi) return; const x = X(s.i); ctx.fillStyle = C('--text'); ctx.font = `600 ${isMob ? 9 : 10}px system-ui`; ctx.fillText('■ hết câu', Math.min(x - 2, w - 60), h * 0.95); });
+  // playhead
+  ctx.strokeStyle = C('--text'); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(X(fi + 1), 2); ctx.lineTo(X(fi + 1), h - 2); ctx.stroke();
+  updateRtPanel(fi);
+}
+function updateRtPanel(fi) {
+  const s = rt.sim.snaps[fi], P = rt.sim.P;
+  $('#rtTime').textContent = `${((fi + 1) / FPS).toFixed(2)} s · frame ${fi + 1}`;
+  $('#rtBuf').textContent = `${s.buf}/${P.W} · ${s.hf} có tay`;
+  const p = s.last;
+  $('#rtPred').innerHTML = p ? (p.acc ? `<span style="color:${p.ok ? 'var(--ok)' : 'var(--bad)'}">${p.label}</span> ${fmt(p.conf)} · gap ${fmt(p.gap)}` : `<span style="color:var(--warn)">từ chối · ${p.reason}</span>`) : (s.hand ? 'đang gom cửa sổ…' : 'nghỉ tay');
+  $('#rtCand').textContent = s.cand ? `${s.cand} · ${s.count}/${rt.votes}` : '—';
+  $('#rtVotes').innerHTML = Array.from({ length: rt.votes }, (_, k) => `<i class="${k < s.count ? 'f' : ''}"></i>`).join('');
+  $('#rtBlocked').textContent = s.blocked || '—';
+  const wordsEl = $('#rtWords');
+  if (rt.shownWords !== s.words.length || wordsEl.dataset.k !== s.words.join('|')) {
+    wordsEl.innerHTML = s.words.length ? s.words.map(w => `<span class="w">${w}</span>`).join('') : '<span class="muted small">chưa có</span>';
+    rt.shownWords = s.words.length; wordsEl.dataset.k = s.words.join('|');
+  }
+  if (s.sent) {
+    $('#rtSentence').textContent = llmSentence(s.sent.words);
+    $('#rtNaive').innerHTML = `Nhãn gửi LLM: <code>${esc(labelsText(s.sent.words))}</code> · ghép thô (không có key): “${esc(naiveSentence(s.sent.words))}”`;
+  } else { $('#rtSentence').innerHTML = '<span class="muted">—</span>'; $('#rtNaive').textContent = 'Câu kết thúc khi nghỉ tay liên tục 3 giây sau khi đã có từ.'; }
+}
+renderers.push(drawRt);
+function rtLoop(now) {
+  if (!rt.playing) return;
+  const dt = clamp((now - rt.lastT) / 1000, 0, 0.1); rt.lastT = now;
+  rt.pos = Math.max(0, rt.pos + dt * FPS * rt.speed);
+  if (rt.pos >= FRAMES.length - 1) { rt.pos = FRAMES.length - 1; rt.playing = false; $('#rtPlay').textContent = '▶ Chạy lại'; }
+  drawRt();
+  if (rt.playing) requestAnimationFrame(rtLoop);
+}
+$('#rtPlay').addEventListener('click', () => {
+  if (rt.playing) { rt.playing = false; $('#rtPlay').textContent = '▶ Tiếp tục'; return; }
+  if (rt.pos >= FRAMES.length - 1) rt.pos = 0;
+  rt.playing = true; $('#rtPlay').textContent = '⏸ Tạm dừng'; rt.lastT = performance.now(); requestAnimationFrame(rtLoop);
+});
+$('#rtReset').addEventListener('click', () => { rt.playing = false; rt.pos = 0; $('#rtPlay').textContent = '▶ Chạy'; drawRt(); });
+segment($('#rtSpeed'), b => { rt.speed = +b.dataset.v; });
+segment($('#rtPreset'), b => { rt.preset = b.dataset.p; rtRebuild(); });
+$('#votesIn').addEventListener('input', e => { rt.votes = +e.target.value; $('#votesOut').textContent = rt.votes; rtRebuild(); });
+$('#seedIn').addEventListener('input', e => { rt.seed = +e.target.value; $('#seedOut').textContent = rt.seed; rtRebuild(); });
+rtCv.addEventListener('pointerdown', e => {
+  const r = rtCv.getBoundingClientRect(), padL = r.width < 560 ? 64 : 92;
+  const seek = ev => { const x = ev.clientX - r.left; rt.pos = clamp((x - padL) / (r.width - padL - 10) * FRAMES.length, 0, FRAMES.length - 1); drawRt(); };
+  seek(e); rtCv.setPointerCapture(e.pointerId);
+  const mv = ev => seek(ev), up = () => { rtCv.removeEventListener('pointermove', mv); rtCv.removeEventListener('pointerup', up); };
+  rtCv.addEventListener('pointermove', mv); rtCv.addEventListener('pointerup', up);
+});
+rtRebuild();
+
+/* ================= 8. DEPLOY ================= */
+const LANES = [['Trình duyệt', 70], ['Flask :8000', 225], ['Next /api/compose', 375], ['Groq', 505]];
+const MSGS = [
+  { a: 0, b: 0, t: 'Webcam → canvas 1280² → MediaPipe (WebGL)', d: 'Trình duyệt mở webcam 16:9, vẽ từng frame vào canvas 1280×1280 giống <code>frame_padding</code> (lật gương trước nếu bật), rồi chạy MediaPipe Pose + Hand ở chế độ VIDEO.' },
+  { a: 0, b: 1, t: 'POST /api/stream', d: 'Mở phiên. Phản hồi có <code>landmarks: true</code> nên server không tạo MediaPipe, chỉ giữ cửa sổ frame của phiên đó.' },
+  { a: 1, b: 0, t: '{ id, landmarks: true }', d: 'Mỗi client có phiên riêng, không bao giờ dùng chung.' },
+  { a: 0, b: 1, t: 'POST /api/stream/<id> · ~2.7 KB', d: 'Gửi <b>từng frame ngay khi detect xong</b> dạng JSON <code>{ landmarks, timestamps, predict }</code>. Chỉ mỗi <code>strideFrames</code> frame mới đặt <code>predict: true</code>. Luôn chỉ một request đang chạy; preflight CORS được cache 1 ngày, HTTP keep-alive.' },
+  { a: 1, b: 1, t: 'extract → cửa sổ → predict_raw', d: 'Server đổi landmark thành 277 đặc trưng (<code>src/features/landmarks.py</code> + <code>extract</code>), thêm vào cửa sổ, và khi được yêu cầu thì chạy ensemble (~18 ms, CPU 1 luồng).' },
+  { a: 1, b: 0, t: '{ predicted, label, confidence, hand_frames… }', d: '<code>hand_frames</code> giúp phân biệt nghỉ tay / đang vào ký hiệu / đang ký. Mỗi phản hồi có dự đoán là một phiếu cho <code>WordVoter</code> (TS).' },
+  { a: 0, b: 2, t: 'Nghỉ tay 3 s → POST /api/compose', d: 'Đủ phiếu thì chốt từ. Nghỉ tay liên tục 3 giây (chỉnh được) sau khi đã có từ thì kết thúc câu và gửi chuỗi nhãn kèm header <code>x-groq-key</code>.' },
+  { a: 2, b: 3, t: 'chat/completions (prompt VSL)', d: 'Route chỉ chuyển tiếp key, không lưu, không ghi log. Prompt port từ <code>src/app/sentence.py</code>: gom chữ đánh vần, đặt dấu thanh, thêm hư từ, không bịa.' },
+  { a: 3, b: 0, t: '"Xin chào, tôi tên là Trung."', d: 'Câu hiện trên giao diện và có thể được đọc bằng <code>speechSynthesis</code>. Lỗi hoặc không có key thì dùng câu ghép thô.' },
+];
+const dlist = $('#dlist'); dlist.innerHTML = MSGS.map(m => `<li>${m.d}</li>`).join('');
+const svg = $('#seqSvg'), NS = 'http://www.w3.org/2000/svg';
+let seqStep = 0, seqAnimT = 0, seqPlaying = true, seqRAF = null, seqLast = 0;
+function el(n, a, txt) { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); if (txt != null) e.textContent = txt; return e; }
+function drawSeqSvg() {
+  svg.innerHTML = '';
+  const top = 34, rowH = 40;
+  const defs = el('defs', {}); const mk = el('marker', { id: 'ah', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' });
+  mk.appendChild(el('path', { d: 'M0,0 L10,5 L0,10 z', fill: C('--muted') })); defs.appendChild(mk);
+  const mk2 = el('marker', { id: 'ah2', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' });
+  mk2.appendChild(el('path', { d: 'M0,0 L10,5 L0,10 z', fill: C('--accent') })); defs.appendChild(mk2); svg.appendChild(defs);
+  LANES.forEach(([n, x]) => {
+    svg.appendChild(el('rect', { x: x - 58, y: 4, width: 116, height: 24, rx: 6, fill: C('--surface-2'), stroke: C('--border') }));
+    svg.appendChild(el('text', { x, y: 20, 'text-anchor': 'middle', 'font-size': 12, 'font-weight': 600, fill: C('--text'), 'font-family': 'system-ui' }, n));
+    svg.appendChild(el('line', { x1: x, y1: 28, x2: x, y2: 416, stroke: C('--border'), 'stroke-dasharray': '4 4' }));
+  });
+  MSGS.forEach((m, i) => {
+    const y = top + 16 + i * rowH, xa = LANES[m.a][1], xb = LANES[m.b][1], on = i === seqStep;
+    const col = on ? C('--accent') : C('--muted');
+    if (m.a === m.b) {
+      svg.appendChild(el('path', { d: `M${xa},${y - 6} h26 v14 h-24`, fill: 'none', stroke: col, 'stroke-width': on ? 2 : 1.2, 'marker-end': on ? 'url(#ah2)' : 'url(#ah)' }));
+      svg.appendChild(el('text', { x: xa + 32, y: y + 4, 'font-size': 11, fill: on ? C('--text') : C('--muted'), 'font-family': 'system-ui', 'font-weight': on ? 600 : 400 }, m.t));
+    } else {
+      const dir = xb > xa ? 1 : -1;
+      svg.appendChild(el('line', { x1: xa, y1: y, x2: xb - dir * 2, y2: y, stroke: col, 'stroke-width': on ? 2 : 1.2, 'marker-end': on ? 'url(#ah2)' : 'url(#ah)' }));
+      const tx = (xa + xb) / 2;
+      svg.appendChild(el('text', { x: tx, y: y - 6, 'text-anchor': 'middle', 'font-size': 11, fill: on ? C('--text') : C('--muted'), 'font-family': 'system-ui', 'font-weight': on ? 600 : 400 }, m.t));
+      if (on) { const px = xa + (xb - xa) * Math.min(1, seqAnimT); svg.appendChild(el('circle', { cx: px, cy: y, r: 5, fill: C('--accent') })); }
+    }
+  });
+  $$('li', dlist).forEach((li, i) => li.classList.toggle('on', i === seqStep));
+}
+renderers.push(drawSeqSvg);
+function seqTick(now) {
+  const dt = clamp((now - seqLast) / 1000, 0, 0.1); seqLast = now;
+  if (seqPlaying) { seqAnimT += dt / 1.6; if (seqAnimT >= 1.35) { seqAnimT = 0; seqStep = (seqStep + 1) % MSGS.length; } drawSeqSvg(); }
+  seqRAF = requestAnimationFrame(seqTick);
+}
+seqLast = performance.now(); seqRAF = requestAnimationFrame(seqTick);
+$('#seqPlayBtn').addEventListener('click', e => { seqPlaying = !seqPlaying; e.target.textContent = seqPlaying ? '⏸ Tạm dừng' : '▶ Tiếp tục'; });
+dlist.addEventListener('click', e => { const li = e.target.closest('li'); if (!li) return; seqStep = [...dlist.children].indexOf(li); seqAnimT = 0; drawSeqSvg(); });
+const LAT = { gpu: [['MediaPipe trên trình duyệt', 34, '--pos'], ['mạng + JSON', 4, '--pres'], ['server: extract + ensemble', 14, '--orient']], cpu: [['MediaPipe trên trình duyệt', 57, '--pos'], ['mạng + JSON', 4, '--pres'], ['server: extract + ensemble', 14, '--orient']] };
+function drawLat(k) {
+  const parts = LAT[k], tot = parts.reduce((a, p) => a + p[1], 0);
+  $('#latBar').innerHTML = parts.map(([n, v, c]) => `<div style="flex:0 0 ${v / tot * 100}%;background:var(${c})" title="${n}: ${v} ms">${v / tot > 0.15 ? `${n} · ${v} ms` : ''}</div>`).join('');
+  $('#latNote').innerHTML = k === 'gpu'
+    ? 'Tổng ≈ <b>50 ms</b> từ lúc chụp frame tới khi có kết quả. Server ~18 ms cho mỗi request dự đoán (gồm cả mạng nội bộ). MediaPipe là phần đắt nhất; GPU lỗi thì tự chuyển CPU.'
+    : 'Với CPU / WASM, MediaPipe tốn ~57 ms/frame nên tổng khoảng <b>75 ms</b> (ước tính từ hai số đo trên), vẫn dưới 1/15 giây cho mỗi frame.';
+}
+segment($('#latMode'), b => drawLat(b.dataset.l)); drawLat('gpu');
+
+/* ================= 9. RESULTS ================= */
+const FOLDS = [1.0, 0.98276, 1.0, 1.0, 1.0];
+const dots = $('#foldDots');
+FOLDS.forEach((v, i) => { const d = document.createElement('div'); d.className = 'd'; d.style.left = ((v - 0.95) / 0.05 * 100) + '%'; d.style.top = (9 + (v === 1 ? (i - 2) * 0 : 0)) + 'px'; d.title = `fold ${i + 1}: ${(v * 100).toFixed(2)}%`; if (v === 1) d.style.opacity = 0.55 + i * 0.1; dots.appendChild(d); });
+const lab1 = document.createElement('div'); lab1.className = 'small muted'; lab1.style.cssText = 'position:absolute;right:0;top:-6px;font-size:.72rem'; lab1.textContent = '4 fold = 100%'; dots.appendChild(lab1);
+const lab2 = document.createElement('div'); lab2.className = 'small muted'; lab2.style.cssText = `position:absolute;left:${(0.98276 - 0.95) / 0.05 * 100}%;top:-6px;font-size:.72rem;transform:translateX(-50%)`; lab2.textContent = '98,3%'; dots.appendChild(lab2);
+const RIV = [['cảm ơn', 'xin chào', 0.038], ['k', 'h', 0.0085], ['m', 'dấu nặng', 0.0079], ['n', 'm', 0.0072], ['g', 'h', 0.007], ['age', 'h', 0.0065], ['toi', 'h', 0.0065], ['y', 'b', 0.0063], ['địa chỉ', 'g', 0.0063], ['xin chào', 'k', 0.0059]];
+$('#rivals').innerHTML = RIV.map(([a, b, v], i) => `<span>${a} → <b>${b}</b></span><div class="bar"><span style="width:${v / 0.04 * 100}%;background:${i === 0 ? 'var(--bad)' : 'var(--orient)'}"></span></div><span class="mono">${v.toFixed(4)}</span>`).join('');
+const F1 = [['age', 1, 15], ['b', 1, 5], ['cảm ơn', 0.966, 15], ['dấu nặng', 1, 15], ['g', 1, 15], ['h', 1, 30], ['i', 1, 15], ['k', 1, 15], ['m', 1, 30], ['n', 1, 15], ['r', 1, 15], ['t', 1, 15], ['ten_la', 1, 15], ['toi', 1, 15], ['u', 1, 15], ['xin chào', 0.968, 15], ['y', 1, 16], ['địa chỉ', 1, 15]];
+$('#f1grid').innerHTML = F1.map(([c, f, n]) => `<div style="${f < 1 ? 'border-color:var(--warn);background:color-mix(in srgb, var(--warn) 10%, transparent)' : ''}"><b>${(f * 100).toFixed(1)}%</b>${c} <span class="muted">· ${n} clip</span></div>`).join('');
+
+/* ================= 10. WORKFLOW ================= */
+const WF = [
+  ['data_collect.ipynb', 'Thu clip có nhãn', 'Quay clip theo lớp, ghi <code>data/raw/&lt;lớp&gt;/&lt;id&gt;.mp4</code> và đặc trưng từng frame vào <code>data/processed</code>. Biến thể <code>alphabet_data_collector</code>: chữ cái tĩnh, quay 1 mẫu rồi tự sinh bản nhiễu. <code>mirror_data</code> lúc thu phải khớp lúc chạy.'],
+  ['reextract_features.ipynb', 'Trích lại sau khi đổi extractor', 'Chạy lại MediaPipe + <code>extract</code> trên toàn bộ video gốc (<code>src/data/reextract.py</code>), dùng đúng fps của video để timestamp giống lúc chạy thật.'],
+  ['augment_features.ipynb', 'Augment (tuỳ chọn)', 'Tạo biến thể chỉ ở mức đặc trưng, ghi <code>origin_sample_id</code> vào meta để cùng nhóm với bản gốc. Không augment bản augment.'],
+  ['train.ipynb', 'CV + ensemble', 'Xây dataset (N, 30, 316), chạy <code>run_training</code> 5 fold + model full-data, cấu hình S6 (presence_norm, distractor_geometry, select_after_warmup = 5). In ra ID clip gốc của các dự đoán OOF sai. Biến thể <code>vsl_model_finetuner</code>: warm-start khi chỉ thêm dữ liệu, giữ fold theo <code>folds.json</code>.'],
+  ['realtime_predict.ipynb', 'Chạy webcam trực tiếp', 'Nạp checkpoint mới nhất, mở <code>VSLStreamSession</code>, vẽ landmark và kết quả. Tương đương CLI <code>python -m src.app.realtime [--fast]</code>.'],
+];
+const wf = $('#wf');
+WF.forEach(([n, t, d], i) => { const b = document.createElement('button'); b.type = 'button'; b.innerHTML = `<span>${i + 1}</span><b>${n}</b><span>${t}</span>`; b.addEventListener('click', () => { $$('button', wf).forEach(x => x.classList.toggle('sel', x === b)); $('#wfRead').innerHTML = `<b>${n}</b>: ${d}`; }); wf.appendChild(b); });
+wf.firstChild.click();
+const CMDS = [
+  ['Cài đặt', 'pip install -r requirements.txt && pip install -e .'],
+  ['Test (unittest, chạy theo tên module)', '.venv/bin/python -m unittest tests.test_predict tests.test_reextract tests.test_feature_augmentation tests.test_training_robustness tests.test_builtin_collection tests.test_training_p1 tests.test_evaluation tests.test_feature_v3 tests.test_app tests.test_fast tests.test_server'],
+  ['Smoke test huấn luyện (dữ liệu giả)', '.venv/bin/python -m src.model.training --demo --folds-to-run 1 --epochs 5'],
+  ['Huấn luyện từ .npz', '.venv/bin/python -m src.model.training --data <file.npz> --out runs/vsl'],
+  ['Flask API', '.venv/bin/python -m src.app.server --port 8000'],
+  ['Web app', 'cd external/vsl-web && npm install && npm run dev'],
+  ['Realtime CLI', '.venv/bin/python -m src.app.realtime --fast'],
+];
+$('#cmds').innerHTML = CMDS.map(([t, c], i) => `<div class="small muted" style="margin-bottom:3px">${t}</div><div class="cmd"><pre>${esc(c)}</pre><button class="btn" data-copy="${i}">Chép</button></div>`).join('');
+$('#cmds').addEventListener('click', async e => {
+  const b = e.target.closest('[data-copy]'); if (!b) return;
+  try { await navigator.clipboard.writeText(CMDS[+b.dataset.copy][1]); b.textContent = 'Đã chép'; } catch (err) { b.textContent = 'Không chép được'; }
+  setTimeout(() => { b.textContent = 'Chép'; }, 1400);
+});
+
+/* ---------- initial paint ---------- */
+rerender();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(rerender);
+})();
+</script>
+</body>
+</html>

@@ -10,6 +10,7 @@ import {
   type Speed,
 } from "@/lib/recognizer";
 import { DEFAULT_MODEL, naiveSentence } from "@/lib/sentence";
+import { ThemeToggle } from "./theme-toggle";
 
 // ------------------------------------------------------------------ cài đặt (lưu trên trình duyệt)
 
@@ -20,6 +21,7 @@ interface Settings {
   model: string;
   mirrorPreview: boolean;
   mirrorData: boolean;
+  debugCrop: boolean;
   speed: Speed;
   minConsecutive: number;
   sentenceGapSeconds: number;
@@ -32,6 +34,7 @@ const DEFAULT_SETTINGS: Settings = {
   model: DEFAULT_MODEL,
   mirrorPreview: true,
   mirrorData: DEFAULT_OPTIONS.mirrorData,
+  debugCrop: false,
   speed: "accurate",
   minConsecutive: DEFAULT_OPTIONS.minConsecutive,
   sentenceGapSeconds: DEFAULT_OPTIONS.sentenceGapMs / 1000,
@@ -169,6 +172,7 @@ function Swap({ value, className, children }: { value: string; className?: strin
 
 export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const overlayRef = useRef<HTMLCanvasElement>(null);
   const recognizerRef = useRef<Recognizer | null>(null);
   const settingsRef = useRef<Settings>(DEFAULT_SETTINGS);
   const composeVersion = useRef(0);
@@ -239,6 +243,7 @@ export default function Home() {
       minConsecutive: settings.minConsecutive,
       sentenceGapMs: settings.sentenceGapSeconds * 1000,
     });
+    recognizerRef.current?.setDebugCanvas(settings.debugCrop ? overlayRef.current : null);
   }, [settings, loaded]);
 
   // Kiểm tra API dự đoán mỗi khi đổi địa chỉ.
@@ -331,6 +336,7 @@ export default function Home() {
             <i className="health-dot" />
             {healthText}
           </span>
+          <ThemeToggle />
           <button className="icon-button" onClick={() => setSettingsOpen(true)} aria-label="Mở cài đặt">
             <Icon name="settings" />
           </button>
@@ -346,6 +352,9 @@ export default function Home() {
               playsInline
               muted
             />
+            {settings.debugCrop && (
+              <canvas ref={overlayRef} className={`debug-overlay${settings.mirrorPreview ? " mirror" : ""}`} aria-hidden="true" />
+            )}
             <span className="corner tl" /><span className="corner tr" />
             <span className="corner bl" /><span className="corner br" />
 
@@ -611,6 +620,10 @@ export default function Home() {
             <label className="check">
               <input type="checkbox" checked={settings.mirrorData} onChange={(e) => update("mirrorData", e.target.checked)} />
               <span>Lật ảnh trước khi nhận diện (phải giống lúc thu dữ liệu)</span>
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={settings.debugCrop} onChange={(e) => update("debugCrop", e.target.checked)} />
+              <span>Hiện khung crop người chính (debug)</span>
             </label>
             <label className="field">
               <span>Địa chỉ API nhận diện</span>

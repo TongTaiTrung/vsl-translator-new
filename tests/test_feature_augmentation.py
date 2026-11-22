@@ -24,6 +24,34 @@ class FeatureAugmentationTests(unittest.TestCase):
         self.assertFalse(np.allclose(output[:, :4], source[:, :4]))
         np.testing.assert_allclose(source[:, PRESENCE_SLICE], np.tile((0.0, 0.8), (8, 1)))
 
+    def _source(self, root: Path) -> Path:
+        source = root / "processed" / "hello" / "0"
+        source.mkdir(parents=True)
+        rng = np.random.default_rng(1)
+        for index in range(8):
+            feature = rng.normal(0, 0.3, FEATURE_DIM).astype(np.float32)
+            feature[PRESENCE_SLICE] = (0.0, 0.8)
+            np.savez_compressed(source / f"{index}.npz", feature=feature)
+        (source / "meta.json").write_text(json.dumps({"feature_version": FEATURE_VERSION}))
+        return source
+
+    def test_copies_get_random_view_pitch_recorded_in_meta(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = self._source(Path(tmp))
+            created = augment_sample(source, Path(tmp) / "raw", 3, 1.0, np.random.default_rng(2), pitch_degrees=10.0)
+            pitches = [json.loads((p / "meta.json").read_text())["augmentation"]["view_pitch_deg"] for p in created]
+            self.assertTrue(all(-10.0 <= p <= 10.0 for p in pitches))
+            self.assertGreater(len(set(pitches)), 1)
+            # pitch=0 -> giống hệt chỉ thêm nhiễu (cùng seed).
+            flat = augment_sample(source, Path(tmp) / "raw", 1, 1.0, np.random.default_rng(3), pitch_degrees=0.0)[0]
+            features = np.stack([DataHandler._load_feature(source / f"{i}.npz") for i in range(8)])
+            expected = add_feature_noise(features, np.random.default_rng(3), 1.0)
+            got = np.stack([DataHandler._load_feature(flat / f"{i}.npz") for i in range(8)])
+            np.testing.assert_allclose(got, expected, atol=1e-6)
+            self.assertEqual(json.loads((flat / "meta.json").read_text())["augmentation"]["view_pitch_deg"], 0.0)
+            with self.assertRaises(ValueError):
+                augment_sample(source, Path(tmp) / "raw", 1, 1.0, np.random.default_rng(4), pitch_degrees=90.0)
+
     def test_copies_share_origin_group_and_leave_raw_unchanged(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

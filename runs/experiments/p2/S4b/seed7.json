@@ -1,0 +1,70 @@
+{
+ "oof_acc": 1.0,
+ "oof_macro_f1": 1.0,
+ "logit_gap_median_clean": 4.625573396682739,
+ "logit_gap_median_noise_sigma1": 3.2607979774475098,
+ "noise_sigma1_gap_retention": 0.7049500024766687,
+ "hard_pairs": {
+  "m/n": 82.21501350402832,
+  "r/u": 187.0200164794922,
+  "t/n": 75.32673645019531,
+  "g/n": 69.9102554321289,
+  "cảm ơn/xin chào": 32.23871040344238
+ },
+ "closest_pairs": {
+  "cảm ơn/địa chỉ": 17.6678674697876,
+  "age/cảm ơn": 21.57440643310547,
+  "cảm ơn/toi": 27.098403549194337,
+  "age/địa chỉ": 29.083716583251952,
+  "toi/địa chỉ": 30.205663681030273
+ },
+ "distractor": {
+  "same_height": {
+   "n": 128,
+   "flip_rate": 0.046875,
+   "wrong_accept_rate": 0.0234375,
+   "to_two_hand_class_rate": 0.0546875
+  },
+  "lowered_static": {
+   "n": 128,
+   "flip_rate": 0.0,
+   "wrong_accept_rate": 0.0,
+   "to_two_hand_class_rate": 0.015625
+  }
+ },
+ "open_set": [
+  {
+   "held_class": "m",
+   "n_test": 15,
+   "fitted_T": 1.000000238418579,
+   "val_acc": 1.0,
+   "false_accept_rate_T1": 1.0,
+   "median_maxprob_T1": 0.9293021559715271,
+   "false_accept_rate_T_fit": 1.0,
+   "median_maxprob_T_fit": 0.9293021559715271
+  },
+  {
+   "held_class": "địa chỉ",
+   "n_test": 15,
+   "fitted_T": 1.000000238418579,
+   "val_acc": 1.0,
+   "false_accept_rate_T1": 0.2,
+   "median_maxprob_T1": 0.425527960062027,
+   "false_accept_rate_T_fit": 0.2,
+   "median_maxprob_T_fit": 0.425527960062027
+  }
+ ],
+ "seed": 7,
+ "overrides": {
+  "presence_norm": true,
+  "distractor_geometry": true
+ },
+ "minutes": 11.059365113576254,
+ "val_accs": [
+  1.0,
+  1.0,
+  1.0,
+  1.0,
+  1.0
+ ]
+}

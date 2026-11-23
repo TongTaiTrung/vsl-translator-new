@@ -1,0 +1,15 @@
+  [p1q3/s1 f1] early stop @ 40
+  p1q3/s1 fold 1: best_ep 10 val_acc 1.000 val_loss 0.0723 epochs_run 40 s=0.50 88s
+  [p1q3/s1 f2] early stop @ 40
+  p1q3/s1 fold 2: best_ep 10 val_acc 1.000 val_loss 0.0817 epochs_run 40 s=0.50 112s
+  [p1q3/s1 f3] early stop @ 40
+  p1q3/s1 fold 3: best_ep 10 val_acc 1.000 val_loss 0.0786 epochs_run 40 s=0.50 108s
+  [p1q3/s1 f4] early stop @ 70
+  p1q3/s1 fold 4: best_ep 40 val_acc 1.000 val_loss 0.1239 epochs_run 70 s=0.50 159s
+  [p1q3/s1 f5] early stop @ 40
+  p1q3/s1 fold 5: best_ep 10 val_acc 1.000 val_loss 0.0720 epochs_run 40 s=0.50 89s
+   early stop @ 40
+   early stop @ 40
+   early stop @ 41
+   early stop @ 40
+{"variant": "p1q3", "seed": 1, "best_epochs": [10, 10, 10, 40, 10], "oof_acc": 1.0, "gap_kept_noise1": 0.9296900565129703, "open_set_fa_old": 0.8666666666666667, "open_set_fa_new": 0.5833333333333333, "gauss_fa": {"old": 0.22, "new": 0.0}, "time_s": 1091.642003774643}

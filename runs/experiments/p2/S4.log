@@ -1,0 +1,9 @@
+   early stop @ 38
+   early stop @ 34
+   early stop @ 33
+   early stop @ 35
+   early stop @ 34
+   early stop @ 35
+   early stop @ 33
+{"seed": 42, "minutes": 7.45602088769277, "oof_acc": 0.9944444444444445, "oof_macro_f1": 0.9944382647385984, "distractor": {"same_height": {"n": 128, "flip_rate": 0.0078125, "wrong_accept_rate": 0.0, "to_two_hand_class_rate": 0.015625}, "lowered_static": {"n": 128, "flip_rate": 0.0, "wrong_accept_rate": 0.0, "to_two_hand_class_rate": 0.0078125}}, "hard_pairs": {"m/n": 77.20720443725585, "r/u": 166.9917236328125, "t/n": 67.06348266601563, "g/n": 83.42940979003906, "cảm ơn/xin chào": 32.18883628845215}}
+S4 dừng sau seed42: dựa trên S3 (HandPairNet) đã bị loại

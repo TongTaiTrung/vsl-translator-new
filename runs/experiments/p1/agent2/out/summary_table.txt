@@ -1,0 +1,34 @@
+| metric | baseline | Q1 alone (post-hoc) | Q3 alone | Q4 alone | P1 as in repo (Q1+Q2+Q4, no Q3) | P1 full (Q1+Q2+Q3+Q4) |
+|---|---|---|---|---|---|---|
+| open-set FA | 0.922±0.034 | 0.489±0.096 * | 0.928±0.031 | 0.922±0.048 | 0.522±0.123 * | 0.656±0.091 * |
+| open-set ID accept | 1.000±0.000 | 0.990±0.009 | 1.000±0.000 | 1.000±0.000 | 1.000±0.000 | 0.995±0.007 |
+| gauss FA | 0.433±0.149 | 0.000±0.000 * | 0.472±0.031 | 0.140±0.074 | 0.000±0.000 * | 0.000±0.000 * |
+| gap kept σ=1 | 0.797±0.060 | 0.797±0.060 | 0.941±0.006 * | 0.788±0.074 | 0.788±0.074 | 0.926±0.005 * |
+| m/n sep | 134.887±28.165 | 134.887±28.165 | 252.582±20.301 * | 117.815±50.277 | 117.815±50.277 | 230.351±16.099 * |
+| r/u sep | 295.191±92.773 | 295.191±92.773 | 602.390±31.887 * | 279.631±150.818 | 279.631±150.818 | 628.917±79.642 * |
+| cảm ơn/xin chào sep | 45.001±12.424 | 45.001±12.424 | 61.490±14.088 | 30.407±7.029 | 30.407±7.029 | 69.325±30.772 |
+| OOF acc | 0.998±0.003 | 0.998±0.003 | 1.000±0.000 | 0.998±0.003 | 0.998±0.003 | 1.000±0.000 |
+| median best epoch | 4.333±1.247 | 4.333±1.247 | 10.000±0.000 * | 4.667±1.700 | 4.667±1.700 | 10.000±0.000 * |
+| T | 0.282±0.116 | 1.000±0.000 * | 0.200±0.000 | 0.307±0.151 | 1.000±0.000 * | 1.000±0.000 * |
+
+Open-set FA per held-out class (mean over seeds):
+  baseline               {'m': 0.933, 'cảm ơn': 0.844, 'toi': 0.911, 'địa chỉ': 1.0}
+  Q1 alone (post-hoc)    {'m': 0.644, 'cảm ơn': 0.133, 'toi': 0.244, 'địa chỉ': 0.933}
+  Q3 alone               {'m': 1.0, 'cảm ơn': 0.867, 'toi': 0.844, 'địa chỉ': 1.0}
+  Q4 alone               {'m': 0.978, 'cảm ơn': 0.844, 'toi': 0.867, 'địa chỉ': 1.0}
+  P1 as in repo (Q1+Q2+Q4, no Q3) {'m': 0.756, 'cảm ơn': 0.156, 'toi': 0.289, 'địa chỉ': 0.889}
+  P1 full (Q1+Q2+Q3+Q4)  {'m': 1.0, 'cảm ơn': 0.422, 'toi': 0.311, 'địa chỉ': 0.889}
+
+T status (new) per seed: {'baseline': ['skipped_no_errors', 'skipped_no_errors', 'at_bound'], 'q3': ['skipped_no_errors', 'skipped_no_errors', 'skipped_no_errors'], 'q4': ['skipped_no_errors', 'skipped_no_errors', 'at_bound'], 'p1': ['skipped_no_errors', 'skipped_no_errors', 'at_bound'], 'p1q3': ['skipped_no_errors', 'skipped_no_errors', 'skipped_no_errors']}
+Best epochs: {'baseline': [[11, 34, 4, 3, 3], [12, 3, 6, 9, 3], [3, 3, 3, 13, 3]], 'q3': [[11, 34, 10, 10, 10], [12, 10, 10, 12, 10], [10, 10, 10, 15, 10]], 'q4': [[45, 9, 4, 4, 3], [10, 5, 8, 7, 4], [3, 3, 5, 4, 3]], 'p1': [[45, 9, 4, 4, 3], [10, 5, 8, 7, 4], [3, 3, 5, 4, 3]], 'p1q3': [[45, 11, 10, 10, 10], [10, 10, 11, 11, 10], [10, 10, 10, 40, 10]]}
+
+Q2 full model:
+  baseline s42: epochs=5 warmup=5 final_lr=2.00e-03 (peak 2e-03) | gap kept σ=1 in-sample full=0.847 vs folds=0.795 | gap median full=4.68 folds=4.67 | gauss FA old/new={'old': 0.89, 'new': 0.08}
+  baseline s7: epochs=7 warmup=5 final_lr=1.31e-05 (peak 2e-03) | gap kept σ=1 in-sample full=0.888 vs folds=0.845 | gap median full=4.55 folds=4.60 | gauss FA old/new={'old': 0.575, 'new': 0.0}
+  baseline s1: epochs=4 warmup=5 final_lr=1.60e-03 (peak 2e-03) | gap kept σ=1 in-sample full=0.780 vs folds=0.738 | gap median full=4.67 folds=4.60 | gauss FA old/new={'old': 0.83, 'new': 0.165}
+  p1 s42: epochs=25 warmup=5 final_lr=1.00e-05 (peak 2e-03) | gap kept σ=1 in-sample full=0.960 vs folds=0.821 | gap median full=4.56 folds=4.67 | gauss FA old/new={'old': 0.725, 'new': 0.005}
+  p1 s7: epochs=25 warmup=5 final_lr=1.00e-05 (peak 2e-03) | gap kept σ=1 in-sample full=0.937 vs folds=0.869 | gap median full=4.58 folds=4.75 | gauss FA old/new={'old': 0.765, 'new': 0.0}
+  p1 s1: epochs=25 warmup=5 final_lr=1.00e-05 (peak 2e-03) | gap kept σ=1 in-sample full=0.928 vs folds=0.700 | gap median full=4.59 folds=4.71 | gauss FA old/new={'old': 0.335, 'new': 0.01}
+  p1q3 s42: epochs=25 warmup=5 final_lr=1.00e-05 (peak 2e-03) | gap kept σ=1 in-sample full=0.960 vs folds=0.922 | gap median full=4.56 folds=4.68 | gauss FA old/new={'old': 0.725, 'new': 0.005}
+  p1q3 s7: epochs=25 warmup=5 final_lr=1.00e-05 (peak 2e-03) | gap kept σ=1 in-sample full=0.937 vs folds=0.946 | gap median full=4.58 folds=4.67 | gauss FA old/new={'old': 0.765, 'new': 0.0}
+  p1q3 s1: epochs=25 warmup=5 final_lr=1.00e-05 (peak 2e-03) | gap kept σ=1 in-sample full=0.928 vs folds=0.929 | gap median full=4.59 folds=4.68 | gauss FA old/new={'old': 0.82, 'new': 0.01}

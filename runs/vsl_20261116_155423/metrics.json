@@ -1,0 +1,49 @@
+{
+ "cv_acc_mean": 0.9666666626930237,
+ "cv_acc_std": 0.06666667461395263,
+ "fold_acc": [
+  1.0,
+  1.0,
+  1.0,
+  1.0,
+  0.8333333134651184
+ ],
+ "best_epochs": [
+  7,
+  15,
+  12,
+  12,
+  21
+ ],
+ "temperature": 0.5833414196968079,
+ "reject_threshold": 0.2,
+ "n_models": 6,
+ "n_samples": 30,
+ "n_classes": 2,
+ "config": {
+  "d_model": 128,
+  "gru_hidden": 96,
+  "kernels": [
+   3,
+   5,
+   9
+  ],
+  "n_blocks": 2,
+  "head": "linear",
+  "base_dropout": 0.2,
+  "max_epochs": 200,
+  "min_epochs": 30,
+  "patience": 30,
+  "lr": 0.002,
+  "min_lr": 1e-05,
+  "weight_decay": 0.05,
+  "warmup_epochs": 5,
+  "lr_patience": 8,
+  "label_smoothing": 0.1,
+  "ema_decay": 0.99,
+  "grad_clip": 1.0,
+  "batch_size": 0,
+  "mixup_alpha": 0.4,
+  "seed": 42
+ }
+}

@@ -25,15 +25,7 @@ htmlcov/
 # ---- Jupyter ----
 .ipynb_checkpoints/
 
-# ---- Training outputs (checkpoints, metrics, ONNX exports) ----
-runs/
-*.pt
-*.pth
-*.onnx
-
 # ---- Data ----
-# Raw recordings in data/raw/ are NOT ignored (they are the source of truth).
-# Derived artifacts are reproducible from raw, so keep them out of git.
 data/
 
 # ---- Environment / secrets ----
@@ -50,5 +42,5 @@ Thumbs.db
 
 # ---- Tooling outputs ----
 graphify-out/
-.claude
+.claude/
 CLAUDE.md

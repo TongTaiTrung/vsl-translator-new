@@ -1,0 +1,116 @@
+{
+ "variant": "baseline",
+ "seed": 42,
+ "best_epochs": [
+  11,
+  34,
+  4,
+  3,
+  3
+ ],
+ "epochs_run": [
+  41,
+  64,
+  34,
+  33,
+  33
+ ],
+ "oof_acc": 1.0,
+ "oof_nll_T1": 0.07463674247264862,
+ "logit_gap_median": 4.642967224121094,
+ "gap_kept_noise1": 0.8301991397254238,
+ "acc_noise1": 1.0,
+ "hard_pair_sep": {
+  "m/n": 151.18754119873046,
+  "r/u": 418.6142303466797,
+  "cảm ơn/xin chào": 35.60882129669189
+ },
+ "T": {
+  "old": 0.20001916587352753,
+  "new": 1.0,
+  "new_status": "skipped_no_errors"
+ },
+ "thr": {
+  "old": 0.2,
+  "new": 0.2
+ },
+ "gauss_fa": {
+  "old": 0.635,
+  "new": 0.0
+ },
+ "open_set": {
+  "m": {
+   "best_epoch": 9,
+   "id_val_acc": 1.0,
+   "T": {
+    "old": 0.20441842079162598,
+    "new": 1.0,
+    "new_status": "skipped_no_errors"
+   },
+   "fa_old": 1.0,
+   "id_accept_old": 1.0,
+   "fa_new": 1.0,
+   "id_accept_new": 1.0
+  },
+  "cảm ơn": {
+   "best_epoch": 3,
+   "id_val_acc": 1.0,
+   "T": {
+    "old": 0.21450208127498627,
+    "new": 1.0,
+    "new_status": "skipped_no_errors"
+   },
+   "fa_old": 0.8,
+   "id_accept_old": 1.0,
+   "fa_new": 0.13333333333333333,
+   "id_accept_new": 1.0
+  },
+  "toi": {
+   "best_epoch": 14,
+   "id_val_acc": 1.0,
+   "T": {
+    "old": 0.233978733420372,
+    "new": 1.0,
+    "new_status": "skipped_no_errors"
+   },
+   "fa_old": 0.8666666666666667,
+   "id_accept_old": 1.0,
+   "fa_new": 0.06666666666666667,
+   "id_accept_new": 1.0
+  },
+  "địa chỉ": {
+   "best_epoch": 4,
+   "id_val_acc": 1.0,
+   "T": {
+    "old": 0.20005400478839874,
+    "new": 1.0,
+    "new_status": "skipped_no_errors"
+   },
+   "fa_old": 1.0,
+   "id_accept_old": 1.0,
+   "fa_new": 0.8,
+   "id_accept_new": 0.9696969696969697
+  }
+ },
+ "open_set_fa_old": 0.9166666666666667,
+ "open_set_id_accept_old": 1.0,
+ "open_set_fa_new": 0.5,
+ "open_set_id_accept_new": 0.9924242424242424,
+ "full_model": {
+  "epochs": 5,
+  "warmup": 5,
+  "final_lr": 0.002,
+  "final_lr_analytic": 0.002,
+  "reached_cosine": false,
+  "peak_lr": 0.002,
+  "gap_kept_noise1_insample": 0.846794843673706,
+  "gap_median_insample": 4.676329612731934,
+  "fold_gap_kept_noise1_insample_mean": 0.7954172253608703,
+  "fold_gap_median_insample_mean": 4.672857189178467,
+  "gauss_fa": {
+   "old": 0.89,
+   "new": 0.08
+  }
+ },
+ "time_s": 889.8566131591797
+}

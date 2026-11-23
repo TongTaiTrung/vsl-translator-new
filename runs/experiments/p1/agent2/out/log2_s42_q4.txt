@@ -1,0 +1,15 @@
+  [q4/s42 f1] early stop @ 75
+  q4/s42 fold 1: best_ep 45 val_acc 1.000 val_loss 0.0976 epochs_run 75 s=0.50 202s
+  [q4/s42 f2] early stop @ 39
+  q4/s42 fold 2: best_ep 9 val_acc 1.000 val_loss 0.0985 epochs_run 39 s=0.50 111s
+  [q4/s42 f3] early stop @ 34
+  q4/s42 fold 3: best_ep 4 val_acc 1.000 val_loss 0.0637 epochs_run 34 s=0.50 101s
+  [q4/s42 f4] early stop @ 34
+  q4/s42 fold 4: best_ep 4 val_acc 1.000 val_loss 0.0575 epochs_run 34 s=0.50 93s
+  [q4/s42 f5] early stop @ 33
+  q4/s42 fold 5: best_ep 3 val_acc 1.000 val_loss 0.0561 epochs_run 33 s=0.50 104s
+   early stop @ 43
+   early stop @ 33
+   early stop @ 42
+   early stop @ 59
+{"variant": "q4", "seed": 42, "best_epochs": [45, 9, 4, 4, 3], "oof_acc": 1.0, "gap_kept_noise1": 0.8207855723908695, "open_set_fa_old": 0.9833333333333334, "open_set_fa_new": 0.6333333333333333, "gauss_fa": {"old": 0.215, "new": 0.0}, "time_s": 1085.381287097931}

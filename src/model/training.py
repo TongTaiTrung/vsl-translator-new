@@ -731,16 +731,49 @@ def hard_negative_margin_loss(logits: torch.Tensor, target: torch.Tensor, margin
     return F.relu(margin + competing - true_logits).mean()
 
 
+class ReplaySampler:
+    """Chọn mẫu train cho từng epoch khi fine-tune nhanh (chỉ vài lớp có mẫu mới).
+
+    Mỗi epoch: MỌI mẫu `always` (mẫu mới) + tối đa `quota[c]` mẫu khác của lớp c, rút ngẫu nhiên lại ở mỗi
+    epoch (qua nhiều epoch vẫn ôn được phần lớn dữ liệu cũ). Số mẫu mỗi epoch cố định -> lịch LR ổn định.
+    `train_one` bù trọng số lớp theo tỉ lệ (số mẫu lớp đó trong Xtr / số mẫu được rút) nên kỳ vọng loss vẫn
+    bằng loss trên toàn bộ Xtr: lớp được ôn nhiều hơn không vì thế mà được model "thiên vị".
+    """
+
+    def __init__(self, y, quota, always=None, seed: int = 0):
+        y = np.asarray(y)
+        always = np.zeros(len(y), dtype=bool) if always is None else np.asarray(always, dtype=bool)
+        if len(always) != len(y):
+            raise ValueError("always phải cùng độ dài với y")
+        self.always = np.where(always)[0]
+        self.pools = [np.where((y == c) & ~always)[0] for c in range(len(quota))]
+        self.take = [min(max(int(q), 0), len(pool)) for q, pool in zip(quota, self.pools)]
+        self.rng = np.random.default_rng(seed)
+
+    def __len__(self) -> int:
+        return len(self.always) + sum(self.take)
+
+    def __call__(self, epoch: int) -> torch.Tensor:
+        parts = [self.always] + [self.rng.choice(pool, k, replace=False)
+                                 for pool, k in zip(self.pools, self.take) if k]
+        idx = np.concatenate(parts)
+        self.rng.shuffle(idx)
+        return torch.from_numpy(idx.astype(np.int64))
+
+
 def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
               fixed_epochs: int | None = None, init_strength: float = 0.5,
               freeze_strength: bool = False, tag: str = "", log_every: int = 5,
-              hand_presence: torch.Tensor | None = None, norm_stats=None, init_state: dict | None = None):
+              hand_presence: torch.Tensor | None = None, norm_stats=None, init_state: dict | None = None,
+              sampler=None):
     """Huấn luyện 1 model. Có (Xva,yva): early stopping + tự thích ứng. Không có: chạy `fixed_epochs`.
 
     norm_stats=(mean, std, presence_aware) tensor trên device: để augmentation tay phụ tính lại cột tay-tay.
     init_state: state_dict để fine-tune (warm-start) thay vì khởi tạo ngẫu nhiên. Khi có val, model ban đầu
     được chấm trước epoch 1 và là ứng viên "best" (best_epoch=0) -> fine-tune không thể trả về model tệ hơn
     trên val so với lúc bắt đầu.
+    sampler: callable epoch -> chỉ số vào Xtr (số lượng cố định, vd. `ReplaySampler`): mỗi epoch chỉ train trên
+    tập con đó thay vì toàn bộ Xtr (fine-tune nhanh). Batch size vẫn tính theo len(Xtr) như khi train đầy đủ.
     """
     has_val = Xva is not None
     model = build_model(Xtr.shape[-1], n_classes, groups, cfg).to(device)
@@ -764,7 +797,12 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
     n = len(Xtr)
     bs = cfg.batch_size or int(np.clip(n // 20, 16, 64))
     bs = min(bs, n)
-    steps_per_epoch = max(1, n // bs)
+    first = sampler(0).to(device) if sampler is not None else None
+    n_epoch = len(first) if first is not None else n
+    if n_epoch == 0:
+        raise ValueError("sampler trả về tập rỗng")
+    bs = min(bs, n_epoch)
+    steps_per_epoch = max(1, n_epoch // bs)
     total_epochs = fixed_epochs or cfg.max_epochs
     total_steps = total_epochs * steps_per_epoch
     warm_steps = cfg.warmup_epochs * steps_per_epoch
@@ -773,6 +811,11 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
     cw = None
     if (counts.max() / counts.min()) > 1.5:       # lệch lớp -> trọng số căn bậc hai nghịch đảo
         cw = ((counts.sum() / (n_classes * counts)) ** 0.5).to(device)
+    if first is not None:     # sampler rút lớp lệch so với Xtr -> bù để kỳ vọng loss = loss trên toàn bộ Xtr
+        seen = torch.bincount(ytr[first], minlength=n_classes).float()
+        iw = torch.where(seen > 0, counts / seen.clamp(min=1), torch.zeros_like(seen))
+        iw = (iw / iw[seen > 0].mean()).to(device)
+        cw = iw if cw is None else cw * iw
 
     use_amp = device.type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
@@ -799,7 +842,10 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
         set_dropout(model, ctrl.dropout)
         if hasattr(model, "stem"):
             model.stem.group_drop = ctrl.group_drop
-        perm = torch.randperm(n, device=device)
+        if sampler is None:
+            perm = torch.randperm(n, device=device)
+        else:
+            perm = first if ep == 0 else sampler(ep).to(device)
         run_correct, run_total = torch.zeros((), device=device), 0   # acc ngay trong lúc train (miễn phí)
 
         for i in range(steps_per_epoch):

@@ -1,0 +1,130 @@
+{
+ "cv_acc_mean": 1.0,
+ "cv_acc_std": 0.0,
+ "fold_acc": [
+  1.0,
+  1.0,
+  1.0,
+  1.0,
+  1.0
+ ],
+ "best_epochs": [
+  11,
+  34,
+  4,
+  3,
+  3
+ ],
+ "temperature": 0.20001916587352753,
+ "reject_threshold": 0.2,
+ "n_models": 6,
+ "n_samples": 540,
+ "n_classes": 12,
+ "confusion_pairs": [],
+ "closest_rivals": [
+  {
+   "actual": "cảm ơn",
+   "rival": "xin chào",
+   "mean_rival_probability": 0.0037052349653095007,
+   "samples": 15
+  },
+  {
+   "actual": "t",
+   "rival": "u",
+   "mean_rival_probability": 1.1065462786064018e-06,
+   "samples": 15
+  },
+  {
+   "actual": "xin chào",
+   "rival": "cảm ơn",
+   "mean_rival_probability": 1.4304606565929134e-07,
+   "samples": 15
+  },
+  {
+   "actual": "toi",
+   "rival": "g",
+   "mean_rival_probability": 7.192437312397715e-09,
+   "samples": 15
+  },
+  {
+   "actual": "g",
+   "rival": "cảm ơn",
+   "mean_rival_probability": 3.752858468430986e-09,
+   "samples": 15
+  },
+  {
+   "actual": "r",
+   "rival": "n",
+   "mean_rival_probability": 6.750401349009394e-10,
+   "samples": 15
+  },
+  {
+   "actual": "địa chỉ",
+   "rival": "m",
+   "mean_rival_probability": 3.57052082344822e-10,
+   "samples": 15
+  },
+  {
+   "actual": "n",
+   "rival": "r",
+   "mean_rival_probability": 2.6898361316085584e-10,
+   "samples": 15
+  },
+  {
+   "actual": "age",
+   "rival": "t",
+   "mean_rival_probability": 2.1808008177082172e-10,
+   "samples": 15
+  },
+  {
+   "actual": "m",
+   "rival": "n",
+   "mean_rival_probability": 1.3421964928372887e-10,
+   "samples": 15
+  },
+  {
+   "actual": "u",
+   "rival": "n",
+   "mean_rival_probability": 4.763395927698255e-11,
+   "samples": 15
+  },
+  {
+   "actual": "ten_la",
+   "rival": "địa chỉ",
+   "mean_rival_probability": 4.467163097765514e-11,
+   "samples": 15
+  }
+ ],
+ "config": {
+  "d_model": 128,
+  "gru_hidden": 96,
+  "kernels": [
+   3,
+   5,
+   9
+  ],
+  "n_blocks": 2,
+  "head": "linear",
+  "base_dropout": 0.2,
+  "max_epochs": 200,
+  "min_epochs": 30,
+  "patience": 30,
+  "lr": 0.002,
+  "min_lr": 1e-05,
+  "weight_decay": 0.05,
+  "warmup_epochs": 5,
+  "lr_patience": 8,
+  "label_smoothing": 0.1,
+  "ema_decay": 0.99,
+  "grad_clip": 1.0,
+  "batch_size": 0,
+  "mixup_alpha": 0.0,
+  "hard_negative_margin": 0.8,
+  "hard_negative_weight": 0.25,
+  "extra_hand_probability": 0.4,
+  "extra_hand_loss": 0.5,
+  "hand_consistency": 0.12,
+  "presence_scale": 0.25,
+  "seed": 42
+ }
+}

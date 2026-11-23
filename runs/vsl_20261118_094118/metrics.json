@@ -1,0 +1,595 @@
+{
+ "cv_acc_mean": 1.0,
+ "cv_acc_std": 0.0,
+ "fold_acc": [
+  1.0,
+  1.0,
+  1.0,
+  1.0,
+  1.0
+ ],
+ "best_epochs": [
+  11,
+  34,
+  10,
+  10,
+  10
+ ],
+ "temperature": 1.0,
+ "temperature_status": "skipped_no_errors",
+ "reject_threshold": 0.2,
+ "n_models": 6,
+ "n_samples": 690,
+ "n_classes": 15,
+ "confusion_pairs": [],
+ "closest_rivals": [
+  {
+   "actual": "cảm ơn",
+   "rival": "xin chào",
+   "mean_rival_probability": 0.024792294949293137,
+   "samples": 15
+  },
+  {
+   "actual": "i",
+   "rival": "r",
+   "mean_rival_probability": 0.007230093237012625,
+   "samples": 15
+  },
+  {
+   "actual": "toi",
+   "rival": "age",
+   "mean_rival_probability": 0.007060421630740166,
+   "samples": 15
+  },
+  {
+   "actual": "h",
+   "rival": "t",
+   "mean_rival_probability": 0.007054639980196953,
+   "samples": 30
+  },
+  {
+   "actual": "n",
+   "rival": "t",
+   "mean_rival_probability": 0.006832040846347809,
+   "samples": 15
+  },
+  {
+   "actual": "m",
+   "rival": "n",
+   "mean_rival_probability": 0.006789523642510176,
+   "samples": 15
+  },
+  {
+   "actual": "g",
+   "rival": "u",
+   "mean_rival_probability": 0.006726662628352642,
+   "samples": 15
+  },
+  {
+   "actual": "ten_la",
+   "rival": "g",
+   "mean_rival_probability": 0.006585156545042992,
+   "samples": 15
+  },
+  {
+   "actual": "age",
+   "rival": "xin chào",
+   "mean_rival_probability": 0.006470846477895975,
+   "samples": 15
+  },
+  {
+   "actual": "xin chào",
+   "rival": "g",
+   "mean_rival_probability": 0.006441994570195675,
+   "samples": 15
+  },
+  {
+   "actual": "địa chỉ",
+   "rival": "cảm ơn",
+   "mean_rival_probability": 0.00639704056084156,
+   "samples": 15
+  },
+  {
+   "actual": "t",
+   "rival": "m",
+   "mean_rival_probability": 0.0063788872212171555,
+   "samples": 15
+  },
+  {
+   "actual": "r",
+   "rival": "h",
+   "mean_rival_probability": 0.006243780720978975,
+   "samples": 15
+  },
+  {
+   "actual": "u",
+   "rival": "m",
+   "mean_rival_probability": 0.00609904108569026,
+   "samples": 15
+  },
+  {
+   "actual": "k",
+   "rival": "r",
+   "mean_rival_probability": 0.0059999991208314896,
+   "samples": 15
+  }
+ ],
+ "config": {
+  "arch": "vslnet",
+  "drop_path": 0.1,
+  "d_model": 128,
+  "gru_hidden": 96,
+  "kernels": [
+   3,
+   5,
+   9
+  ],
+  "n_blocks": 2,
+  "head": "linear",
+  "base_dropout": 0.2,
+  "max_epochs": 200,
+  "min_epochs": 30,
+  "patience": 30,
+  "lr": 0.002,
+  "min_lr": 1e-05,
+  "weight_decay": 0.05,
+  "warmup_epochs": 5,
+  "select_after_warmup": 5,
+  "lr_patience": 8,
+  "label_smoothing": 0.1,
+  "ema_decay": 0.99,
+  "grad_clip": 1.0,
+  "batch_size": 0,
+  "mixup_alpha": 0.0,
+  "hard_negative_margin": 0.8,
+  "hard_negative_weight": 0.25,
+  "extra_hand_probability": 0.4,
+  "extra_hand_loss": 0.5,
+  "hand_consistency": 0.12,
+  "presence_scale": 0.25,
+  "presence_norm": true,
+  "distractor_geometry": true,
+  "seed": 42
+ },
+ "full_model": {
+  "epochs": 25,
+  "final_lr": 1.0030688143434285e-05
+ },
+ "evaluation": {
+  "accuracy": 1.0,
+  "macro_f1": 1.0,
+  "per_class": [
+   {
+    "class": "age",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 15
+   },
+   {
+    "class": "cảm ơn",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 15
+   },
+   {
+    "class": "g",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 15
+   },
+   {
+    "class": "h",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 30
+   },
+   {
+    "class": "i",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 15
+   },
+   {
+    "class": "k",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 15
+   },
+   {
+    "class": "m",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 15
+   },
+   {
+    "class": "n",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 15
+   },
+   {
+    "class": "r",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 15
+   },
+   {
+    "class": "t",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 15
+   },
+   {
+    "class": "ten_la",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 15
+   },
+   {
+    "class": "toi",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 15
+   },
+   {
+    "class": "u",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 15
+   },
+   {
+    "class": "xin chào",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 15
+   },
+   {
+    "class": "địa chỉ",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 15
+   }
+  ],
+  "confusion_matrix": [
+   [
+    15,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    15,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    15,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    30,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    15,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    15,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    15,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    15,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    15,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    15,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    15,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    15,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    15,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    15,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    15
+   ]
+  ],
+  "labels": [
+   "age",
+   "cảm ơn",
+   "g",
+   "h",
+   "i",
+   "k",
+   "m",
+   "n",
+   "r",
+   "t",
+   "ten_la",
+   "toi",
+   "u",
+   "xin chào",
+   "địa chỉ"
+  ],
+  "top_k": {
+   "1": 1.0,
+   "3": 1.0,
+   "5": 1.0
+  },
+  "hard_pairs": [
+   {
+    "class_a": "cảm ơn",
+    "class_b": "xin chào",
+    "mean_rival_probability": 0.024792296990713347,
+    "pairwise_accuracy": 1.0,
+    "n_samples": 30
+   },
+   {
+    "class_a": "age",
+    "class_b": "cảm ơn",
+    "mean_rival_probability": 0.024661747654848333,
+    "pairwise_accuracy": 1.0,
+    "n_samples": 30
+   },
+   {
+    "class_a": "cảm ơn",
+    "class_b": "địa chỉ",
+    "mean_rival_probability": 0.009392021186030768,
+    "pairwise_accuracy": 1.0,
+    "n_samples": 30
+   },
+   {
+    "class_a": "cảm ơn",
+    "class_b": "i",
+    "mean_rival_probability": 0.00908717349738993,
+    "pairwise_accuracy": 1.0,
+    "n_samples": 30
+   },
+   {
+    "class_a": "cảm ơn",
+    "class_b": "u",
+    "mean_rival_probability": 0.008232946766170797,
+    "pairwise_accuracy": 1.0,
+    "n_samples": 30
+   }
+  ],
+  "bootstrap_ci_95": {
+   "accuracy": [
+    1.0,
+    1.0
+   ],
+   "macro_f1": [
+    1.0,
+    1.0
+   ]
+  }
+ }
+}

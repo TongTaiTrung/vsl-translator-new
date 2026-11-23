@@ -1,0 +1,135 @@
+{
+ "cv_acc_mean": 0.9878787994384766,
+ "cv_acc_std": 0.014845378222834679,
+ "fold_acc": [
+  1.0,
+  1.0,
+  1.0,
+  0.9696969985961914,
+  0.9696969985961914
+ ],
+ "best_epochs": [
+  4,
+  3,
+  3,
+  2,
+  6
+ ],
+ "temperature": 0.6023121476173401,
+ "reject_threshold": 0.2,
+ "n_models": 6,
+ "n_samples": 495,
+ "n_classes": 11,
+ "confusion_pairs": [
+  {
+   "actual": "cảm ơn",
+   "predicted": "age",
+   "count": 1
+  },
+  {
+   "actual": "cảm ơn",
+   "predicted": "xin chào",
+   "count": 1
+  }
+ ],
+ "closest_rivals": [
+  {
+   "actual": "cảm ơn",
+   "rival": "xin chào",
+   "mean_rival_probability": 0.05505834519863129,
+   "samples": 15
+  },
+  {
+   "actual": "ten_la",
+   "rival": "g",
+   "mean_rival_probability": 0.0008551693754270673,
+   "samples": 15
+  },
+  {
+   "actual": "n",
+   "rival": "m",
+   "mean_rival_probability": 0.0008263278286904097,
+   "samples": 15
+  },
+  {
+   "actual": "toi",
+   "rival": "age",
+   "mean_rival_probability": 0.0006588458782061934,
+   "samples": 15
+  },
+  {
+   "actual": "m",
+   "rival": "n",
+   "mean_rival_probability": 0.00047775465645827353,
+   "samples": 15
+  },
+  {
+   "actual": "t",
+   "rival": "xin chào",
+   "mean_rival_probability": 0.00046852498780936003,
+   "samples": 15
+  },
+  {
+   "actual": "xin chào",
+   "rival": "cảm ơn",
+   "mean_rival_probability": 0.0002312413271283731,
+   "samples": 15
+  },
+  {
+   "actual": "g",
+   "rival": "n",
+   "mean_rival_probability": 0.00021874434605706483,
+   "samples": 15
+  },
+  {
+   "actual": "age",
+   "rival": "cảm ơn",
+   "mean_rival_probability": 0.00015086615167092532,
+   "samples": 15
+  },
+  {
+   "actual": "u",
+   "rival": "n",
+   "mean_rival_probability": 0.00014965469017624855,
+   "samples": 15
+  },
+  {
+   "actual": "r",
+   "rival": "ten_la",
+   "mean_rival_probability": 0.00010212044435320422,
+   "samples": 15
+  }
+ ],
+ "config": {
+  "d_model": 128,
+  "gru_hidden": 96,
+  "kernels": [
+   3,
+   5,
+   9
+  ],
+  "n_blocks": 2,
+  "head": "cosine",
+  "base_dropout": 0.2,
+  "max_epochs": 8,
+  "min_epochs": 4,
+  "patience": 4,
+  "lr": 0.002,
+  "min_lr": 1e-05,
+  "weight_decay": 0.05,
+  "warmup_epochs": 5,
+  "lr_patience": 8,
+  "label_smoothing": 0.1,
+  "ema_decay": 0.99,
+  "grad_clip": 1.0,
+  "batch_size": 0,
+  "mixup_alpha": 0.0,
+  "hard_negative_margin": 0.8,
+  "hard_negative_weight": 0.25,
+  "extra_hand_probability": 0.4,
+  "extra_hand_loss": 0.5,
+  "hand_consistency": 0.12,
+  "presence_scale": 0.25,
+  "seed": 42
+ }
+}

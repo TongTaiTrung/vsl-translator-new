@@ -361,3 +361,52 @@ class FeatureV5Tests(unittest.TestCase):
         self.assertEqual(sign[int(np.flatnonzero(left == sl.start)[0])], 1.0)
         # Nằm trong nhóm vị trí của GroupStem (trước thủ hình).
         self.assertLess(sl.stop, fx.FEATURE_SLICES["handshape"].start + 1)
+
+
+class StrokeTests(unittest.TestCase):
+    """Nét: cú di chuyển mạnh nhất trong cửa sổ, lặp ở mọi frame (dấu sắc/huyền/nặng chỉ vẩy ~4 frame)."""
+
+    @staticmethod
+    def _clip(start: int, dy: float, side: int = 1, T: int = 30, absent_until: int = 0) -> np.ndarray:
+        raw = np.full((T, fx.FEATURE_DIM), np.nan, dtype=np.float32)
+        raw[:, fx.FEATURE_SLICES["presence"]] = 0.0
+        hp = fx.FEATURE_SLICES["hand_pos"].start + 9 * side
+        x = 0.3 if side else -0.3
+        y = 0.2 + dy * np.clip((np.arange(T) - start) / 4.0, 0.0, 1.0)      # vẩy trong 4 frame
+        for k, off in enumerate((0.0, 0.1, -0.2)):                         # lòng bàn tay, ngón cái, đầu trỏ
+            raw[:, hp + 3 * k], raw[:, hp + 3 * k + 1], raw[:, hp + 3 * k + 2] = x, y + off, 0.0
+        raw[:, fx.PRESENCE_SLICE.start + side] = 1.0
+        raw[:absent_until, fx._side_raw_cols(side)] = np.nan
+        return raw
+
+    def test_stroke_is_constant_and_independent_of_when_the_flick_happens(self):
+        right = fx.STROKE_SLICE.start + 6
+        early, late = (fx.process_sequence(self._clip(s, -0.6)) for s in (3, 22))
+        for seq in (early, late):
+            self.assertTrue(np.allclose(seq[:, fx.STROKE_SLICE], seq[:1, fx.STROKE_SLICE]))
+        np.testing.assert_allclose(early[0, fx.STROKE_SLICE], late[0, fx.STROKE_SLICE], atol=1e-5)
+        self.assertLess(early[0, right + 1], -0.5)                  # đầu trỏ đi lên (y giảm)
+        self.assertLess(early[0, right + 4], -0.5)                  # lòng bàn tay cũng vậy
+        self.assertTrue(np.all(early[0, fx.STROKE_SLICE.start:right] == 0))   # tay trái vắng -> 0
+
+    def test_up_and_down_strokes_have_opposite_signs_and_static_hand_is_zero(self):
+        y = fx.STROKE_SLICE.start + 7
+        up, down, still = (fx.process_sequence(self._clip(10, dy))[0, y] for dy in (-0.6, 0.6, 0.0))
+        self.assertLess(up, -0.5)
+        self.assertGreater(down, 0.5)
+        self.assertEqual(still, 0.0)
+
+    def test_hand_entering_the_frame_is_not_a_stroke(self):
+        seq = fx.process_sequence(self._clip(0, 0.0, absent_until=12))
+        self.assertTrue(np.all(seq[:, fx.STROKE_SLICE] == 0))
+
+    def test_left_stroke_mirrors_to_right_and_has_its_own_group(self):
+        left = fx.process_sequence(self._clip(10, -0.6, side=0))
+        right = fx.process_sequence(self._clip(10, -0.6, side=1))
+        perm, sign = fx.LEFT_MIRROR
+        cols = fx.SIDE_COLUMNS["left"]
+        st = np.isin(cols, np.arange(fx.STROKE_SLICE.start, fx.STROKE_SLICE.start + 6))
+        mirrored = (left[0, cols[perm]] * sign)[st[perm]]
+        np.testing.assert_allclose(mirrored, right[0, fx.STROKE_SLICE.start + 6:], atol=1e-5)
+        self.assertIn((fx.STROKE_SLICE.start, fx.SEQ_FEATURE_DIM), tr.default_groups(fx.SEQ_FEATURE_DIM))
+

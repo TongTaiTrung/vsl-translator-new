@@ -42,6 +42,9 @@ USE_HAND_WORLD = True # thủ hình/hướng bàn tay lấy từ hand_world_land
 REST_Y = 0.9          # (đơn vị vai) tâm lòng bàn tay thấp hơn neo bụng -> tay đang nghỉ, bỏ qua
 CONTACT_Z = 0.25      # trọng số trục z khi đo tiếp xúc cơ thể: z pose của tay lệch ~1-2 vai và nhiễu
                       # gấp 4-5 lần x, y, nên nếu giữ nguyên thì tay đặt trên ngực vẫn tính là "xa"
+STROKE_LAG = 5        # (frame của chuỗi đã co giãn, ~0.33 s ở cửa sổ 2 s) độ dài "nét" khi tìm cú di chuyển mạnh nhất.
+                      # Dấu sắc/huyền/nặng là một cú vẩy chỉ ~4 frame ở 15 fps; đo trên clip gốc, phần còn lại là
+                      # giữ tay tĩnh, nên vận tốc từng frame gần như không đóng góp và model học tắt theo tư thế.
 
 # =============================================================================
 # BỐ CỤC VECTOR ĐẶC TRƯNG (theo thành tố)
@@ -75,11 +78,18 @@ FEATURE_DIM = _off  # 277
 _IDX = np.arange(FEATURE_DIM)
 _MOTION_COLS = np.concatenate([_IDX[_SL[n]] for n in ("hand_pos", "inter_hand_vec", "orientation")])
 MOTION_DIM = len(_MOTION_COLS)               # 39
-SEQ_FEATURE_DIM = FEATURE_DIM + MOTION_DIM   # 316
+
+# Nét (tính trong process_sequence): mỗi tay, độ dời của đầu ngón trỏ và tâm lòng bàn tay trên đoạn STROKE_LAG
+# frame có độ dời đầu ngón trỏ lớn nhất trong cửa sổ, lặp lại ở mọi frame -> không phụ thuộc cú vẩy rơi vào frame nào.
+_STROKE_SRC = [(_SL["hand_pos"].start + 9 * side + 6, _SL["hand_pos"].start + 9 * side) for side in (0, 1)]
+STROKE_DIM = 12                              # 2 tay x (trỏ 3 + lòng bàn tay 3)
+SEQ_FEATURE_DIM = FEATURE_DIM + MOTION_DIM + STROKE_DIM   # 328
 
 # Bố cục công khai: mọi module khác suy ra chỉ số cột từ đây, không hard-code.
 FEATURE_SLICES: dict[str, slice] = dict(_SL)
 PRESENCE_SLICE = _SL["presence"]
+MOTION_SLICE = slice(FEATURE_DIM, FEATURE_DIM + MOTION_DIM)
+STROKE_SLICE = slice(MOTION_SLICE.stop, SEQ_FEATURE_DIM)
 
 
 def _side_raw_cols(side: int) -> np.ndarray:
@@ -97,16 +107,20 @@ _SHARED_RAW = np.concatenate([_IDX[_SL["inter_hand_vec"]], _IDX[_SL["hand_contac
 _PALM_Y = (_SL["hand_pos"].start + 1, _SL["hand_pos"].start + 10)   # y tâm lòng bàn tay trái/phải
 
 
-def _with_motion(raw_cols: np.ndarray) -> np.ndarray:
-    """Thêm cột chuyển động (trong SEQ_FEATURE_DIM) sinh ra từ các cột thô đã cho."""
+def _with_motion(raw_cols: np.ndarray, side: int | None = None) -> np.ndarray:
+    """Thêm cột chuyển động (trong SEQ_FEATURE_DIM) sinh ra từ các cột thô đã cho, và cột nét của tay `side`."""
     motion = FEATURE_DIM + np.flatnonzero(np.isin(_MOTION_COLS, raw_cols))
-    return np.concatenate([raw_cols, motion])
+    half = STROKE_DIM // 2
+    stroke = np.arange(0) if side is None else np.arange(STROKE_SLICE.start + side * half,
+                                                         STROKE_SLICE.start + (side + 1) * half)
+    return np.concatenate([raw_cols, motion, stroke])
 
 
 # Chỉ số cột trong chuỗi SEQ_FEATURE_DIM: riêng tay trái, riêng tay phải, dùng chung hai tay.
+# Thứ tự luôn là cột thô -> chuyển động -> nét (HandPairNet/SignFormer cắt [:n] cho input FEATURE_DIM).
 SIDE_COLUMNS: dict[str, np.ndarray] = {
-    "left": _with_motion(_side_raw_cols(0)),
-    "right": _with_motion(_side_raw_cols(1)),
+    "left": _with_motion(_side_raw_cols(0), 0),
+    "right": _with_motion(_side_raw_cols(1), 1),
     "shared": _with_motion(_SHARED_RAW),
 }
 
@@ -122,6 +136,7 @@ def _left_mirror() -> tuple[np.ndarray, np.ndarray]:
     flip += [FEATURE_DIM + int(np.flatnonzero(_MOTION_COLS == c)[0]) for c in flip]
     fv = _SL["face_vec"].start
     flip += [fv, fv + 3]                        # face_vec không có cột chuyển động
+    flip += [STROKE_SLICE.start, STROKE_SLICE.start + 3]   # nét trỏ.x, nét lòng bàn tay.x
     sign = np.ones(len(cols), dtype=np.float32)
     sign[[pos[c] for c in flip]] = -1.0
     perm = np.arange(len(cols))
@@ -515,6 +530,39 @@ def active_presence(feature: np.ndarray) -> np.ndarray:
     return palm_y <= REST_Y          # NaN (không có tay) -> False
 
 
+def _hand_valid(seq: np.ndarray) -> np.ndarray:
+    """(T, 2) bool trên chuỗi đã lấp gap: tay có hình học (hand_pos khác 0) và không ở vị trí nghỉ."""
+    hp = _SL["hand_pos"].start
+    return np.stack([(np.abs(seq[:, hp + 9 * s: hp + 9 * (s + 1)]).sum(1) > 0) & (seq[:, _PALM_Y[s]] <= REST_Y)
+                     for s in (0, 1)], axis=1)
+
+
+def _stroke(pos: np.ndarray, valid: np.ndarray, lag: int = STROKE_LAG) -> np.ndarray:
+    """(STROKE_DIM,) nét chính của mỗi tay: [Δ đầu trỏ (3), Δ tâm lòng bàn tay (3)] trên đoạn `lag` frame
+    có |Δ đầu trỏ| lớn nhất mà cả đoạn tay đều hợp lệ. Không có đoạn nào -> 0.
+
+    pos: (T, FEATURE_DIM) đã làm mượt; valid: (T, 2). Chỉ xét đoạn tay hợp lệ suốt đoạn nên tay vừa lọt khung
+    (từ 0 nhảy lên vị trí thật) hay tay đang nâng từ dưới bụng lên không bị tính là một nét.
+    """
+    T = len(pos)
+    lag = min(lag, T - 1)
+    out = np.zeros(STROKE_DIM, dtype=np.float32)
+    if lag < 1:
+        return out
+    half = STROKE_DIM // 2
+    for side, (tip, palm) in enumerate(_STROKE_SRC):
+        ok = np.lib.stride_tricks.sliding_window_view(valid[:, side], lag + 1).all(axis=1)   # (T - lag,)
+        if not ok.any():
+            continue
+        d_tip = pos[lag:, tip:tip + 3] - pos[:-lag, tip:tip + 3]
+        # Chọn đoạn theo xy: z pose của tay nhiễu (ký hiệu tĩnh |Δz| ~0.3 vai, |Δxy| chỉ ~0.05)
+        score = np.where(ok, np.linalg.norm(d_tip * np.array([1.0, 1.0, CONTACT_Z]), axis=1), -1.0)
+        t = int(np.argmax(score))
+        out[side * half: side * half + 3] = d_tip[t]
+        out[side * half + 3: (side + 1) * half] = pos[t + lag, palm:palm + 3] - pos[t, palm:palm + 3]
+    return out
+
+
 def process_sequence(
     raw_sequence: list[np.ndarray] | np.ndarray,
     target_len: int = 30,
@@ -527,7 +575,8 @@ def process_sequence(
       1. Nội suy NaN (chỉ đoạn thiếu <= max_gap frame; dài hơn -> 0 + cờ presence).
       2. Khử gai lỗi 1-frame (chỉ khi 2 frame lân cận khớp nhau, giữ nguyên cử động thật).
       3. Co giãn thời gian về target_len.
-      4. Thêm đặc trưng CHUYỂN ĐỘNG (vận tốc vị trí tay + hướng bàn tay) nếu add_motion.
+      4. Thêm đặc trưng CHUYỂN ĐỘNG (vận tốc vị trí tay + hướng bàn tay) và NÉT (cú di chuyển mạnh nhất
+         của mỗi tay trong cửa sổ, lặp lại ở mọi frame) nếu add_motion.
     Các cột thủ hình giữ nguyên không làm mờ (để không mất rung/búng ngón).
     """
     seq = np.array(raw_sequence, dtype=np.float32)
@@ -556,14 +605,18 @@ def process_sequence(
         midpoint = 0.5 * (seq[:-2] + seq[2:])
         seq[1:-1] = np.where(is_spike, midpoint, seq[1:-1])
 
-    # 3. Co giãn thời gian
+    # 3. Co giãn thời gian (cờ hợp lệ của tay co giãn cùng: frame nội suy chạm frame không hợp lệ -> không hợp lệ)
+    valid = _hand_valid(seq).astype(np.float32)
     if num_frames != target_len:
         if num_frames == 1:
             seq = np.repeat(seq, target_len, axis=0)
+            valid = np.repeat(valid, target_len, axis=0)
         else:
             old_time = np.linspace(0.0, 1.0, num_frames)
             new_time = np.linspace(0.0, 1.0, target_len)
             seq = interp1d(old_time, seq, axis=0, kind="linear")(new_time).astype(np.float32)
+            valid = interp1d(old_time, valid, axis=0, kind="linear")(new_time)
+    valid = valid > 1.0 - 1e-6
 
     if not add_motion:
         return seq.astype(np.float32)
@@ -576,4 +629,13 @@ def process_sequence(
         src = 0.25 * pad[:-2] + 0.5 * pad[1:-1] + 0.25 * pad[2:]
     motion = (np.gradient(src, axis=0) * (target_len - 1)).astype(np.float32)
 
-    return np.concatenate([seq, motion], axis=1).astype(np.float32)
+    # 5. Nét: trên vị trí đã làm mượt như bước 4 (cùng cột nguồn hand_pos), đơn vị độ rộng vai.
+    #    Bộ làm mượt trộn frame kề nên frame sát đoạn vắng (giá trị 0) cũng không hợp lệ.
+    pos = seq.copy()
+    pos[:, _MOTION_COLS] = src
+    if target_len >= 3:
+        pv = np.pad(valid, ((1, 1), (0, 0)), mode="edge")
+        valid = pv[:-2] & pv[1:-1] & pv[2:]
+    stroke = np.broadcast_to(_stroke(pos, valid), (target_len, STROKE_DIM))
+
+    return np.concatenate([seq, motion, stroke], axis=1).astype(np.float32)

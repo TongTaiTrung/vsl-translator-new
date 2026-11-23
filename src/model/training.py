@@ -41,7 +41,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from src.features.extract import (FEATURE_DIM, FEATURE_SLICES, FEATURE_VERSION, LEFT_MIRROR, PRESENCE_SLICE,
-                                  SEQ_FEATURE_DIM, SIDE_COLUMNS)
+                                  SEQ_FEATURE_DIM, SIDE_COLUMNS, STROKE_SLICE)
 
 
 # =============================================================================
@@ -119,11 +119,11 @@ def get_device() -> torch.device:
 def default_groups(d: int) -> list[tuple[int, int]]:
     """Nhóm cột theo bố cục FEATURE_SLICES (FEATURE_DIM hoặc SEQ_FEATURE_DIM). Khác -> 1 nhóm."""
     if d in (FEATURE_DIM, SEQ_FEATURE_DIM):
-        S = FEATURE_SLICES   # vị trí | thủ hình | điểm bàn tay | hướng | hiện diện | chuyển động
+        S = FEATURE_SLICES   # vị trí | thủ hình | điểm bàn tay | hướng | hiện diện | chuyển động | nét
         b = [0, S["handshape"].start, S["hand_local"].start, S["orientation"].start, S["presence"].start,
              FEATURE_DIM]
         if d == SEQ_FEATURE_DIM:
-            b.append(SEQ_FEATURE_DIM)
+            b += [STROKE_SLICE.start, SEQ_FEATURE_DIM]   # nhóm riêng: group-drop vị trí buộc model dùng nét
     else:
         b = [0, d]
     return [(b[i], b[i + 1]) for i in range(len(b) - 1)]

@@ -459,13 +459,15 @@ class VSLNet(nn.Module):
         self.drop = nn.Dropout(cfg.base_dropout)
         self.head = CosineHead(6 * h, n_classes) if cfg.head == "cosine" else nn.Linear(6 * h, n_classes)
 
-    def forward(self, x):  # (B, T, D) -> logits (B, C); chạy được với mọi T
+    def pool(self, x):  # (B, T, D) -> vector gộp theo thời gian (B, 6h), trước norm/head
         h = self.stem(x)
         h = self.blocks(h.transpose(1, 2)).transpose(1, 2)
         h, _ = self.gru(h)
         w = torch.softmax(self.attn(h), dim=1)
-        pooled = torch.cat([(w * h).sum(1), h.mean(1), h.amax(1)], dim=-1)
-        return self.head(self.drop(self.norm(pooled)))
+        return torch.cat([(w * h).sum(1), h.mean(1), h.amax(1)], dim=-1)
+
+    def forward(self, x):  # (B, T, D) -> logits (B, C); chạy được với mọi T
+        return self.head(self.drop(self.norm(self.pool(x))))
 
 
 class HandPairNet(nn.Module):
@@ -506,6 +508,9 @@ class HandPairNet(nn.Module):
                      else nn.Linear(6 * gru_hidden, n_classes))
 
     def forward(self, x):  # (B, T, D) đã chuẩn hoá presence-aware -> logits (B, C)
+        return self.head(self.drop(self.norm(self.pool(x))))
+
+    def pool(self, x):
         p = x[..., PRESENCE_SLICE].clamp(0.0, 1.0)
         pl, pr = p[..., :1], p[..., 1:]
         hl = self.hand_norm(self.hand(x[..., self.left_idx] * self.left_sign) + self.side[0])
@@ -517,8 +522,7 @@ class HandPairNet(nn.Module):
         h = self.block(h.transpose(1, 2)).transpose(1, 2)
         h, _ = self.gru(h)
         w = torch.softmax(self.attn(h), dim=1)
-        pooled = torch.cat([(w * h).sum(1), h.mean(1), h.amax(1)], dim=-1)
-        return self.head(self.drop(self.norm(pooled)))
+        return torch.cat([(w * h).sum(1), h.mean(1), h.amax(1)], dim=-1)
 
 
 class PreLNBlock(nn.Module):
@@ -613,6 +617,9 @@ class SignFormer(nn.Module):
                      else nn.Linear(3 * d_model, n_classes))
 
     def forward(self, x):  # (B, T, D) đã chuẩn hoá presence-aware -> logits (B, C)
+        return self.head(self.drop(self.norm(self.pool(x))))
+
+    def pool(self, x):
         B, T, _ = x.shape
         p = x[..., PRESENCE_SLICE].clamp(0.0, 1.0).unsqueeze(-1)                 # (B,T,2,1)
         pts = torch.stack([x[..., self.local_l], x[..., self.local_r]], dim=2)   # (B,T,2,60)
@@ -627,8 +634,7 @@ class SignFormer(nn.Module):
             z = layer(z)
         z = self.out_norm(z)
         w = torch.softmax(self.attn(z), dim=1)
-        pooled = torch.cat([(w * z).sum(1), z.mean(1), z.amax(1)], dim=-1)
-        return self.head(self.drop(self.norm(pooled)))
+        return torch.cat([(w * z).sum(1), z.mean(1), z.amax(1)], dim=-1)
 
 
 def build_model(in_dim: int, n_classes: int, groups, cfg: Config) -> nn.Module:
@@ -958,6 +964,18 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
 # =============================================================================
 # ENSEMBLE, HIỆU CHỈNH, XUẤT MODEL
 # =============================================================================
+def logits_and_embedding(model: nn.Module, z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Một lượt chạy model -> (logits (B, C), embedding chuẩn hoá L2 (B, E)).
+
+    Embedding là không gian head dùng để phân lớp: head cosine -> vector ``emb`` của nó (so với tâm lớp
+    bằng cosine), head tuyến tính -> vector sau LayerNorm. Dùng cho bộ nhớ mẫu cá nhân (src/model/memory.py).
+    """
+    h = model.norm(model.pool(z))
+    logits = model.head(model.drop(h))
+    emb = model.head.emb(h) if isinstance(model.head, CosineHead) else h
+    return logits, F.normalize(emb, dim=-1)
+
+
 class VSLEnsemble(nn.Module):
     """
     Nhận đặc trưng THÔ (B, T, D) -> xác suất (B, C). Đã gồm chuẩn hoá + xử lý NaN + ensemble.
@@ -979,6 +997,16 @@ class VSLEnsemble(nn.Module):
             z = normalize_features(x, self.means[k], self.stds[k], self.presence_aware)
             probs.append(torch.softmax(m(z) / self.temperature, dim=-1))
         return torch.stack(probs).mean(0)
+
+    def logits_and_embeddings(self, x) -> tuple[torch.Tensor, torch.Tensor]:
+        """x thô (B, T, D) -> (logits đã chia nhiệt độ (K, B, C), embedding (K, B, E)) của từng model."""
+        logits, embs = [], []
+        for k, m in enumerate(self.models):
+            z = normalize_features(x, self.means[k], self.stds[k], self.presence_aware)
+            lg, emb = logits_and_embedding(m, z)
+            logits.append(lg / self.temperature)
+            embs.append(emb)
+        return torch.stack(logits), torch.stack(embs)
 
 
 def full_model_epochs(best_epochs, cfg: Config) -> int:

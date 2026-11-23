@@ -22,8 +22,24 @@ tự ghép các từ thành câu hoàn chỉnh bằng Groq với API key của c
 3. Mở http://localhost:3000, bấm nút tròn **Bắt đầu phiên dịch** trong khung camera. Groq API key (không bắt
    buộc) nhập trong **Cài đặt** (biểu tượng bánh răng góc trên); không có key thì các từ được ghép thô.
 
-Địa chỉ API mặc định là `http://127.0.0.1:8000`; đổi bằng `NEXT_PUBLIC_VSL_API_URL` (xem `.env.example`)
-hoặc ngay trong phần Cài đặt.
+Trình duyệt gọi API qua `/vsl-api/...` cùng origin với trang; Next chuyển tiếp tới Flask ở
+`VSL_API_ORIGIN` (mặc định `http://127.0.0.1:8000`, xem `.env.example`), nên Flask chỉ cần nghe ở 127.0.0.1.
+Muốn trình duyệt gọi thẳng API thì đặt `NEXT_PUBLIC_VSL_API_URL` hoặc đổi trong phần Cài đặt.
+
+### Mở trên điện thoại / máy khác cùng mạng LAN
+
+Trình duyệt chỉ cho dùng camera trên trang HTTPS (trừ `localhost`), nên chạy dev server bằng HTTPS thay cho
+`npm run dev` (Next chỉ cho một dev server mỗi thư mục, hãy tắt cái cũ trước):
+
+```bash
+npm run dev:lan
+```
+
+Script (`scripts/dev-lan.mjs`) tự tạo chứng chỉ tự ký cho `localhost` + IP LAN hiện tại vào `certificates/`
+(tạo lại khi IP đổi), nghe ở `0.0.0.0:3000` và in ra địa chỉ dạng `https://192.168.x.x:3000`. Mở địa chỉ đó
+trên điện thoại (cùng Wi-Fi), trình duyệt cảnh báo chứng chỉ thì chọn "Nâng cao → Tiếp tục" (Safari: "Hiển thị
+chi tiết → Truy cập trang web này"), rồi cho phép camera. Trên máy chủ vẫn mở được `https://localhost:3000`.
+Nếu điện thoại không vào được, kiểm tra tường lửa macOS có cho `node` nhận kết nối đến không.
 
 ## Cách hoạt động
 
@@ -45,6 +61,19 @@ hoặc ngay trong phần Cài đặt.
   model. Mặc định dùng GPU (WebGL, ~34 ms/frame trên máy dev; CPU/WASM ~57 ms), GPU lỗi thì tự chuyển CPU.
 - WASM và model được `scripts/copy-mediapipe.mjs` chép vào `public/mediapipe/` (không commit) tự động trước
   `npm run dev` / `npm run build`; chạy tay bằng `npm run mediapipe`. Lần mở camera đầu tiên tải ~17 MB model.
+- **Giao diện điện thoại** (`pointer: coarse`): khi bắt đầu phiên dịch, camera phủ toàn màn hình (né tai thỏ bằng
+  `env(safe-area-inset-*)`); trạng thái và fps ở hai góc trên, phụ đề (các từ vừa ký, từ đang chờ chốt lấp dần theo
+  phiếu, câu đã ghép; chưa ký thì hiện câu vừa xong) ở góc dưới trái, nút đổi camera trước/sau, xoá từ cuối, kết
+  thúc câu, dừng dọc mép phải. Bấm dừng để về trang thường (cài đặt, hội thoại). Camera trước hiện lật gương, camera
+  sau hiện đúng chiều; landmark gửi lên không đổi theo camera vì cả hai đều cho ảnh không lật như webcam lúc thu.
+- **Máy chậm (điện thoại)**: MediaPipe trên điện thoại thường không kịp 15 fps. Mọi thứ tính theo thời gian chứ
+  không theo số frame: server giữ cửa sổ 2 giây theo timestamp của client và trả `hand_frames`/`buffered` theo
+  đơn vị nhịp 15 fps; nhịp dự đoán, thời lượng ghi mẫu cá nhân và cửa sổ của từ đã chốt cũng tính bằng ms. Vòng
+  thu dùng `setTimeout` sau mỗi frame (không dồn tick như `setInterval`) để vẫn nhường event loop cho mạng và
+  giao diện. Điện thoại (`pointer: coarse`) mở camera trước ở 720p thay vì độ phân giải lớn nhất: model chỉ
+  nhận ảnh crop ≤ 512 px nên 4K chỉ làm chậm. HUD hiện fps thu thật (màu cam khi < 12 fps). Phát lại 321 clip
+  gốc ở 7.5 fps: cửa sổ theo số frame cũ đúng 89%, ở 5 fps không bao giờ dự đoán; cửa sổ theo thời gian giữ
+  nguyên như 15 fps.
 - Thu 15 fps, cửa sổ dự đoán 30 frame (2 giây). App mở một phiên `POST /api/stream` (phản hồi phải có
   `landmarks: true`) rồi gửi **từng frame ngay khi detect xong** tới `POST /api/stream/<id>` dạng JSON
   `{ landmarks, timestamps, predict, ... }`. Chỉ mỗi `strideFrames` frame mới gửi `predict: true`; các request

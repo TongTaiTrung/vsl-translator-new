@@ -88,8 +88,9 @@ class VSLPredictor:
                           ensemble: training.VSLEnsemble | None = None) -> dict:
         """Predict a processed ``(T, D)`` sequence; return JSON-compatible data.
 
-        ensemble: chạy một ensemble khác (vd. một model con để sàng lọc nhanh) với cùng
-        ngưỡng từ chối; mặc định là ensemble của checkpoint.
+        ensemble: chạy một ensemble khác (vd. một model con để sàng lọc nhanh, hoặc
+        ``memory.MemoryEnsemble`` có bộ nhớ mẫu cá nhân) với cùng ngưỡng từ chối; mặc định là
+        ensemble của checkpoint. Với ``MemoryEnsemble`` kết quả có thêm ``memory`` (lớp có mẫu giống nhất).
         """
         features = np.asarray(sequence, dtype=np.float32)
         if features.shape != (self.target_len, self.feature_dim):
@@ -99,8 +100,9 @@ class VSLPredictor:
         if top_k < 1:
             raise ValueError("top_k must be positive")
 
+        model = self.ensemble if ensemble is None else ensemble
         ranked = training.predict_topk(
-            self.ensemble if ensemble is None else ensemble, features, self.classes,
+            model, features, self.classes,
             k=min(max(top_k, 2), len(self.classes)), reject_threshold=self.threshold,
         )[0]
         confident = ranked[0][0] != "unknown"
@@ -108,7 +110,7 @@ class VSLPredictor:
         confidence = float(candidates[0][1])
         gap = confidence - float(candidates[1][1]) if len(candidates) > 1 else 1.0
         accepted = confident and gap >= self.min_probability_gap
-        return {
+        result = {
             "label": str(candidates[0][0]) if accepted else None,
             "confidence": confidence,
             "probability_gap": gap,
@@ -116,8 +118,12 @@ class VSLPredictor:
             "rejection_reason": None if accepted else "ambiguous" if confident else "low_confidence",
             "top": [{"label": str(label), "confidence": float(score)} for label, score in candidates[:top_k]],
         }
+        match = getattr(model, "last_match", None)
+        if match is not None:
+            result["memory"] = dict(match)
+        return result
 
-    def predict_raw(self, raw_features: np.ndarray, *, top_k: int = 3) -> dict:
+    def predict_raw(self, raw_features: np.ndarray, *, top_k: int = 3, ensemble=None) -> dict:
         """Process raw ``(frames, FEATURE_DIM)`` features and predict a complete clip."""
         features = np.asarray(raw_features, dtype=np.float32)
         if features.ndim != 2 or features.shape[0] == 0 or features.shape[1] != FEATURE_DIM:
@@ -125,7 +131,7 @@ class VSLPredictor:
         if np.isinf(features).any():
             raise ValueError("Features cannot contain infinity")
         sequence = process_sequence(features, target_len=self.target_len)
-        return self.predict_processed(sequence, top_k=top_k)
+        return self.predict_processed(sequence, top_k=top_k, ensemble=ensemble)
 
     def predict_frames(self, frames_bgr: Iterable[np.ndarray], *, mirror_data: bool = False,
                        top_k: int = 3, fps: float | None = None) -> dict:
@@ -149,8 +155,17 @@ class VSLPredictor:
             raise ValueError("At least one BGR frame is required")
         return self.predict_raw(np.stack(features), top_k=top_k)
 
-    def open_stream(self, config: StreamConfig | None = None) -> VSLStreamSession:
-        return VSLStreamSession(self, config=config)
+    def open_stream(self, config: StreamConfig | None = None, *, memory=None) -> VSLStreamSession:
+        session = VSLStreamSession(self, config=config)
+        session.memory = memory
+        return session
+
+    def build_memory(self, exemplars, *, strength: float = 0.5, **kwargs):
+        """Bộ nhớ mẫu cá nhân (``memory.MemoryEnsemble``) từ list ``memory.Exemplar``; truyền vào
+        ``predict_raw(..., ensemble=)`` hoặc ``open_stream(memory=)``."""
+        from src.model.memory import MemoryEnsemble
+        return MemoryEnsemble(self.ensemble, self.classes, list(exemplars), target_len=self.target_len,
+                              strength=strength, **kwargs)
 
 
 class VSLStreamSession:
@@ -171,6 +186,7 @@ class VSLStreamSession:
         self.landmarkers = landmarkers if landmarkers is not None else LandmarkerLoader(
             running_mode=VisionRunningMode.VIDEO
         )
+        self.memory = None          # memory.MemoryEnsemble của người dùng, None = mô hình gốc
         self._closed = False
         self.reset()
 
@@ -264,7 +280,9 @@ class VSLStreamSession:
 
     def _predict(self, raw: np.ndarray, duration: float) -> dict:
         """Dự đoán cửa sổ thô hiện tại ``(frames, FEATURE_DIM)``."""
-        return self.predictor.predict_raw(raw, top_k=self.config.top_k)
+        if self.memory is None:
+            return self.predictor.predict_raw(raw, top_k=self.config.top_k)
+        return self.predictor.predict_raw(raw, top_k=self.config.top_k, ensemble=self.memory)
 
     def close(self) -> None:
         if not self._closed:

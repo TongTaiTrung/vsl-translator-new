@@ -16,6 +16,7 @@ from src.builtin.mediapipe_builtin.defs import HandLandmarkerPath, PoseLandmarke
 from src.data.data_reader import DataHandler
 from src.features.extract import FEATURE_DIM, FEATURE_VERSION, SEQ_FEATURE_DIM, extract, process_sequence
 from src.features.frame import FRAME_SIZE, frame_padding
+from src.features.landmarks import LANDMARKS_FILE, results_to_arrays, save_landmarks
 
 
 def find_raw_samples(raw_root: Path, classes: list[str] | None = None) -> list[Path]:
@@ -42,8 +43,12 @@ def find_raw_samples(raw_root: Path, classes: list[str] | None = None) -> list[P
     return videos
 
 
-def extract_video_features(video_path: Path) -> tuple[np.ndarray, float]:
-    """Decode every frame, pad it to the FRAME_SIZE square, and run the builtin landmarks."""
+def extract_video_features(video_path: Path, with_landmarks: bool = False):
+    """Decode every frame, pad it to the FRAME_SIZE square, and run the builtin landmarks.
+
+    Trả ``(features, fps)``; ``with_landmarks=True`` trả thêm ``(pose, hands, world)`` thô của từng frame
+    (xem ``src.features.landmarks.results_to_arrays``) để augment góc nhìn trên landmark.
+    """
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         cap.release()
@@ -53,6 +58,7 @@ def extract_video_features(video_path: Path) -> tuple[np.ndarray, float]:
     if not np.isfinite(fps) or fps <= 0:
         fps = 30.0
     features = []
+    marks = []
     loader = None
     last_ms = -1
     try:
@@ -65,6 +71,8 @@ def extract_video_features(video_path: Path) -> tuple[np.ndarray, float]:
             timestamp_ms = max(round(len(features) * 1000 / fps), last_ms + 1)
             pose, hand, _ = loader.detect(frame, timestamp_ms=timestamp_ms)
             features.append(extract(pose, hand))
+            if with_landmarks:
+                marks.append(results_to_arrays(pose, hand))
             last_ms = timestamp_ms
     finally:
         cap.release()
@@ -83,6 +91,8 @@ def extract_video_features(video_path: Path) -> tuple[np.ndarray, float]:
     sequence = process_sequence(result)
     if sequence.shape != (DataHandler.SEQUENCE_LENGTH, SEQ_FEATURE_DIM) or not np.isfinite(sequence).all():
         raise ValueError(f"Invalid processed sequence from {video_path}: {sequence.shape}")
+    if with_landmarks:
+        return result, fps, tuple(np.stack(parts) for parts in zip(*marks))
     return result, fps
 
 
@@ -111,7 +121,7 @@ def reextract_sample(
         raise ValueError(f"Processed sample is not a directory: {target}")
 
     old_meta = DataHandler._read_meta(target) if target.is_dir() else {}
-    features, fps = extract_video_features(video_path)
+    features, fps, landmarks = extract_video_features(video_path, with_landmarks=True)
     pose_coverage = float((~np.isnan(features).all(axis=1)).mean())
     hands = np.nan_to_num(features[:, DataHandler.PRESENCE_COLS])
     meta = {
@@ -140,6 +150,7 @@ def reextract_sample(
         (stage / "meta.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        save_landmarks(stage / LANDMARKS_FILE, *landmarks)
         for index in range(len(features)):
             DataHandler._load_feature(stage / f"{index}.npz")
 

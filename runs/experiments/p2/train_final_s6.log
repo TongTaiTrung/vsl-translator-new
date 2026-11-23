@@ -1,0 +1,86 @@
+Dữ liệu: N=540, T=30, D=182, lớp=12, mẫu/lớp: min 45 max 45 | nhóm cột: [(0, 47), (47, 123), (123, 141), (141, 143), (143, 182)] | thiết bị: mps
+
+=== Fold 1/5: train 432 | val 36 ===
+  [f1] ep   1 | train aug 0.360 clean 0.947 | val_loss 1.034 acc 0.944 top5 1.000 | s=0.5 lr_x=1.00 | best nan@1 | 1s
+  [f1] ep   5 | train aug 0.988 clean 1.000 | val_loss 0.063 acc 1.000 top5 1.000 | s=0.5 lr_x=1.00 | best nan@1 | 6s
+  [f1] ep  10 | train aug 1.000 clean 1.000 | val_loss 0.072 acc 1.000 top5 1.000 | s=0.5 lr_x=1.00 | best 1.000@10 | 13s
+  [f1] ep  15 | train aug 1.000 clean 1.000 | val_loss 0.087 acc 1.000 top5 1.000 | s=0.5 lr_x=0.51 | best 1.000@10 | 19s
+  [f1] ep  20 | train aug 0.998 clean 1.000 | val_loss 0.087 acc 1.000 top5 1.000 | s=0.5 lr_x=0.34 | best 1.000@10 | 26s
+  [f1] ep  25 | train aug 1.000 clean 1.000 | val_loss 0.090 acc 1.000 top5 1.000 | s=0.5 lr_x=0.25 | best 1.000@10 | 32s
+  [f1] ep  30 | train aug 0.998 clean 1.000 | val_loss 0.091 acc 1.000 top5 1.000 | s=0.5 lr_x=0.13 | best 1.000@10 | 38s
+  [f1] ep  35 | train aug 1.000 clean 1.000 | val_loss 0.091 acc 1.000 top5 1.000 | s=0.5 lr_x=0.13 | best 1.000@10 | 44s
+  [f1] ep  40 | train aug 1.000 clean 1.000 | val_loss 0.092 acc 1.000 top5 1.000 | s=0.5 lr_x=0.10 | best 1.000@10 | 50s
+  [f1] early stop @ 40
+  -> best ep 10 | val acc 1.000 top5 1.000 loss 0.072 | s≈0.50
+
+=== Fold 2/5: train 432 | val 36 ===
+  [f2] ep   1 | train aug 0.374 clean 0.956 | val_loss 1.080 acc 0.833 top5 1.000 | s=0.5 lr_x=1.00 | best nan@1 | 1s
+  [f2] ep   5 | train aug 0.993 clean 1.000 | val_loss 0.136 acc 0.972 top5 1.000 | s=0.5 lr_x=1.00 | best nan@1 | 6s
+  [f2] ep  10 | train aug 0.998 clean 1.000 | val_loss 0.118 acc 0.972 top5 1.000 | s=0.5 lr_x=1.00 | best 0.972@10 | 12s
+  [f2] ep  15 | train aug 0.993 clean 1.000 | val_loss 0.143 acc 0.972 top5 1.000 | s=0.5 lr_x=1.00 | best 0.972@10 | 19s
+  [f2] ep  20 | train aug 1.000 clean 1.000 | val_loss 0.148 acc 0.972 top5 1.000 | s=0.5 lr_x=0.52 | best 0.972@10 | 25s
+  [f2] ep  25 | train aug 0.998 clean 1.000 | val_loss 0.175 acc 0.972 top5 1.000 | s=0.5 lr_x=0.50 | best 0.972@10 | 31s
+  [f2] ep  30 | train aug 1.000 clean 1.000 | val_loss 0.184 acc 0.972 top5 1.000 | s=0.5 lr_x=0.25 | best 0.972@10 | 36s
+  [f2] ep  35 | train aug 1.000 clean 1.000 | val_loss 0.182 acc 0.972 top5 1.000 | s=0.5 lr_x=0.14 | best 0.972@10 | 42s
+  [f2] ep  40 | train aug 0.998 clean 1.000 | val_loss 0.179 acc 0.972 top5 1.000 | s=0.5 lr_x=0.13 | best 0.972@10 | 48s
+  [f2] early stop @ 40
+  -> best ep 10 | val acc 0.972 top5 1.000 loss 0.118 | s≈0.50
+
+=== Fold 3/5: train 432 | val 36 ===
+  [f3] ep   1 | train aug 0.410 clean 0.910 | val_loss 1.091 acc 0.917 top5 1.000 | s=0.5 lr_x=1.00 | best nan@1 | 1s
+  [f3] ep   5 | train aug 0.990 clean 1.000 | val_loss 0.079 acc 1.000 top5 1.000 | s=0.5 lr_x=1.00 | best nan@1 | 6s
+  [f3] ep  10 | train aug 0.988 clean 1.000 | val_loss 0.091 acc 1.000 top5 1.000 | s=0.5 lr_x=1.00 | best 1.000@10 | 12s
+  [f3] ep  15 | train aug 0.995 clean 1.000 | val_loss 0.094 acc 1.000 top5 1.000 | s=0.5 lr_x=0.52 | best 1.000@12 | 19s
+  [f3] ep  20 | train aug 0.995 clean 1.000 | val_loss 0.098 acc 1.000 top5 1.000 | s=0.5 lr_x=0.50 | best 1.000@12 | 26s
+  [f3] ep  25 | train aug 1.000 clean 1.000 | val_loss 0.099 acc 1.000 top5 1.000 | s=0.5 lr_x=0.25 | best 1.000@12 | 34s
+  [f3] ep  30 | train aug 1.000 clean 1.000 | val_loss 0.098 acc 1.000 top5 1.000 | s=0.5 lr_x=0.14 | best 1.000@12 | 41s
+  [f3] ep  35 | train aug 1.000 clean 1.000 | val_loss 0.099 acc 1.000 top5 1.000 | s=0.5 lr_x=0.13 | best 1.000@12 | 47s
+  [f3] ep  40 | train aug 1.000 clean 1.000 | val_loss 0.099 acc 1.000 top5 1.000 | s=0.5 lr_x=0.10 | best 1.000@12 | 53s
+  [f3] early stop @ 42
+  -> best ep 12 | val acc 1.000 top5 1.000 loss 0.087 | s≈0.50
+
+=== Fold 4/5: train 432 | val 36 ===
+  [f4] ep   1 | train aug 0.355 clean 0.947 | val_loss 1.105 acc 0.917 top5 1.000 | s=0.5 lr_x=1.00 | best nan@1 | 1s
+  [f4] ep   5 | train aug 0.995 clean 1.000 | val_loss 0.070 acc 1.000 top5 1.000 | s=0.5 lr_x=1.00 | best nan@1 | 6s
+  [f4] ep  10 | train aug 0.998 clean 1.000 | val_loss 0.089 acc 1.000 top5 1.000 | s=0.5 lr_x=1.00 | best 1.000@10 | 12s
+  [f4] ep  15 | train aug 1.000 clean 1.000 | val_loss 0.089 acc 1.000 top5 1.000 | s=0.5 lr_x=0.56 | best 1.000@13 | 17s
+  [f4] ep  20 | train aug 0.995 clean 1.000 | val_loss 0.094 acc 1.000 top5 1.000 | s=0.5 lr_x=0.50 | best 1.000@13 | 23s
+  [f4] ep  25 | train aug 0.998 clean 1.000 | val_loss 0.096 acc 1.000 top5 1.000 | s=0.5 lr_x=0.25 | best 1.000@13 | 29s
+  [f4] ep  30 | train aug 1.000 clean 1.000 | val_loss 0.097 acc 1.000 top5 1.000 | s=0.5 lr_x=0.17 | best 1.000@13 | 35s
+  [f4] ep  35 | train aug 0.998 clean 1.000 | val_loss 0.098 acc 1.000 top5 1.000 | s=0.5 lr_x=0.13 | best 1.000@13 | 41s
+  [f4] ep  40 | train aug 1.000 clean 1.000 | val_loss 0.098 acc 1.000 top5 1.000 | s=0.5 lr_x=0.10 | best 1.000@13 | 47s
+  [f4] early stop @ 43
+  -> best ep 13 | val acc 1.000 top5 1.000 loss 0.085 | s≈0.50
+
+=== Fold 5/5: train 432 | val 36 ===
+  [f5] ep   1 | train aug 0.426 clean 0.972 | val_loss 0.951 acc 0.972 top5 1.000 | s=0.5 lr_x=1.00 | best nan@1 | 1s
+  [f5] ep   5 | train aug 0.998 clean 1.000 | val_loss 0.066 acc 1.000 top5 1.000 | s=0.5 lr_x=1.00 | best nan@1 | 6s
+  [f5] ep  10 | train aug 0.998 clean 1.000 | val_loss 0.078 acc 1.000 top5 1.000 | s=0.5 lr_x=1.00 | best 1.000@10 | 12s
+  [f5] ep  15 | train aug 0.998 clean 1.000 | val_loss 0.085 acc 1.000 top5 1.000 | s=0.5 lr_x=0.50 | best 1.000@10 | 18s
+  [f5] ep  20 | train aug 0.995 clean 1.000 | val_loss 0.090 acc 1.000 top5 1.000 | s=0.5 lr_x=0.28 | best 1.000@10 | 24s
+  [f5] ep  25 | train aug 1.000 clean 1.000 | val_loss 0.092 acc 1.000 top5 1.000 | s=0.5 lr_x=0.25 | best 1.000@10 | 29s
+  [f5] ep  30 | train aug 1.000 clean 1.000 | val_loss 0.094 acc 1.000 top5 1.000 | s=0.5 lr_x=0.13 | best 1.000@10 | 35s
+  [f5] ep  35 | train aug 0.998 clean 1.000 | val_loss 0.094 acc 1.000 top5 1.000 | s=0.5 lr_x=0.11 | best 1.000@10 | 41s
+  [f5] ep  40 | train aug 0.998 clean 1.000 | val_loss 0.094 acc 1.000 top5 1.000 | s=0.5 lr_x=0.10 | best 1.000@10 | 47s
+  [f5] early stop @ 40
+  -> best ep 10 | val acc 1.000 top5 1.000 loss 0.078 | s≈0.50
+
+CV acc: 0.9944 ± 0.0111 | top5: 1.0000
+[cảnh báo] Temperature=1.000 chạm biên [1.0, 10.0]: hiệu chỉnh bị cắt, cần dữ liệu âm/hiệu chỉnh riêng để tin được.
+Temperature=1.000 (at_bound) | ngưỡng từ chối=0.20
+  ngưỡng | coverage | acc trên phần giữ lại
+   0.20  |  1.000   |  0.994
+   0.35  |  1.000   |  0.994
+   0.50  |  1.000   |  0.994
+   0.65  |  0.994   |  1.000
+   0.80  |  0.989   |  1.000
+   0.95  |  0.000   |  0.000
+  Lớp khó nhất (OOF acc): cảm ơn=0.93, age=1.00, g=1.00, m=1.00, n=1.00, r=1.00, t=1.00, ten_la=1.00
+  Nhầm lẫn nhiều nhất: cảm ơn→xin chào (1)
+  Đối thủ gần nhất: cảm ơn→xin chào (4.5%), t→u (0.9%), u→g (0.9%), r→n (0.9%), age→g (0.8%), toi→ten_la (0.8%), g→xin chào (0.8%), xin chào→g (0.8%)
+
+=== Model toàn bộ dữ liệu: 25 epoch, s=0.50 ===
+  [full] ep  20 | train aug 0.998 | s=0.5
+
+Đã lưu: /Users/trungtran/Desktop/vsl-translator-new/runs/vsl_v3_s6/ensemble.pt
+OUT /Users/trungtran/Desktop/vsl-translator-new/runs/vsl_v3_s6

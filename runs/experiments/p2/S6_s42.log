@@ -1,0 +1,9 @@
+   early stop @ 40
+   early stop @ 40
+   early stop @ 42
+   early stop @ 43
+   early stop @ 40
+   early stop @ 40
+   early stop @ 40
+{"seed": 42, "minutes": 11.180308198928833, "oof_acc": 0.9944444444444445, "oof_macro_f1": 0.9944382647385984, "distractor": {"same_height": {"n": 128, "flip_rate": 0.0, "wrong_accept_rate": 0.0, "to_two_hand_class_rate": 0.0078125}, "lowered_static": {"n": 128, "flip_rate": 0.0, "wrong_accept_rate": 0.0, "to_two_hand_class_rate": 0.0078125}}, "hard_pairs": {"m/n": 288.84486389160156, "r/u": 646.2607666015625, "t/n": 262.3958465576172, "g/n": 331.0346282958984, "cảm ơn/xin chào": 59.89552230834961}}
+exit 0

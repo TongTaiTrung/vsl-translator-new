@@ -1,0 +1,24 @@
+   early stop @ 33
+   early stop @ 48
+   early stop @ 36
+   early stop @ 35
+   early stop @ 33
+   early stop @ 37
+   early stop @ 37
+{"seed": 42, "minutes": 9.067858783404033, "oof_acc": 1.0, "oof_macro_f1": 1.0, "distractor": {"same_height": {"n": 128, "flip_rate": 0.1015625, "wrong_accept_rate": 0.0390625, "to_two_hand_class_rate": 0.0703125}, "lowered_static": {"n": 128, "flip_rate": 0.0, "wrong_accept_rate": 0.0, "to_two_hand_class_rate": 0.0078125}}, "hard_pairs": {"m/n": 171.28211059570313, "r/u": 374.75383377075195, "t/n": 186.986563873291, "g/n": 237.1117088317871, "cảm ơn/xin chào": 36.21649513244629}}
+   early stop @ 36
+   early stop @ 36
+   early stop @ 36
+   early stop @ 35
+   early stop @ 33
+   early stop @ 39
+   early stop @ 42
+{"seed": 7, "minutes": 309.29633880058924, "oof_acc": 1.0, "oof_macro_f1": 1.0, "distractor": {"same_height": {"n": 128, "flip_rate": 0.1015625, "wrong_accept_rate": 0.03125, "to_two_hand_class_rate": 0.109375}, "lowered_static": {"n": 128, "flip_rate": 0.0, "wrong_accept_rate": 0.0, "to_two_hand_class_rate": 0.015625}}, "hard_pairs": {"m/n": 111.496630859375, "r/u": 236.64178619384765, "t/n": 94.00964050292968, "g/n": 107.8280532836914, "cảm ơn/xin chào": 30.63876075744629}}
+   early stop @ 33
+   early stop @ 33
+   early stop @ 33
+   early stop @ 49
+   early stop @ 33
+   early stop @ 33
+   early stop @ 34
+{"seed": 1, "minutes": 91.9697486837705, "oof_acc": 0.9944444444444445, "oof_macro_f1": 0.9944382647385984, "distractor": {"same_height": {"n": 128, "flip_rate": 0.140625, "wrong_accept_rate": 0.09375, "to_two_hand_class_rate": 0.125}, "lowered_static": {"n": 128, "flip_rate": 0.0, "wrong_accept_rate": 0.0, "to_two_hand_class_rate": 0.0078125}}, "hard_pairs": {"m/n": 82.20613059997558, "r/u": 234.70167388916016, "t/n": 88.05663528442383, "g/n": 144.6102336883545, "cảm ơn/xin chào": 68.8418508529663}}

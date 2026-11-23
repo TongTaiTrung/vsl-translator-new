@@ -1,0 +1,100 @@
+{
+ "variant": "q3",
+ "seed": 7,
+ "best_epochs": [
+  12,
+  10,
+  10,
+  12,
+  10
+ ],
+ "epochs_run": [
+  42,
+  40,
+  40,
+  42,
+  40
+ ],
+ "oof_acc": 1.0,
+ "oof_nll_T1": 0.08254802227020264,
+ "logit_gap_median": 4.67431640625,
+ "gap_kept_noise1": 0.9375169818392316,
+ "acc_noise1": 1.0,
+ "hard_pair_sep": {
+  "m/n": 271.54079284667966,
+  "r/u": 590.7661865234375,
+  "cảm ơn/xin chào": 53.58967895507813
+ },
+ "T": {
+  "old": 0.2002427875995636,
+  "new": 1.0,
+  "new_status": "skipped_no_errors"
+ },
+ "thr": {
+  "old": 0.2,
+  "new": 0.2
+ },
+ "gauss_fa": {
+  "old": 0.515,
+  "new": 0.0
+ },
+ "open_set": {
+  "m": {
+   "best_epoch": 10,
+   "id_val_acc": 1.0,
+   "T": {
+    "old": 0.20000211894512177,
+    "new": 1.0,
+    "new_status": "skipped_no_errors"
+   },
+   "fa_old": 1.0,
+   "id_accept_old": 1.0,
+   "fa_new": 0.9333333333333333,
+   "id_accept_new": 0.9696969696969697
+  },
+  "cảm ơn": {
+   "best_epoch": 10,
+   "id_val_acc": 1.0,
+   "T": {
+    "old": 0.2492082417011261,
+    "new": 1.0,
+    "new_status": "skipped_no_errors"
+   },
+   "fa_old": 0.8666666666666667,
+   "id_accept_old": 1.0,
+   "fa_new": 0.26666666666666666,
+   "id_accept_new": 1.0
+  },
+  "toi": {
+   "best_epoch": 12,
+   "id_val_acc": 1.0,
+   "T": {
+    "old": 0.20000457763671875,
+    "new": 1.0,
+    "new_status": "skipped_no_errors"
+   },
+   "fa_old": 0.9333333333333333,
+   "id_accept_old": 1.0,
+   "fa_new": 0.4,
+   "id_accept_new": 0.9696969696969697
+  },
+  "địa chỉ": {
+   "best_epoch": 15,
+   "id_val_acc": 1.0,
+   "T": {
+    "old": 0.20000328123569489,
+    "new": 1.0,
+    "new_status": "skipped_no_errors"
+   },
+   "fa_old": 1.0,
+   "id_accept_old": 1.0,
+   "fa_new": 1.0,
+   "id_accept_new": 0.9696969696969697
+  }
+ },
+ "open_set_fa_old": 0.95,
+ "open_set_id_accept_old": 1.0,
+ "open_set_fa_new": 0.65,
+ "open_set_id_accept_new": 0.9772727272727273,
+ "time_s": 975.6398279666901
+}

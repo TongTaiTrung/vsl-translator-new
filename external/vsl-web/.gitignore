@@ -8,3 +8,6 @@ next-env.d.ts
 
 # chép từ node_modules + src/builtin bởi scripts/copy-mediapipe.mjs
 /public/mediapipe/
+
+# chứng chỉ tự ký của scripts/dev-lan.mjs
+/certificates/

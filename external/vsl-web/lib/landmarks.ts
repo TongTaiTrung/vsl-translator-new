@@ -85,6 +85,11 @@ export class LandmarkDetector {
     };
   }
 
+  /** Quên khung người chính đang theo (khi đổi camera): frame kế tiếp tìm mặt lại từ đầu. */
+  reset(): void {
+    this.isolator.reset();
+  }
+
   close(): void {
     this.isolator.close();
   }

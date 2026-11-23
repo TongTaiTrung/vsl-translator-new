@@ -1,6 +1,10 @@
 // Nhận diện liên tục từ webcam: MediaPipe chạy trên trình duyệt, chỉ gửi landmark lên Flask API.
 //
 // - Thu frame ở 15 fps (nhịp lúc thu dữ liệu); cửa sổ dự đoán 30 frame = 2 giây (độ dài một mẫu train).
+//   Máy chậm (điện thoại: MediaPipe lâu hơn 1 nhịp) thu được ít fps hơn: mọi thứ tính theo THỜI GIAN chứ không
+//   theo số frame — server giữ cửa sổ 2 giây theo timestamp, nhịp dự đoán / ghi mẫu / cửa sổ đã chốt cũng theo
+//   ms — nên model luôn thấy đúng 2 giây cử chỉ như lúc train. Vòng thu tự giãn (setTimeout sau mỗi frame,
+//   không dồn tick) để vẫn nhường event loop cho mạng và giao diện.
 // - Mỗi frame chạy pose + hand landmarker trên ảnh crop quanh người chính (lib/subject.ts), toạ độ đổi về canvas
 //   pad 1280x1280 giống frame_padding của Python (lib/landmarks.ts, chế độ VIDEO giữ tracking giữa các frame). Chỉ landmark (~3 KB JSON/frame) đi lên server,
 //   không còn ảnh: server chỉ chạy extract + model, không chạy MediaPipe.
@@ -16,6 +20,7 @@
 // - Nghỉ tay liên tục `sentenceGapMs` sau khi đã có từ → kết thúc câu (onSentenceEnd).
 
 import { type Delegate, type FrameLandmarks, LandmarkDetector } from "./landmarks";
+import type { MemoryPayload } from "./memory";
 import { WordVoter } from "./voter";
 
 export interface TopItem {
@@ -33,6 +38,8 @@ export interface Prediction {
   frames: number;
   hand_frames?: number;
   elapsed_ms: number;
+  /** Có khi phiên dùng mẫu cá nhân: từ có mẫu giống cửa sổ này nhất và độ giống (cos, 1 = giống hệt). */
+  memory?: { label: string; similarity: number };
 }
 
 /** Phản hồi của POST /api/stream/<id>: có kết quả dự đoán khi `predicted`. */
@@ -46,6 +53,9 @@ type StreamResponse = Partial<Prediction> & {
 };
 
 export type Phase = "stopped" | "starting" | "buffering" | "idle" | "entering" | "signing";
+/** Camera trước (người dùng tự ký) / sau (quay người khác ký). Cả hai đều cho ảnh KHÔNG lật: tay phải người ký
+ *  nằm bên trái ảnh, đúng như webcam lúc thu dữ liệu, nên mirrorData không đổi theo camera. */
+export type Facing = "user" | "environment";
 export type Speed = "accurate" | "fast" | "fastest";
 
 export interface SpeedPreset {
@@ -106,7 +116,7 @@ export interface RecognizerOptions {
 }
 
 export const DEFAULT_OPTIONS: RecognizerOptions = {
-  apiUrl: process.env.NEXT_PUBLIC_VSL_API_URL || "http://127.0.0.1:8000",
+  apiUrl: process.env.NEXT_PUBLIC_VSL_API_URL || "/vsl-api",
   captureFps: 15,
   predictFrames: SPEED_PRESETS.accurate.predictFrames,
   minFrames: SPEED_PRESETS.accurate.minFrames,
@@ -122,6 +132,8 @@ export const DEFAULT_OPTIONS: RecognizerOptions = {
 
 /** Tối đa số frame một request /api/stream (giống MAX_STREAM_FRAMES của server). */
 const MAX_STREAM_FRAMES = 60;
+/** Cửa sổ dự đoán dài nhất (predictFrames của preset chuẩn = 30 frame = 2 giây). */
+const MAX_WINDOW_FRAMES = 30;
 const OLD_SERVER = "Server chưa nhận landmark: cập nhật và chạy lại src/app/server.py";
 
 export interface RecognizerState {
@@ -137,12 +149,43 @@ export interface RecognizerState {
   words: string[];
   lastCommitted: string | null;
   resolution: string | null;
+  /** Camera đang dùng (điện thoại). */
+  facing: Facing;
+  /** Số camera của máy (biết sau khi được cấp quyền); >= 2 thì cho đổi camera. */
+  cameraCount: number;
+  /** Đang đổi camera. */
+  switching: boolean;
   latencyMs: number | null;
   /** Thời gian MediaPipe trên trình duyệt cho frame gần nhất (ms). */
   detectMs: number | null;
+  /** Nhịp thu thật (fps, trung bình trượt): < captureFps nghĩa là máy không kịp chạy MediaPipe mỗi nhịp. */
+  captureFps: number | null;
   /** Delegate MediaPipe đang chạy (GPU / CPU), null khi chưa tải. */
   delegate: Delegate | null;
+  /** Số mẫu cá nhân phiên server đang dùng; null = phiên không dùng mẫu (hoặc chưa mở phiên). */
+  memoryExemplars: number | null;
+  /** Đang ghi mẫu cá nhân: số frame đã thu / cần thu; null = không ghi. */
+  capture: { done: number; total: number } | null;
+  /** Server từ chối bộ mẫu cá nhân (phiên chạy mô hình gốc). */
+  memoryError: string | null;
   error: string | null;
+}
+
+/** Từ vừa chốt kèm landmark cửa sổ đã sinh ra nó (để người dùng sửa nhãn và lưu làm mẫu). */
+export interface CommittedWindow {
+  word: string;
+  frames: FrameLandmarks[];
+  /** Xác suất của từ ở phiếu chốt. */
+  confidence: number;
+  /** Mẫu cá nhân giống cửa sổ này nhất (nếu phiên dùng mẫu). */
+  memory?: { label: string; similarity: number };
+}
+
+interface Capture {
+  frames: Frame[];
+  total: number;
+  resolve: (frames: FrameLandmarks[]) => void;
+  reject: (err: Error) => void;
 }
 
 interface Frame {
@@ -154,6 +197,12 @@ export interface RecognizerEvents {
   onState: (state: RecognizerState) => void;
   onWords: (words: string[]) => void;
   onSentenceEnd: (words: string[]) => void;
+  /** Câu vừa kết thúc: cửa sổ của các từ người dùng giữ lại (không bị xoá/undo) — dùng để tự học mẫu. */
+  onSentenceWindows?: (windows: CommittedWindow[]) => void;
+  /** Vừa chốt một từ (tự học thời gian thực). */
+  onWordCommitted?: (window: CommittedWindow) => void;
+  /** Người dùng hoàn tác / xoá các từ này: mẫu đã học từ chúng phải bỏ. */
+  onWordsDiscarded?: (windows: CommittedWindow[]) => void;
 }
 
 class HttpError extends Error {
@@ -166,13 +215,18 @@ export class Recognizer {
   private options: RecognizerOptions;
   private voter: WordVoter;
   private stream: MediaStream | null = null;
-  private timer: ReturnType<typeof setInterval> | null = null;
+  /** Vòng thu frame (setTimeout nối tiếp); null = đã dừng. */
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private loopId = 0;
+  /** Khoảng cách giữa hai frame thu được (ms, trung bình trượt) để báo fps thật. */
+  private frameInterval: number | null = null;
+  private lastFrameT: number | null = null;
   private detector: LandmarkDetector | null = null;
   private debugCanvas: HTMLCanvasElement | null = null;
   /** Các frame (landmark) chưa gửi lên server. */
   private buffer: Frame[] = [];
-  /** Số frame thu được từ lần dự đoán trước. */
-  private sinceSend = 0;
+  /** Thời điểm (ms) của frame cuối trong request dự đoán gần nhất; null = cửa sổ vừa xoá. */
+  private lastPredictAt: number | null = null;
   private generation = 0;
   private inFlight: AbortController | null = null;
   private idleSince: number | null = null;
@@ -183,6 +237,14 @@ export class Recognizer {
   private resetNext = false;
   /** Thời điểm thu frame cuối của request stream gần nhất (để đo độ trễ thật). */
   private lastFrameAt: number | null = null;
+  /** Mẫu cá nhân gửi kèm khi mở phiên; null = mô hình gốc. */
+  private memory: MemoryPayload | null = null;
+  private capture: Capture | null = null;
+  /** Landmark của cửa sổ hiện tại (từ lần xoá cửa sổ gần nhất), tối đa MAX_WINDOW_FRAMES nhịp (2 giây). */
+  private windowLandmarks: Frame[] = [];
+  private committedWindow: CommittedWindow | null = null;
+  /** Cửa sổ của từng từ trong câu hiện tại, cùng thứ tự với voter.sequence. */
+  private sentenceWindows: CommittedWindow[] = [];
   private state: RecognizerState;
 
   constructor(
@@ -204,9 +266,16 @@ export class Recognizer {
       words: [],
       lastCommitted: null,
       resolution: null,
+      facing: "user",
+      cameraCount: 0,
+      switching: false,
       latencyMs: null,
       detectMs: null,
+      captureFps: null,
       delegate: null,
+      memoryExemplars: null,
+      capture: null,
+      memoryError: null,
       error: null,
     };
   }
@@ -233,6 +302,73 @@ export class Recognizer {
     this.emitBuffered();
   }
 
+  /** Đổi bộ mẫu cá nhân (null = tắt). Phiên đang mở được cập nhật tại chỗ (POST /api/stream/<id>/memory,
+   *  không mất cửa sổ đang ký); server cũ không có endpoint đó thì đóng phiên, phiên kế tiếp mở với mẫu mới. */
+  setMemory(memory: MemoryPayload | null): void {
+    this.memory = memory;
+    if (!this.running || !this.sessionId) return;      // phiên kế tiếp tự mở với this.memory
+    if (this.memorySync) {
+      this.memoryDirty = true;                          // gửi bản mới nhất khi lần cập nhật trước xong
+      return;
+    }
+    void this.syncMemory(this.sessionId);
+  }
+
+  /** Bộ mẫu đã gửi lúc mở phiên hiện tại. */
+  private openedWith: MemoryPayload | null = null;
+  private memorySync = false;
+  private memoryDirty = false;
+
+  private async syncMemory(sessionId: string): Promise<void> {
+    this.memorySync = true;
+    try {
+      do {
+        this.memoryDirty = false;
+        const controller = new AbortController();
+        try {
+          const body = await this.post<{ memory: { exemplars: number } | null }>(
+            `/api/stream/${encodeURIComponent(sessionId)}/memory`, { memory: this.memory }, controller.signal,
+          );
+          if (this.sessionId === sessionId) this.emit({ memoryExemplars: body.memory?.exemplars ?? null, memoryError: null });
+        } catch (err) {
+          if (this.sessionId !== sessionId) return;
+          if (err instanceof HttpError && err.status === 400) {
+            this.emit({ memoryError: err.message });
+          } else if (err instanceof HttpError && (err.status === 404 || err.status === 405)) {
+            // Phiên hết hạn hoặc server cũ: mở phiên mới (kèm mẫu) ở request kế tiếp.
+            this.inFlight?.abort();
+            this.closeSession();
+            this.resetWindow();
+            this.emitBuffered();
+            return;
+          }
+        }
+      } while (this.memoryDirty && this.sessionId === sessionId);
+    } finally {
+      this.memorySync = false;
+    }
+  }
+
+  /** Thu landmark `total` frame kế tiếp làm mẫu (không dự đoán trong lúc thu). Camera phải đang chạy. */
+  captureSample(total: number): Promise<FrameLandmarks[]> {
+    if (!this.running || !this.timer) return Promise.reject(new Error("Bật camera trước khi ghi mẫu"));
+    this.capture?.reject(new Error("Đã bắt đầu lần ghi khác"));
+    return new Promise((resolve, reject) => {
+      this.capture = { frames: [], total, resolve, reject };
+      this.voter.interrupt();
+      this.emit({ capture: { done: 0, total }, candidate: null, count: 0 });
+    });
+  }
+
+  cancelCapture(): void {
+    this.endCapture(new Error("Đã huỷ ghi mẫu"));
+  }
+
+  /** Từ chốt gần nhất và cửa sổ landmark của nó; null nếu chưa chốt từ nào. */
+  get lastCommitted(): CommittedWindow | null {
+    return this.committedWindow;
+  }
+
   async start(): Promise<void> {
     if (this.running) return;
     this.emit({ phase: "starting", error: null });
@@ -247,28 +383,83 @@ export class Recognizer {
       this.emit({ delegate: this.detector.delegate });
     }
     try {
-      // Độ phân giải 16:9 lớn nhất camera hỗ trợ (giống src/features/camera.py); frame được pad về 1280x1280.
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 3840 }, height: { ideal: 2160 }, aspectRatio: { ideal: 16 / 9 } },
-        audio: false,
-      });
+      await this.openCamera();
     } catch (err) {
       this.emit({ phase: "stopped", error: `Không mở được camera: ${(err as Error).message}` });
       return;
     }
-    this.video.srcObject = this.stream;
-    await this.video.play().catch(() => undefined);
+    if (this.state.phase !== "starting") return;      // đã bấm dừng trong lúc chờ quyền camera
     this.resetWindow();
-    this.emit({
-      phase: "buffering",
-      resolution: `${this.video.videoWidth}×${this.video.videoHeight}`,
-    });
+    this.emit({ phase: "buffering" });
     this.restartTimer();
   }
 
+  /** Đổi camera trước ↔ sau khi đang chạy. Cửa sổ ký hiệu và khung người chính bắt đầu lại từ đầu. */
+  async switchCamera(): Promise<void> {
+    if (!this.running || this.state.phase === "starting" || this.state.switching) return;
+    const previous = this.state.facing;
+    this.emit({ switching: true, facing: previous === "user" ? "environment" : "user" });
+    try {
+      await this.openCamera();
+    } catch (err) {
+      this.emit({ facing: previous, error: `Không mở được camera ${previous === "user" ? "sau" : "trước"}: ${(err as Error).message}` });
+      if (this.running) await this.openCamera().catch(() => undefined);
+    } finally {
+      this.emit({ switching: false });
+    }
+    if (!this.running) return;
+    this.detector?.reset();
+    this.endCapture(new Error("Đã đổi camera"));
+    this.resetWindow();
+    this.voter.interrupt();
+    this.emit({ candidate: null, count: 0 });
+    this.emitBuffered();
+  }
+
+  /** Mở camera theo state.facing (thay stream cũ nếu có) và gắn vào <video>.
+   *  Máy tính: độ phân giải 16:9 lớn nhất camera hỗ trợ (giống src/features/camera.py). Điện thoại: 720p — model chỉ
+   *  nhận ảnh crop ≤ 512 px quanh người, ảnh 4K chỉ làm chậm bước cắt ảnh + FaceDetector (fps thấp mới là thứ làm
+   *  nhận diện kém). Frame nào cũng được pad về 1280x1280. */
+  private async openCamera(): Promise<void> {
+    const mobile = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
+    const facing = this.state.facing;
+    // iOS chỉ mở được một camera một lúc: tắt stream cũ trước khi xin camera kia.
+    this.stream?.getTracks().forEach((track) => track.stop());
+    this.stream = null;
+    let stream: MediaStream;
+    if (mobile) {
+      const size = { width: { ideal: 1280 }, height: { ideal: 720 } };
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { ...size, facingMode: { exact: facing } }, audio: false });
+      } catch (err) {
+        if ((err as Error).name !== "OverconstrainedError") throw err;
+        stream = await navigator.mediaDevices.getUserMedia({ video: { ...size, facingMode: facing }, audio: false });
+      }
+    } else {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 3840 }, height: { ideal: 2160 }, aspectRatio: { ideal: 16 / 9 } },
+        audio: false,
+      });
+    }
+    if (!this.running) {                                  // đã dừng trong lúc chờ camera
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    this.stream = stream;
+    this.video.srcObject = stream;
+    await this.video.play().catch(() => undefined);
+    const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+    this.emit({
+      resolution: `${this.video.videoWidth}×${this.video.videoHeight}`,
+      cameraCount: devices.filter((d) => d.kind === "videoinput").length,
+    });
+  }
+
   stop(): void {
-    if (this.timer) clearInterval(this.timer);
+    this.endCapture(new Error("Camera đã tắt"));
+    if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    this.loopId += 1;
     this.inFlight?.abort();
     this.inFlight = null;
     this.closeSession();
@@ -278,12 +469,15 @@ export class Recognizer {
     this.resetWindow();
     this.voter.interrupt();
     this.idleSince = null;
-    this.emit({ phase: "stopped", inFlight: false, candidate: null, count: 0, buffered: 0 });
+    this.emit({ phase: "stopped", inFlight: false, candidate: null, count: 0, buffered: 0, memoryExemplars: null });
   }
 
   /** Lấy chuỗi từ hiện tại và bắt đầu câu mới (dùng khi bấm "Kết thúc câu"). */
   finishSentence(): string[] {
     const words = [...this.voter.sequence];
+    const windows = this.sentenceWindows.filter((w, i) => w.word === words[i]);
+    this.sentenceWindows = [];
+    if (windows.length > 0) this.events.onSentenceWindows?.(windows);
     this.voter.clear();
     this.idleSince = null;
     this.emitWords();
@@ -304,11 +498,17 @@ export class Recognizer {
   }
 
   undo(): void {
-    if (this.voter.undo() !== null) this.emitWords();
+    if (this.voter.undo() !== null) {
+      const removed = this.sentenceWindows.pop();
+      if (removed) this.events.onWordsDiscarded?.([removed]);
+      this.emitWords();
+    }
   }
 
   clear(): void {
     this.voter.clear();
+    if (this.sentenceWindows.length > 0) this.events.onWordsDiscarded?.(this.sentenceWindows);
+    this.sentenceWindows = [];
     this.resetWindow();
     this.emitWords();
   }
@@ -319,15 +519,34 @@ export class Recognizer {
     return this.options.apiUrl.replace(/\/+$/, "");
   }
 
+  /** Vòng thu: nhịp kế tiếp tính từ lúc BẮT ĐẦU frame trước. Máy nhanh giữ đúng captureFps; máy chậm (MediaPipe
+   *  lâu hơn một nhịp) thu liên tục nhưng không dồn tick như setInterval, và luôn nhường event loop một lượt
+   *  (phản hồi mạng, vẽ giao diện) giữa hai frame. */
   private restartTimer(): void {
-    if (this.timer) clearInterval(this.timer);
-    this.timer = setInterval(() => this.tick(), 1000 / this.options.captureFps);
+    if (this.timer) clearTimeout(this.timer);
+    const id = ++this.loopId;
+    this.frameInterval = null;
+    this.lastFrameT = null;
+    const loop = () => {
+      if (id !== this.loopId) return;
+      const started = performance.now();
+      this.tick();
+      if (id !== this.loopId || !this.timer) return;
+      const wait = 1000 / this.options.captureFps - (performance.now() - started);
+      this.timer = setTimeout(loop, Math.max(0, wait));
+    };
+    this.timer = setTimeout(loop, 0);
+  }
+
+  private get frameMs(): number {
+    return 1000 / this.options.captureFps;
   }
 
   private resetWindow(): void {
     this.generation += 1;          // phản hồi của cửa sổ cũ sẽ bị bỏ qua
     this.buffer = [];
-    this.sinceSend = 0;
+    this.windowLandmarks = [];
+    this.lastPredictAt = null;
     this.serverBuffered = 0;
     this.resetNext = true;
   }
@@ -340,16 +559,57 @@ export class Recognizer {
   }
 
   private tick(): void {
-    this.checkSentenceGap(performance.now());
     const frame = this.grab();
+    if (frame) this.measureFps(frame.t);
+    if (this.capture) {
+      if (frame) this.captureFrame(frame);
+      return;
+    }
+    this.checkSentenceGap(performance.now());
     if (frame) this.addFrame(frame);
   }
 
+  private measureFps(t: number): void {
+    if (this.lastFrameT !== null) {
+      const dt = t - this.lastFrameT;
+      this.frameInterval = this.frameInterval === null ? dt : this.frameInterval * 0.9 + dt * 0.1;
+      this.emit({ captureFps: Math.round(10000 / this.frameInterval) / 10 });
+    }
+    this.lastFrameT = t;
+  }
+
+  /** Mẫu cá nhân = `total` nhịp (2 giây với 30 frame ở 15 fps) tính theo thời gian, máy chậm thì ít frame hơn. */
+  private captureFrame(frame: Frame): void {
+    const capture = this.capture!;
+    capture.frames.push(frame);
+    const span = frame.t - capture.frames[0].t;
+    const done = Math.min(capture.total, Math.round(span / this.frameMs) + 1);
+    this.emit({ capture: { done, total: capture.total } });
+    if (done >= capture.total) this.endCapture(null);
+  }
+
+  /** Kết thúc lần ghi mẫu: err = null là thu đủ. Cửa sổ dự đoán bắt đầu lại từ đầu sau đó. */
+  private endCapture(err: Error | null): void {
+    const capture = this.capture;
+    if (!capture) return;
+    this.capture = null;
+    if (err) capture.reject(err);
+    else capture.resolve(capture.frames.map((f) => f.lm));
+    this.resetWindow();
+    this.idleSince = null;
+    this.emit({ capture: null });
+    this.emitBuffered();
+  }
+
   private addFrame(frame: Frame): void {
+    this.windowLandmarks.push(frame);
+    const oldest = frame.t - (MAX_WINDOW_FRAMES - 0.5) * this.frameMs;
+    while (this.windowLandmarks.length > 1 && this.windowLandmarks[0].t < oldest) this.windowLandmarks.shift();
     this.buffer.push(frame);
     // Giữ các frame chưa gửi (tối đa một request); server chậm thì bỏ frame cũ nhất.
     if (this.buffer.length > MAX_STREAM_FRAMES) this.buffer.splice(0, this.buffer.length - MAX_STREAM_FRAMES);
-    this.sinceSend += 1;
+    // Frame đầu của cửa sổ mới tính như đã dự đoán một nhịp trước nó (giống đếm frame: dự đoán ở frame thứ stride).
+    this.lastPredictAt ??= frame.t - this.frameMs;
     this.emitBuffered();
     this.maybePredict();
   }
@@ -377,10 +637,12 @@ export class Recognizer {
 
   private maybePredict(): void {
     if (this.inFlight || this.buffer.length === 0) return;
-    const due = this.sinceSend >= this.options.strideFrames;
     const frames = this.buffer;
+    const last = frames[frames.length - 1].t;
+    // Dự đoán mỗi strideFrames nhịp THỜI GIAN (máy chậm không phải chờ đủ strideFrames frame).
+    const due = this.lastPredictAt === null || last - this.lastPredictAt >= (this.options.strideFrames - 0.5) * this.frameMs;
     this.buffer = [];
-    if (due) this.sinceSend = 0;
+    if (due) this.lastPredictAt = last;
     void this.run((signal) => this.predictStream(frames, due, signal));
   }
 
@@ -392,7 +654,7 @@ export class Recognizer {
     const started = performance.now();
     try {
       const body = await request(controller.signal);
-      if (body && generation === this.generation && this.running) {
+      if (body && generation === this.generation && this.running && !this.capture) {
         this.handle(body, performance.now() - started);
       }
     } catch (err) {
@@ -418,18 +680,21 @@ export class Recognizer {
 
   private async predictStream(frames: Frame[], predict: boolean, signal: AbortSignal): Promise<StreamResponse | null> {
     if (!this.sessionId) {
-      let opened: { session_id: string; window: number; landmarks?: boolean };
+      let opened: { session_id: string; window: number; landmarks?: boolean; memory?: { exemplars: number } | null };
       try {
-        opened = await this.post("/api/stream", {}, signal);
+        opened = await this.openStream(signal);
       } catch (err) {
         if (err instanceof HttpError && (err.status === 404 || err.status === 405)) throw new Error(OLD_SERVER);
         throw err;
       }
+      this.emit({ memoryExemplars: opened.memory?.exemplars ?? null });
       if (opened.landmarks !== true) {
         void fetch(`${this.base}/api/stream/${encodeURIComponent(opened.session_id)}`, { method: "DELETE" }).catch(() => undefined);
         throw new Error(OLD_SERVER);
       }
       this.sessionId = opened.session_id;
+      // Bộ mẫu đổi trong lúc đang mở phiên: cập nhật ngay cho phiên mới.
+      if (this.memory !== this.openedWith) this.setMemory(this.memory);
       this.serverBuffered = 0;
       this.resetNext = false;          // phiên mới vốn rỗng
     }
@@ -457,6 +722,23 @@ export class Recognizer {
       }
       if ((err as Error).name !== "AbortError") this.resetNext ||= reset;   // gửi lại reset ở lần sau
       throw err;
+    }
+  }
+
+  /** Mở phiên kèm mẫu cá nhân; server từ chối mẫu (400) thì báo lỗi và mở phiên không mẫu. */
+  private async openStream(signal: AbortSignal) {
+    type Opened = { session_id: string; window: number; landmarks?: boolean; memory?: { exemplars: number } | null };
+    this.openedWith = this.memory;
+    if (!this.memory) return this.post<Opened>("/api/stream", {}, signal);
+    try {
+      const opened = await this.post<Opened>("/api/stream", { memory: this.memory }, signal);
+      this.emit({ memoryError: null });
+      return opened;
+    } catch (err) {
+      if (!(err instanceof HttpError) || err.status !== 400) throw err;
+      const opened = await this.post<Opened>("/api/stream", {}, signal);
+      this.emit({ memoryError: err.message });
+      return opened;
     }
   }
 
@@ -515,6 +797,16 @@ export class Recognizer {
     });
 
     if (committed) {
+      const since = (this.windowLandmarks.at(-1)?.t ?? 0) - (this.options.predictFrames - 0.5) * this.frameMs;
+      this.committedWindow = {
+        word: committed, frames: this.windowLandmarks.filter((f) => f.t >= since).map((f) => f.lm),
+        confidence: prediction.confidence, memory: prediction.memory,
+      };
+      this.sentenceWindows.push(this.committedWindow);
+      this.events.onWordCommitted?.(this.committedWindow);
+      // Giữ cùng độ dài với voter.sequence (voter cắt bớt từ đầu khi quá maxWords).
+      const extra = this.sentenceWindows.length - this.voter.sequence.length;
+      if (extra > 0) this.sentenceWindows.splice(0, extra);
       this.resetWindow();          // ký hiệu kế tiếp bắt đầu từ cửa sổ mới
       this.emitBuffered();
       this.emitWords();

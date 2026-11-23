@@ -14,6 +14,8 @@ import numpy as np
 
 from src.data.data_reader import DataHandler
 from src.features.extract import FEATURE_SLICES, FEATURE_VERSION, PITCH_AUG_DEG, rotate_view_pitch
+from src.features.landmarks import LANDMARKS_FILE, load_landmarks
+from src.features.view import features_from_landmarks, random_view, simulate_view
 
 
 def available_sources(processed_root: Path, classes: list[str] | None = None) -> list[Path]:
@@ -119,12 +121,43 @@ def add_feature_noise(features: np.ndarray, rng: np.random.Generator, strength: 
     return out
 
 
+def load_source_landmarks(source_dir: Path, n_frames: int):
+    """Landmark thô của mẫu gốc (``reextract`` ghi ra) hoặc None nếu chưa có / không khớp số frame."""
+    path = Path(source_dir) / LANDMARKS_FILE
+    if not path.is_file():
+        return None
+    landmarks = load_landmarks(path)
+    return landmarks if len(landmarks[0]) == n_frames else None
+
+
+def make_variant(features: np.ndarray, landmarks, rng: np.random.Generator, strength: float,
+                 pitch_degrees: float = PITCH_AUG_DEG, view_kwargs: dict | None = None) -> tuple[np.ndarray, dict]:
+    """Một bản tăng cường của clip: (feature thô (T, FEATURE_DIM), thông tin để ghi vào meta).
+
+    Có landmark: giả lập bối cảnh quay khác trên landmark (góc máy, khoảng cách/FOV, cỡ tay, vị trí ký,
+    độ lệch góc khớp ngón; ``src.features.view``) rồi tính lại feature, sau đó thêm nhiễu nhỏ.
+    Không có landmark: cách cũ, nhiễu feature + ``rotate_view_pitch``.
+    """
+    if landmarks is not None:
+        view = random_view(rng, pitch=pitch_degrees, **(view_kwargs or {}))
+        viewed = features_from_landmarks(*simulate_view(*landmarks, view))
+        out = add_feature_noise(viewed, rng, strength)
+        return out, {"type": "landmark_view", "strength": float(strength),
+                     "view_pitch_deg": round(view.pitch, 3), "view": view.to_dict()}
+    out = add_feature_noise(features, rng, strength)
+    view_pitch = float(rng.uniform(-pitch_degrees, pitch_degrees)) if pitch_degrees > 0 else 0.0
+    if view_pitch:
+        out = rotate_view_pitch(out, view_pitch)
+    return out, {"type": "feature_noise", "strength": float(strength), "view_pitch_deg": round(view_pitch, 3)}
+
+
 def augment_sample(source_dir: Path, raw_root: Path, copies: int, strength: float,
                    rng: np.random.Generator, pitch_degrees: float = PITCH_AUG_DEG) -> list[Path]:
     """Write new numeric sample directories under processed; never touch raw.
 
-    Mỗi bản sao: nhiễu feature + góc nhìn pitch ngẫu nhiên đều trong [-pitch_degrees, pitch_degrees]
-    (rotate_view_pitch: camera cao/thấp hơn lúc thu). pitch_degrees=0 -> chỉ nhiễu như trước.
+    Mẫu có ``landmarks.npz`` (chạy ``reextract`` để tạo): mỗi bản sao là clip nhìn từ một bối cảnh quay ngẫu
+    nhiên (``make_variant``). Mẫu cũ chưa có landmark: nhiễu feature + pitch ngẫu nhiên trong
+    [-pitch_degrees, pitch_degrees] (rotate_view_pitch). pitch_degrees=0 -> không đổi pitch.
     """
     source_dir = Path(source_dir)
     raw_root = Path(raw_root)
@@ -147,6 +180,7 @@ def augment_sample(source_dir: Path, raw_root: Path, copies: int, strength: floa
     features = np.stack([DataHandler._load_feature(path) for path in paths])
     if np.isnan(features).all(axis=1).all():
         raise ValueError(f"Source has no detected pose: {source_dir}")
+    landmarks = load_source_landmarks(source_dir, len(features))
     used = {int(p.name) for p in class_dir.iterdir() if p.is_dir() and p.name.isdigit()}
     raw_class_dir = raw_root / class_dir.name
     if raw_class_dir.is_dir():
@@ -157,10 +191,7 @@ def augment_sample(source_dir: Path, raw_root: Path, copies: int, strength: floa
         target = class_dir / str(next_id + copy_number)
         stage = class_dir / f".augment_{uuid.uuid4().hex}"
         try:
-            augmented = add_feature_noise(features, rng, strength)
-            view_pitch = float(rng.uniform(-pitch_degrees, pitch_degrees)) if pitch_degrees > 0 else 0.0
-            if view_pitch:
-                augmented = rotate_view_pitch(augmented, view_pitch)
+            augmented, aug_info = make_variant(features, landmarks, rng, strength, pitch_degrees)
             stage.mkdir()
             for index, feature in enumerate(augmented):
                 np.savez_compressed(stage / f"{index}.npz", feature=feature)
@@ -171,10 +202,7 @@ def augment_sample(source_dir: Path, raw_root: Path, copies: int, strength: floa
                 "feature_dim": DataHandler.FEATURE_DIM,
                 "feature_version": FEATURE_VERSION,
                 "origin_sample_id": source_id,
-                "augmentation": {
-                    "type": "feature_noise", "source_sample_id": source_id,
-                    "strength": float(strength), "view_pitch_deg": round(view_pitch, 3),
-                },
+                "augmentation": {"source_sample_id": source_id, **aug_info},
             }
             (stage / "meta.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
             os.rename(stage, target)

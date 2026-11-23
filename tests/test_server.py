@@ -287,7 +287,7 @@ class StreamTests(unittest.TestCase):
         send = lambda frames, **extra: self.client.post(f"/api/stream/{sid}", json={"landmarks": frames, **extra})
         body = send([fake_landmarks(seed=i) for i in range(29)], predict=False).get_json()
         self.assertEqual((body["ready"], body["buffered"], body["hand_frames"]), (False, 29, 29))
-        body = send([fake_landmarks(hand=False)], timestamps=[123.0]).get_json()
+        body = send([fake_landmarks(hand=False)], timestamps=[1933.0]).get_json()     # frame thứ 30 ở 15 fps
         self.assertEqual((body["predicted"], body["frames"], body["hand_frames"]), (True, 30, 29))
         self.assertIn(body["label"], ("xin chào", "cảm ơn"))
         body = send([fake_landmarks(hand=False)] * 2, reset=True, window=10).get_json()
@@ -296,6 +296,27 @@ class StreamTests(unittest.TestCase):
         for bad in ([], [fake_landmarks()] * 61, [{"pose": None, "hands": [[[0, 0, 0]]]}]):
             self.assertEqual(send(bad).status_code, 400)
         self.assertEqual(send([fake_landmarks()], timestamps=[1, 2]).status_code, 400)
+
+    def test_window_follows_capture_time_not_frame_count(self):
+        """Điện thoại chậm (7.5 fps) hay máy nhanh (30 fps): cửa sổ luôn là 2 giây như lúc train (30 frame ở 15 fps)."""
+        sid = self.client.post("/api/stream").get_json()["session_id"]
+        send = lambda frames, **extra: self.client.post(f"/api/stream/{sid}", json={"landmarks": frames, **extra})
+        slow = [1000 + i * 1000 / 7.5 for i in range(16)]               # 16 frame trải 2 giây
+        body = send([fake_landmarks(seed=i) for i in range(16)], timestamps=slow).get_json()
+        self.assertTrue(body["ready"])
+        self.assertEqual(body["buffered"], 30)
+        self.assertEqual(body["frames"], 15)                            # frame đầu đã ra ngoài 2 giây
+        self.assertEqual(body["hand_frames"], 30)                       # quy về đơn vị frame 15 fps
+        self.assertIn(body["label"], ("xin chào", "cảm ơn"))
+
+        fast = [9000 + i * 1000 / 30 for i in range(40)]                # 40 frame chỉ trải 1.33 giây
+        body = send([fake_landmarks(seed=i) for i in range(40)], timestamps=fast, reset=True).get_json()
+        self.assertEqual((body["ready"], body["buffered"], body["hand_frames"]), (False, 20, 20))
+
+        more = [fast[-1] + (i + 1) * 1000 / 30 for i in range(30)]      # thêm 1 giây: cửa sổ chỉ giữ 2 giây gần nhất
+        body = send([fake_landmarks(seed=i) for i in range(30)], timestamps=more).get_json()
+        self.assertEqual((body["ready"], body["buffered"], body["hand_frames"]), (True, 30, 30))
+        self.assertEqual(body["frames"], 60)
 
     def test_cors_preflight_is_cacheable(self):
         response = self.client.options("/api/stream")

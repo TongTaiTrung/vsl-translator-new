@@ -14,7 +14,7 @@ from src.features.extract import SEQ_FEATURE_DIM
 
 from src.model import training
 from src.model.training import (Augmenter, Config, calibrate_temperature, default_groups, fit_temperature,
-                                full_model_epochs, load_validation_mask, train_one)
+                                full_model_epochs, load_validation_mask, ReplaySampler, train_one)
 
 
 def tiny_config(**overrides):
@@ -89,6 +89,43 @@ class WarmStartTests(unittest.TestCase):
         with torch.no_grad():
             base_acc = (base.eval()(X).argmax(1) == y).float().mean().item()
         self.assertGreaterEqual(info["val_acc"], base_acc)   # không bao giờ tệ hơn điểm xuất phát trên val
+
+
+class ReplaySamplerTests(unittest.TestCase):
+    def test_always_samples_every_epoch_and_quota_per_class(self):
+        y = np.repeat(np.arange(3), 10)
+        always = np.zeros(30, dtype=bool)
+        always[[0, 1, 25]] = True                           # 2 mẫu mới lớp 0, 1 mẫu mới lớp 2
+        sampler = ReplaySampler(y, quota=[4, 2, 20], always=always, seed=0)
+        self.assertEqual(len(sampler), 3 + 4 + 2 + 9)        # lớp 2 chỉ còn 9 mẫu cũ -> lấy hết
+        seen = set()
+        for ep in range(5):
+            idx = sampler(ep).numpy()
+            self.assertEqual(len(idx), len(sampler))
+            self.assertEqual(len(set(idx)), len(idx))        # không lặp trong một epoch
+            self.assertTrue({0, 1, 25} <= set(idx))
+            self.assertEqual(np.bincount(y[idx], minlength=3).tolist(), [6, 2, 10])
+            seen |= set(idx)
+        self.assertGreater(len(seen), len(sampler))           # đổi tập con giữa các epoch
+
+    def test_train_one_with_sampler_trains_and_keeps_start_candidate(self):
+        X, y = tiny_data(n=30)
+        cfg = tiny_config(warmup_epochs=0, batch_size=0)
+        groups = default_groups(SEQ_FEATURE_DIM)
+        base, _ = train_one(X, y, None, None, 3, groups, cfg, torch.device("cpu"), fixed_epochs=1, log_every=0)
+        start = {k: v.clone() for k, v in base.state_dict().items()}
+        calls = []
+        inner = ReplaySampler(y.numpy(), quota=[2, 6, 2], always=np.arange(30) == 0, seed=0)
+
+        def sampler(ep):
+            calls.append(ep)
+            return inner(ep)
+
+        _, info = train_one(X, y, X, y, 3, groups, cfg, torch.device("cpu"), log_every=0, fixed_epochs=3,
+                            init_state=start, sampler=sampler)
+        self.assertEqual(calls, [0, 1, 2])                    # epoch 0 dùng lại lần gọi đầu, không rút 2 lần
+        self.assertEqual(len(info["history"]), 3)
+        self.assertGreaterEqual(info["best_epoch"], 0)
 
 
 class SoftPresenceTests(unittest.TestCase):

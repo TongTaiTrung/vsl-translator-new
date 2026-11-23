@@ -41,7 +41,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from src.features.extract import (FEATURE_DIM, FEATURE_SLICES, FEATURE_VERSION, LEFT_MIRROR, PRESENCE_SLICE,
-                                  SEQ_FEATURE_DIM, SIDE_COLUMNS)
+                                  SEQ_FEATURE_DIM, SIDE_COLUMNS, STROKE_SLICE)
 
 
 # =============================================================================
@@ -119,11 +119,11 @@ def get_device() -> torch.device:
 def default_groups(d: int) -> list[tuple[int, int]]:
     """Nhóm cột theo bố cục FEATURE_SLICES (FEATURE_DIM hoặc SEQ_FEATURE_DIM). Khác -> 1 nhóm."""
     if d in (FEATURE_DIM, SEQ_FEATURE_DIM):
-        S = FEATURE_SLICES   # vị trí | thủ hình | điểm bàn tay | hướng | hiện diện | chuyển động
+        S = FEATURE_SLICES   # vị trí | thủ hình | điểm bàn tay | hướng | hiện diện | chuyển động | nét
         b = [0, S["handshape"].start, S["hand_local"].start, S["orientation"].start, S["presence"].start,
              FEATURE_DIM]
         if d == SEQ_FEATURE_DIM:
-            b.append(SEQ_FEATURE_DIM)
+            b += [STROKE_SLICE.start, SEQ_FEATURE_DIM]   # nhóm riêng: group-drop vị trí buộc model dùng nét
     else:
         b = [0, d]
     return [(b[i], b[i + 1]) for i in range(len(b) - 1)]
@@ -459,13 +459,15 @@ class VSLNet(nn.Module):
         self.drop = nn.Dropout(cfg.base_dropout)
         self.head = CosineHead(6 * h, n_classes) if cfg.head == "cosine" else nn.Linear(6 * h, n_classes)
 
-    def forward(self, x):  # (B, T, D) -> logits (B, C); chạy được với mọi T
+    def pool(self, x):  # (B, T, D) -> vector gộp theo thời gian (B, 6h), trước norm/head
         h = self.stem(x)
         h = self.blocks(h.transpose(1, 2)).transpose(1, 2)
         h, _ = self.gru(h)
         w = torch.softmax(self.attn(h), dim=1)
-        pooled = torch.cat([(w * h).sum(1), h.mean(1), h.amax(1)], dim=-1)
-        return self.head(self.drop(self.norm(pooled)))
+        return torch.cat([(w * h).sum(1), h.mean(1), h.amax(1)], dim=-1)
+
+    def forward(self, x):  # (B, T, D) -> logits (B, C); chạy được với mọi T
+        return self.head(self.drop(self.norm(self.pool(x))))
 
 
 class HandPairNet(nn.Module):
@@ -506,6 +508,9 @@ class HandPairNet(nn.Module):
                      else nn.Linear(6 * gru_hidden, n_classes))
 
     def forward(self, x):  # (B, T, D) đã chuẩn hoá presence-aware -> logits (B, C)
+        return self.head(self.drop(self.norm(self.pool(x))))
+
+    def pool(self, x):
         p = x[..., PRESENCE_SLICE].clamp(0.0, 1.0)
         pl, pr = p[..., :1], p[..., 1:]
         hl = self.hand_norm(self.hand(x[..., self.left_idx] * self.left_sign) + self.side[0])
@@ -517,8 +522,7 @@ class HandPairNet(nn.Module):
         h = self.block(h.transpose(1, 2)).transpose(1, 2)
         h, _ = self.gru(h)
         w = torch.softmax(self.attn(h), dim=1)
-        pooled = torch.cat([(w * h).sum(1), h.mean(1), h.amax(1)], dim=-1)
-        return self.head(self.drop(self.norm(pooled)))
+        return torch.cat([(w * h).sum(1), h.mean(1), h.amax(1)], dim=-1)
 
 
 class PreLNBlock(nn.Module):
@@ -613,6 +617,9 @@ class SignFormer(nn.Module):
                      else nn.Linear(3 * d_model, n_classes))
 
     def forward(self, x):  # (B, T, D) đã chuẩn hoá presence-aware -> logits (B, C)
+        return self.head(self.drop(self.norm(self.pool(x))))
+
+    def pool(self, x):
         B, T, _ = x.shape
         p = x[..., PRESENCE_SLICE].clamp(0.0, 1.0).unsqueeze(-1)                 # (B,T,2,1)
         pts = torch.stack([x[..., self.local_l], x[..., self.local_r]], dim=2)   # (B,T,2,60)
@@ -627,8 +634,7 @@ class SignFormer(nn.Module):
             z = layer(z)
         z = self.out_norm(z)
         w = torch.softmax(self.attn(z), dim=1)
-        pooled = torch.cat([(w * z).sum(1), z.mean(1), z.amax(1)], dim=-1)
-        return self.head(self.drop(self.norm(pooled)))
+        return torch.cat([(w * z).sum(1), z.mean(1), z.amax(1)], dim=-1)
 
 
 def build_model(in_dim: int, n_classes: int, groups, cfg: Config) -> nn.Module:
@@ -731,16 +737,49 @@ def hard_negative_margin_loss(logits: torch.Tensor, target: torch.Tensor, margin
     return F.relu(margin + competing - true_logits).mean()
 
 
+class ReplaySampler:
+    """Chọn mẫu train cho từng epoch khi fine-tune nhanh (chỉ vài lớp có mẫu mới).
+
+    Mỗi epoch: MỌI mẫu `always` (mẫu mới) + tối đa `quota[c]` mẫu khác của lớp c, rút ngẫu nhiên lại ở mỗi
+    epoch (qua nhiều epoch vẫn ôn được phần lớn dữ liệu cũ). Số mẫu mỗi epoch cố định -> lịch LR ổn định.
+    `train_one` bù trọng số lớp theo tỉ lệ (số mẫu lớp đó trong Xtr / số mẫu được rút) nên kỳ vọng loss vẫn
+    bằng loss trên toàn bộ Xtr: lớp được ôn nhiều hơn không vì thế mà được model "thiên vị".
+    """
+
+    def __init__(self, y, quota, always=None, seed: int = 0):
+        y = np.asarray(y)
+        always = np.zeros(len(y), dtype=bool) if always is None else np.asarray(always, dtype=bool)
+        if len(always) != len(y):
+            raise ValueError("always phải cùng độ dài với y")
+        self.always = np.where(always)[0]
+        self.pools = [np.where((y == c) & ~always)[0] for c in range(len(quota))]
+        self.take = [min(max(int(q), 0), len(pool)) for q, pool in zip(quota, self.pools)]
+        self.rng = np.random.default_rng(seed)
+
+    def __len__(self) -> int:
+        return len(self.always) + sum(self.take)
+
+    def __call__(self, epoch: int) -> torch.Tensor:
+        parts = [self.always] + [self.rng.choice(pool, k, replace=False)
+                                 for pool, k in zip(self.pools, self.take) if k]
+        idx = np.concatenate(parts)
+        self.rng.shuffle(idx)
+        return torch.from_numpy(idx.astype(np.int64))
+
+
 def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
               fixed_epochs: int | None = None, init_strength: float = 0.5,
               freeze_strength: bool = False, tag: str = "", log_every: int = 5,
-              hand_presence: torch.Tensor | None = None, norm_stats=None, init_state: dict | None = None):
+              hand_presence: torch.Tensor | None = None, norm_stats=None, init_state: dict | None = None,
+              sampler=None):
     """Huấn luyện 1 model. Có (Xva,yva): early stopping + tự thích ứng. Không có: chạy `fixed_epochs`.
 
     norm_stats=(mean, std, presence_aware) tensor trên device: để augmentation tay phụ tính lại cột tay-tay.
     init_state: state_dict để fine-tune (warm-start) thay vì khởi tạo ngẫu nhiên. Khi có val, model ban đầu
     được chấm trước epoch 1 và là ứng viên "best" (best_epoch=0) -> fine-tune không thể trả về model tệ hơn
     trên val so với lúc bắt đầu.
+    sampler: callable epoch -> chỉ số vào Xtr (số lượng cố định, vd. `ReplaySampler`): mỗi epoch chỉ train trên
+    tập con đó thay vì toàn bộ Xtr (fine-tune nhanh). Batch size vẫn tính theo len(Xtr) như khi train đầy đủ.
     """
     has_val = Xva is not None
     model = build_model(Xtr.shape[-1], n_classes, groups, cfg).to(device)
@@ -764,7 +803,12 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
     n = len(Xtr)
     bs = cfg.batch_size or int(np.clip(n // 20, 16, 64))
     bs = min(bs, n)
-    steps_per_epoch = max(1, n // bs)
+    first = sampler(0).to(device) if sampler is not None else None
+    n_epoch = len(first) if first is not None else n
+    if n_epoch == 0:
+        raise ValueError("sampler trả về tập rỗng")
+    bs = min(bs, n_epoch)
+    steps_per_epoch = max(1, n_epoch // bs)
     total_epochs = fixed_epochs or cfg.max_epochs
     total_steps = total_epochs * steps_per_epoch
     warm_steps = cfg.warmup_epochs * steps_per_epoch
@@ -773,6 +817,11 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
     cw = None
     if (counts.max() / counts.min()) > 1.5:       # lệch lớp -> trọng số căn bậc hai nghịch đảo
         cw = ((counts.sum() / (n_classes * counts)) ** 0.5).to(device)
+    if first is not None:     # sampler rút lớp lệch so với Xtr -> bù để kỳ vọng loss = loss trên toàn bộ Xtr
+        seen = torch.bincount(ytr[first], minlength=n_classes).float()
+        iw = torch.where(seen > 0, counts / seen.clamp(min=1), torch.zeros_like(seen))
+        iw = (iw / iw[seen > 0].mean()).to(device)
+        cw = iw if cw is None else cw * iw
 
     use_amp = device.type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
@@ -799,7 +848,10 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
         set_dropout(model, ctrl.dropout)
         if hasattr(model, "stem"):
             model.stem.group_drop = ctrl.group_drop
-        perm = torch.randperm(n, device=device)
+        if sampler is None:
+            perm = torch.randperm(n, device=device)
+        else:
+            perm = first if ep == 0 else sampler(ep).to(device)
         run_correct, run_total = torch.zeros((), device=device), 0   # acc ngay trong lúc train (miễn phí)
 
         for i in range(steps_per_epoch):
@@ -912,6 +964,18 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
 # =============================================================================
 # ENSEMBLE, HIỆU CHỈNH, XUẤT MODEL
 # =============================================================================
+def logits_and_embedding(model: nn.Module, z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Một lượt chạy model -> (logits (B, C), embedding chuẩn hoá L2 (B, E)).
+
+    Embedding là không gian head dùng để phân lớp: head cosine -> vector ``emb`` của nó (so với tâm lớp
+    bằng cosine), head tuyến tính -> vector sau LayerNorm. Dùng cho bộ nhớ mẫu cá nhân (src/model/memory.py).
+    """
+    h = model.norm(model.pool(z))
+    logits = model.head(model.drop(h))
+    emb = model.head.emb(h) if isinstance(model.head, CosineHead) else h
+    return logits, F.normalize(emb, dim=-1)
+
+
 class VSLEnsemble(nn.Module):
     """
     Nhận đặc trưng THÔ (B, T, D) -> xác suất (B, C). Đã gồm chuẩn hoá + xử lý NaN + ensemble.
@@ -933,6 +997,16 @@ class VSLEnsemble(nn.Module):
             z = normalize_features(x, self.means[k], self.stds[k], self.presence_aware)
             probs.append(torch.softmax(m(z) / self.temperature, dim=-1))
         return torch.stack(probs).mean(0)
+
+    def logits_and_embeddings(self, x) -> tuple[torch.Tensor, torch.Tensor]:
+        """x thô (B, T, D) -> (logits đã chia nhiệt độ (K, B, C), embedding (K, B, E)) của từng model."""
+        logits, embs = [], []
+        for k, m in enumerate(self.models):
+            z = normalize_features(x, self.means[k], self.stds[k], self.presence_aware)
+            lg, emb = logits_and_embedding(m, z)
+            logits.append(lg / self.temperature)
+            embs.append(emb)
+        return torch.stack(logits), torch.stack(embs)
 
 
 def full_model_epochs(best_epochs, cfg: Config) -> int:

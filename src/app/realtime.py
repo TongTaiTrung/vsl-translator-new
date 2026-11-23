@@ -186,7 +186,7 @@ class Renderer:
 
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Dịch VSL realtime: vote theo frame + ghép câu bằng LLM (Groq)")
-    parser.add_argument("--checkpoint", type=Path, default=None, help="mặc định: runs/*/ensemble.pt mới nhất")
+    parser.add_argument("--checkpoint", type=Path, default=None, help="mặc định: runs/best/ensemble.pt (run mới nhất)")
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--resolution", type=parse_resolution, default=None,
                         help="RỘNGxCAO cố định (vd. 1920x1080); mặc định: độ phân giải 16:9 lớn nhất camera hỗ trợ")

@@ -1188,10 +1188,12 @@ def closest_rivals(probs: np.ndarray, y: np.ndarray, classes) -> list[dict]:
 def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | None = None,
                  folds: int = 5, folds_to_run: int = 0, add_full: bool = True,
                  export_onnx_model: bool = True, device=None,
-                 validation_mask: np.ndarray | None = None) -> dict:
+                 validation_mask: np.ndarray | None = None, publish: bool = True) -> dict:
     """
     Huấn luyện trên MỌI lớp trong (X, y, classes): k-fold -> hiệu chỉnh -> (tuỳ chọn) model toàn bộ
     dữ liệu -> lưu ensemble.pt / classes.json / metrics.json / vsl_classifier.onnx.
+    publish: nếu out_dir nằm trực tiếp trong runs/ thì đặt nó làm runs/best và chỉ giữ 5 run gần nhất
+    (``checkpoints.publish_run``).
     Trả về dict kết quả (CV, lịch sử từng fold, OOF logits, đường dẫn).
     """
     cfg = cfg or Config()
@@ -1358,6 +1360,10 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
             onnx_path = None
             print(f"[cảnh báo] Xuất ONNX thất bại: {e}\n  (pip install onnx; model .pt vẫn dùng được)")
 
+    if publish:
+        from src.model.checkpoints import publish_run
+        publish_run(out_dir)
+
     return {**metrics, "out_dir": str(out_dir), "onnx_path": str(onnx_path) if onnx_path else None,
             "fold_histories": [i["history"] for i in infos], "oof_logits": oof, "oof_mask": oof_mask,
             "classes": classes, "y": y}
@@ -1411,7 +1417,8 @@ def main():
     validation_mask = load_validation_mask(args.data, len(y), groups) if args.data and not args.demo else None
     run_training(X, y, classes, groups, out_dir=args.out, cfg=cfg, folds=args.folds,
                  folds_to_run=args.folds_to_run, add_full=not args.no_full,
-                 export_onnx_model=not args.no_onnx, validation_mask=validation_mask)
+                 export_onnx_model=not args.no_onnx, validation_mask=validation_mask,
+                 publish=not args.demo)   # dữ liệu giả không bao giờ thành runs/best
 
 
 if __name__ == "__main__":

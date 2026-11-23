@@ -72,7 +72,7 @@ finally:
 
 sequence = process_sequence(raw, target_len=30)  # (30, 170)
 
-# 2) Dự đoán với checkpoint mới nhất trong runs/*/ensemble.pt
+# 2) Dự đoán với checkpoint runs/best/ensemble.pt (run mới nhất)
 predictor = VSLPredictor()
 result = predictor.predict_processed(sequence)
 print(result["label"], result["confidence"])

@@ -171,7 +171,7 @@ Các cờ: `--folds`, `--folds-to-run`, `--no-full`, `--epochs`, `--head linear|
 ### `VSLPredictor`
 
 - Khởi tạo một lần, dùng lại cho nhiều request.
-- Nếu không truyền `checkpoint_path`, chọn `runs/*/ensemble.pt` mới nhất theo mtime.
+- Nếu không truyền `checkpoint_path`, dùng `runs/best/ensemble.pt`; không có thì run mới nhất theo thời điểm trong tên thư mục (`src/model/checkpoints.py`).
 - Kiểm tra checkpoint: `feature_dim` phải bằng `SEQ_FEATURE_DIM = 170`.
 - Ngưỡng hiệu dụng: `max(reject_threshold, min_confidence)`, mặc định `min_confidence = 0.65`.
 

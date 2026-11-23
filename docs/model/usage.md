@@ -116,7 +116,7 @@ np.savez_compressed(
 ```python
 from src.model.predict import VSLPredictor
 
-predictor = VSLPredictor()  # mới nhất runs/*/ensemble.pt
+predictor = VSLPredictor()  # runs/best/ensemble.pt (run mới nhất)
 
 result = predictor.predict_frames(
     frames_bgr,

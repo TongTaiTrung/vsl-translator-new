@@ -26,7 +26,7 @@ original sample's group; validation uses original samples only.
 ```python
 from src.model.predict import VSLPredictor
 
-predictor = VSLPredictor()  # newest runs/*/ensemble.pt, or pass a path
+predictor = VSLPredictor()  # runs/best/ensemble.pt (newest run), or pass a path
 result = predictor.predict_raw(raw_features)  # (frames, 131) float32
 # Or send a complete clip of BGR frames (for example, decoded from an upload):
 result = predictor.predict_frames(frames_bgr, mirror_data=False)

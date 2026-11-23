@@ -616,7 +616,7 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
 
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="API server dự đoán VSL từ 30 frame")
-    parser.add_argument("--checkpoint", type=Path, default=None, help="mặc định: runs/*/ensemble.pt mới nhất")
+    parser.add_argument("--checkpoint", type=Path, default=None, help="mặc định: runs/best/ensemble.pt (run mới nhất)")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--frames", type=int, default=EXPECTED_FRAMES, help="số frame mỗi request; 0 = không giới hạn")

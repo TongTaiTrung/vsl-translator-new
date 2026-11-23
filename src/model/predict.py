@@ -17,6 +17,7 @@ from src.features.extract import (FEATURE_DIM, FEATURE_VERSION, SEQ_FEATURE_DIM,
                                   process_sequence)
 from src.features.frame import frame_padding
 from src.model import training
+from src.model.checkpoints import latest_checkpoint
 
 
 @dataclass(frozen=True)
@@ -57,10 +58,7 @@ class VSLPredictor:
         if not 0 <= min_probability_gap <= 1:
             raise ValueError("min_probability_gap must be in [0, 1]")
         if checkpoint_path is None:
-            checkpoints = list((Path(__file__).resolve().parents[2] / "runs").glob("*/ensemble.pt"))
-            if not checkpoints:
-                raise FileNotFoundError("No ensemble.pt found under runs/; train the model first")
-            checkpoint_path = max(checkpoints, key=lambda path: path.stat().st_mtime)
+            checkpoint_path = latest_checkpoint()          # runs/best, không có thì run mới nhất theo tên
         self.checkpoint_path = Path(checkpoint_path).expanduser().resolve()
         if not self.checkpoint_path.is_file():
             raise FileNotFoundError(self.checkpoint_path)

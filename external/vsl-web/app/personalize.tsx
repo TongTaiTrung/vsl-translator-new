@@ -1,0 +1,212 @@
+"use client";
+
+// Sheet "Cá nhân hoá": ghi mẫu ký cho từng từ, sửa từ vừa nhận sai thành mẫu, bật/tắt, mức ảnh hưởng, xoá mẫu.
+// Việc ghi (đếm ngược + thu frame) do page.tsx làm vì lớp phủ nằm trên khung camera.
+
+import { useEffect, useRef, useState } from "react";
+import type { CommittedWindow } from "@/lib/recognizer";
+import { MAX_AUTO_PER_LABEL, MAX_PER_LABEL, type Sample, sourceOf } from "@/lib/memory";
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  classes: string[];
+  samples: Sample[];
+  /** Mẫu không dùng được với checkpoint hiện tại (khác số cột feature). */
+  staleCount: number;
+  enabled: boolean;
+  strength: number;
+  autoLearn: boolean;
+  onAutoLearn: (value: boolean) => void;
+  learnMode: "realtime" | "sentence";
+  onLearnMode: (value: "realtime" | "sentence") => void;
+  running: boolean;
+  busy: boolean;
+  activeExemplars: number | null;
+  memoryError: string | null;
+  committed: CommittedWindow | null;
+  onEnabled: (value: boolean) => void;
+  onStrength: (value: number) => void;
+  onRecord: (label: string) => void;
+  onSaveCorrection: (label: string) => void;
+  onDeleteLabel: (label: string) => void;
+  onClearAll: () => void;
+}
+
+export function PersonalizeSheet(props: Props) {
+  const { open, onClose, classes, samples, enabled, strength, autoLearn, learnMode, running, busy, committed } = props;
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const [correction, setCorrection] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    sheetRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  // Từ chốt mới → gợi ý chọn lại chính nó (người dùng đổi sang từ đúng).
+  useEffect(() => setCorrection(committed?.word ?? ""), [committed]);
+
+  const counts = new Map<string, { manual: number; auto: number }>();
+  samples.forEach((s) => {
+    const c = counts.get(s.label) ?? { manual: 0, auto: 0 };
+    c[sourceOf(s)] += 1;
+    counts.set(s.label, c);
+  });
+  const autoTotal = samples.filter((s) => sourceOf(s) === "auto").length;
+  const recordable = running && !busy;
+
+  const status = !enabled
+    ? "Đang tắt: dùng mô hình gốc."
+    : samples.length === 0
+      ? "Chưa có mẫu nào."
+      : props.activeExemplars != null
+        ? `Đang dùng ${props.activeExemplars} mẫu.`
+        : running
+          ? "Mẫu sẽ được dùng từ cửa sổ dự đoán kế tiếp."
+          : `${samples.length} mẫu sẽ được dùng khi bật camera.`;
+
+  return (
+    <>
+      <div className={`sheet-backdrop ${open ? "open" : ""}`} onClick={onClose} aria-hidden="true" />
+      <aside
+        className={`sheet ${open ? "open" : ""}`}
+        aria-label="Cá nhân hoá"
+        aria-hidden={!open}
+        inert={!open}
+        ref={sheetRef}
+        tabIndex={-1}
+      >
+        <div className="sheet-head">
+          <h2>Cá nhân hoá</h2>
+          <button className="icon-button" onClick={onClose} aria-label="Đóng cá nhân hoá">
+            <svg className="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"
+              strokeWidth="1.8" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </div>
+
+        <div className="sheet-body">
+          <section className="group">
+            <p className="help">
+              Ký mẫu vài từ theo cách của bạn để mô hình nhận ra bạn tốt hơn, không cần train lại. Mẫu chỉ lưu trên
+              trình duyệt này (landmark, không có hình ảnh) và chỉ gửi lên server trong lúc nhận diện.
+            </p>
+            <label className="check">
+              <input type="checkbox" checked={enabled} onChange={(e) => props.onEnabled(e.target.checked)} />
+              <span>Dùng mẫu của tôi khi nhận diện</span>
+            </label>
+            <label className="field">
+              <span>Mức ảnh hưởng: {Math.round(strength * 100)}%</span>
+              <input
+                type="range" min={0.1} max={1} step={0.05} value={strength} disabled={!enabled}
+                onChange={(e) => props.onStrength(Number(e.target.value))}
+              />
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={autoLearn} disabled={!enabled}
+                onChange={(e) => props.onAutoLearn(e.target.checked)} />
+              <span>Tự học từ các câu tôi ký</span>
+            </label>
+            <div className="memory-mode" role="radiogroup" aria-label="Khi nào tự học">
+              <label className="check">
+                <input type="radio" name="learn-mode" checked={learnMode === "realtime"} disabled={!enabled || !autoLearn}
+                  onChange={() => props.onLearnMode("realtime")} />
+                <span>Học ngay sau mỗi từ (thời gian thực)</span>
+              </label>
+              <label className="check">
+                <input type="radio" name="learn-mode" checked={learnMode === "sentence"} disabled={!enabled || !autoLearn}
+                  onChange={() => props.onLearnMode("sentence")} />
+                <span>Học khi kết thúc câu</span>
+              </label>
+            </div>
+            <p className="help">
+              {learnMode === "realtime"
+                ? "Mỗi từ mô hình đã khá chắc được lưu làm mẫu vài giây sau khi chốt và dùng ngay cho từ kế tiếp. Hoàn tác hoặc xoá từ đó (kể cả sau này) sẽ xoá luôn mẫu đã học."
+                : "Khi câu kết thúc, những từ bạn giữ lại (không xoá, không hoàn tác) mà mô hình đã khá chắc được lưu làm mẫu."}
+              {` Tối đa ${MAX_AUTO_PER_LABEL} mẫu tự học mỗi từ. Từ bị nhận sai: hoàn tác hoặc dùng “Sửa từ vừa nhận”.`}
+            </p>
+            <p className="help">
+              {status}
+              {autoTotal > 0 && ` Trong đó ${autoTotal} mẫu tự học.`}
+            </p>
+            {props.memoryError && enabled && (
+              <p className="error" role="alert">Server từ chối mẫu, đang dùng mô hình gốc: {props.memoryError}</p>
+            )}
+            {props.staleCount > 0 && (
+              <p className="help">{props.staleCount} mẫu ghi với phiên bản đặc trưng cũ nên không được dùng. Hãy ghi lại.</p>
+            )}
+          </section>
+
+          <section className="group">
+            <h3>Sửa từ vừa nhận</h3>
+            {committed ? (
+              <>
+                <p className="help">
+                  Vừa chốt <strong>{committed.word}</strong>. Nếu sai, chọn từ bạn thực sự ký và lưu cửa sổ đó làm mẫu.
+                </p>
+                <div className="memory-correct">
+                  <select value={correction} onChange={(e) => setCorrection(e.target.value)} aria-label="Từ đúng">
+                    {classes.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <button className="btn btn-ghost" disabled={busy || !correction}
+                    onClick={() => props.onSaveCorrection(correction)}>
+                    Lưu làm mẫu
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="help">Khi có từ được chốt, bạn có thể sửa nhãn và lưu nó làm mẫu ở đây.</p>
+            )}
+          </section>
+
+          <section className="group">
+            <h3>Mẫu theo từ</h3>
+            {!running && <p className="help">Bật camera để ghi mẫu.</p>}
+            <ul className="memory-list">
+              {classes.map((label) => {
+                const c = counts.get(label) ?? { manual: 0, auto: 0 };
+                const n = c.manual + c.auto;
+                return (
+                  <li key={label}>
+                    <span className="memory-label">{label}</span>
+                    <span className="memory-dots" aria-label={`${c.manual} mẫu ghi tay, ${c.auto} mẫu tự học, tối đa ${MAX_PER_LABEL}`}
+                      title={`${c.manual} ghi tay · ${c.auto} tự học`}>
+                      {Array.from({ length: MAX_PER_LABEL }, (_, i) => (
+                        <i key={i} className={i < c.manual ? "on" : i < n ? "auto" : ""} />
+                      ))}
+                    </span>
+                    <button className="link" disabled={!recordable} onClick={() => props.onRecord(label)}>
+                      Ghi mẫu
+                    </button>
+                    <button className="link danger" disabled={n === 0 || busy} onClick={() => props.onDeleteLabel(label)}
+                      aria-label={`Xoá mẫu của ${label}`}>
+                      Xoá
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="help">
+              Mỗi từ giữ tối đa {MAX_PER_LABEL} mẫu (chấm đặc: ghi tay, chấm viền: tự học). Mẫu mới thay mẫu cũ nhất;
+              mẫu tự học không bao giờ thay mẫu ghi tay.
+            </p>
+          </section>
+
+          <button
+            className="link danger"
+            disabled={samples.length === 0 || busy}
+            onClick={() => {
+              if (window.confirm(`Xoá toàn bộ ${samples.length} mẫu cá nhân trên trình duyệt này? Không hoàn tác được.`)) {
+                props.onClearAll();
+              }
+            }}
+          >
+            Xoá toàn bộ dữ liệu cá nhân
+          </button>
+        </div>
+      </aside>
+    </>
+  );
+}

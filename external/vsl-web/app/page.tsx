@@ -3,13 +3,28 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DEFAULT_OPTIONS,
+  type CommittedWindow,
   Recognizer,
   SPEED_PRESETS,
   type Phase,
   type RecognizerState,
   type Speed,
 } from "@/lib/recognizer";
+import {
+  addSample,
+  clearSamples,
+  deleteLabel,
+  deleteSample,
+  listSamples,
+  memoryPayload,
+  newSampleId,
+  type Sample,
+  type SampleSource,
+  submitSample,
+} from "@/lib/memory";
+import type { FrameLandmarks } from "@/lib/landmarks";
 import { DEFAULT_MODEL, naiveSentence } from "@/lib/sentence";
+import { PersonalizeSheet } from "./personalize";
 import { ThemeToggle } from "./theme-toggle";
 
 // ------------------------------------------------------------------ cài đặt (lưu trên trình duyệt)
@@ -25,7 +40,17 @@ interface Settings {
   speed: Speed;
   minConsecutive: number;
   sentenceGapSeconds: number;
+  /** Dùng mẫu cá nhân khi nhận diện. */
+  personalize: boolean;
+  /** Mức ảnh hưởng của mẫu cá nhân (0–1). */
+  memoryStrength: number;
+  /** Tự lưu mẫu từ các từ người dùng giữ lại (không xoá/undo). */
+  autoLearn: boolean;
+  /** "realtime": học mỗi từ ngay sau khi chốt (hoàn tác thì xoá mẫu); "sentence": học khi kết thúc câu. */
+  learnMode: LearnMode;
 }
+
+type LearnMode = "realtime" | "sentence";
 
 const DEFAULT_SETTINGS: Settings = {
   apiUrl: DEFAULT_OPTIONS.apiUrl,
@@ -38,7 +63,34 @@ const DEFAULT_SETTINGS: Settings = {
   speed: "accurate",
   minConsecutive: DEFAULT_OPTIONS.minConsecutive,
   sentenceGapSeconds: DEFAULT_OPTIONS.sentenceGapMs / 1000,
+  personalize: true,
+  memoryStrength: 0.5,
+  autoLearn: true,
+  learnMode: "realtime",
 };
+
+/** Học thời gian thực: chờ chừng này ms sau khi chốt từ (hoàn tác trong lúc này thì không học). */
+const REALTIME_GRACE_MS = 2500;
+
+/** Tự học: chỉ lấy từ mô hình đã khá chắc (giảm rủi ro học nhầm) … */
+const AUTO_MIN_CONFIDENCE = 0.8;
+/** … và bỏ qua cửa sổ đã gần như trùng một mẫu sẵn có của chính từ đó (không thêm thông tin). */
+const AUTO_SKIP_SIMILARITY = 0.97;
+
+/** Ghi mẫu: đếm ngược bao nhiêu giây, thu bao nhiêu frame (30 frame = 2 giây ở 15 fps, đúng độ dài mẫu train). */
+const COUNTDOWN_SECONDS = 3;
+const SAMPLE_FRAMES = 30;
+
+interface Recording {
+  label: string;
+  stage: "countdown" | "capture" | "saving";
+  count: number;
+}
+
+interface Notice {
+  text: string;
+  tone: "ok" | "warn";
+}
 
 const SETTINGS_KEY = "vsl-web:settings";
 const GROQ_KEY = "vsl-web:groq-key";
@@ -48,7 +100,8 @@ function loadSettings(): Settings {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
     const groqKey = localStorage.getItem(GROQ_KEY) || "";
     const speed = saved.speed in SPEED_PRESETS ? saved.speed : DEFAULT_SETTINGS.speed;
-    return { ...DEFAULT_SETTINGS, ...saved, speed, groqKey, rememberKey: Boolean(groqKey) };
+    const learnMode = saved.learnMode === "sentence" ? "sentence" : DEFAULT_SETTINGS.learnMode;
+    return { ...DEFAULT_SETTINGS, ...saved, speed, learnMode, groqKey, rememberKey: Boolean(groqKey) };
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -124,13 +177,28 @@ interface Health {
   ok: boolean;
   classes?: string[];
   checkpoint?: string;
+  featureDim?: number;
   error?: string;
 }
 
 const percent = (value: number) => `${Math.round(value * 100)}%`;
 
-function Icon({ name }: { name: "settings" | "close" | "copy" | "check" | "speaker" | "undo" | "trash" | "stop" | "play" | "flag" }) {
+function Icon({ name }: { name: "settings" | "close" | "copy" | "check" | "speaker" | "undo" | "trash" | "stop" | "play" | "flag" | "user" | "flip" }) {
   const paths: Record<string, React.ReactNode> = {
+    // Máy ảnh với hai mũi tên xoay: đổi camera trước / sau.
+    flip: (
+      <>
+        <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z" />
+        <path d="M9 12.5a3 3 0 0 1 5.2-2M15 13a3 3 0 0 1-5.2 2" />
+        <path d="M14.4 8.6l-.2 1.9-1.9-.3M9.6 17.4l.2-1.9 1.9.3" />
+      </>
+    ),
+    user: (
+      <>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+      </>
+    ),
     settings: (
       <>
         <circle cx="12" cy="12" r="3" />
@@ -165,6 +233,14 @@ function Icon({ name }: { name: "settings" | "close" | "copy" | "check" | "speak
   );
 }
 
+/** Tách chữ theo grapheme để dấu tiếng Việt không bị tách khỏi chữ cái. */
+function graphemes(text: string): string[] {
+  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
+    return Array.from(new Intl.Segmenter("vi", { granularity: "grapheme" }).segment(text), (s) => s.segment);
+  }
+  return Array.from(text.normalize("NFC"));
+}
+
 /** Thay đổi `value` → render lại con với key mới để chạy hoạt ảnh vào. */
 function Swap({ value, className, children }: { value: string; className?: string; children: React.ReactNode }) {
   return <span key={value} className={`swap ${className ?? ""}`}>{children}</span>;
@@ -186,8 +262,34 @@ export default function Home() {
   const [health, setHealth] = useState<Health | null>(null);
   const [copied, setCopied] = useState<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [personalizeOpen, setPersonalizeOpen] = useState(false);
+  const [samples, setSamples] = useState<Sample[]>([]);
+  const [recording, setRecording] = useState<Recording | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  // Thiết bị cảm ứng (điện thoại / máy tính bảng): bố cục camera toàn màn hình khi đang chạy.
+  const [touch, setTouch] = useState(false);
+  useEffect(() => {
+    const query = matchMedia("(pointer: coarse)");
+    const sync = () => setTouch(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
 
   settingsRef.current = settings;
+  /** Cửa sổ đã được tự học → id mẫu, để xoá mẫu đó nếu người dùng sửa nhãn cửa sổ này sau. */
+  const autoSaved = useRef(new WeakMap<CommittedWindow, string>());
+  /** Cửa sổ người dùng đã hoàn tác/xoá: không học nữa. */
+  const discarded = useRef(new WeakSet<CommittedWindow>());
+  /** Lượt học thời gian thực đang chờ hết REALTIME_GRACE_MS. */
+  const pendingLearn = useRef(new Map<CommittedWindow, ReturnType<typeof setTimeout>>());
+  const learnRef = useRef<{
+    committed: (w: CommittedWindow) => void;
+    sentence: (windows: CommittedWindow[]) => void;
+    discarded: (windows: CommittedWindow[]) => void;
+  }>({ committed: () => undefined, sentence: () => undefined, discarded: () => undefined });
+  const healthRef = useRef<Health | null>(null);
+  healthRef.current = health;
 
   const updateCurrent = useCallback(async (words: string[]) => {
     const version = ++composeVersion.current;
@@ -216,6 +318,9 @@ export default function Home() {
       onState: setState,
       onWords: (words) => void updateCurrent(words),
       onSentenceEnd: (words) => void finishSentence(words),
+      onSentenceWindows: (windows) => learnRef.current.sentence(windows),
+      onWordCommitted: (w) => learnRef.current.committed(w),
+      onWordsDiscarded: (windows) => learnRef.current.discarded(windows),
     });
     recognizerRef.current = recognizer;
     return () => recognizer.dispose();
@@ -255,7 +360,7 @@ export default function Home() {
         const url = `${settings.apiUrl.replace(/\/+$/, "")}/api/health`;
         const response = await fetch(url, { signal: controller.signal });
         const body = await response.json();
-        setHealth({ ok: response.ok, classes: body.classes, checkpoint: body.checkpoint });
+        setHealth({ ok: response.ok, classes: body.classes, checkpoint: body.checkpoint, featureDim: body.feature_dim });
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
           setHealth({ ok: false, error: "Không kết nối được API dự đoán" });
@@ -271,12 +376,207 @@ export default function Home() {
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
 
+  // ---------------------------------------------------------------- cá nhân hoá (lib/memory.ts)
+
+  const reloadSamples = useCallback(async () => {
+    try {
+      setSamples(await listSamples());
+    } catch (err) {
+      setNotice({ text: `Không đọc được mẫu cá nhân: ${(err as Error).message}`, tone: "warn" });
+    }
+  }, []);
+
+  useEffect(() => {
+    void reloadSamples();
+  }, [reloadSamples]);
+
+  // Đẩy bộ mẫu xuống recognizer (mở lại phiên server); chờ một nhịp để kéo thanh mức ảnh hưởng không mở phiên liên tục.
+  const featureDim = health?.featureDim;
+  useEffect(() => {
+    if (!loaded) return;
+    const timer = setTimeout(() => {
+      const payload = settings.personalize ? memoryPayload(samples, settings.memoryStrength, featureDim) : null;
+      recognizerRef.current?.setMemory(payload);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [samples, settings.personalize, settings.memoryStrength, featureDim, loaded]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 5000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  /** Gửi landmark lên server để kiểm tra + trích feature; trả mẫu sẵn sàng lưu, hoặc lý do không lưu. */
+  const prepareSample = async (label: string, frames: FrameLandmarks[], source: SampleSource) => {
+    const result = await submitSample(settings.apiUrl, label, frames);
+    const sample: Sample | null = result.ok ? {
+      id: newSampleId(), label, features: result.features, frames: result.frames,
+      featureDim: featureDim ?? Math.round(atob(result.features).length / 4 / result.frames),
+      handFrames: result.hand_frames, createdAt: Date.now(), source,
+    } : null;
+    return { result, sample };
+  };
+
+  /** Ghi mẫu thủ công (nút Ghi mẫu / Lưu làm mẫu). */
+  const storeSample = async (label: string, frames: FrameLandmarks[]) => {
+    const { result, sample } = await prepareSample(label, frames, "manual");
+    if (!sample) {
+      setNotice({ text: `Chưa lưu: tay không xuất hiện đủ lâu (${result.hand_frames}/${result.frames} frame). Hãy ký lại.`, tone: "warn" });
+      return;
+    }
+    await addSample(sample);
+    await reloadSamples();
+    const top = result.prediction?.top[0];
+    setNotice(result.warning === "model_disagrees" && top
+      ? { text: `Đã lưu mẫu “${label}”. Lưu ý: mô hình gốc thấy giống “${top.label}” (${Math.round(top.confidence * 100)}%); nếu ký nhầm, hãy xoá và ghi lại.`, tone: "warn" }
+      : { text: `Đã lưu mẫu “${label}”.`, tone: "ok" });
+  };
+
+  const recordSample = async (label: string) => {
+    const recognizer = recognizerRef.current;
+    if (!recognizer?.running || recording) return;
+    setPersonalizeOpen(false);
+    try {
+      for (let n = COUNTDOWN_SECONDS; n > 0; n--) {
+        setRecording({ label, stage: "countdown", count: n });
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        if (!recognizer.running) throw new Error("Camera đã tắt");
+      }
+      setRecording({ label, stage: "capture", count: 0 });
+      const frames = await recognizer.captureSample(SAMPLE_FRAMES);
+      setRecording({ label, stage: "saving", count: 0 });
+      await storeSample(label, frames);
+    } catch (err) {
+      setNotice({ text: `Không ghi được mẫu: ${(err as Error).message}`, tone: "warn" });
+    } finally {
+      setRecording(null);
+      setPersonalizeOpen(true);
+    }
+  };
+
+  const canLearn = () => {
+    const current = settingsRef.current;
+    return current.personalize && current.autoLearn && Boolean(healthRef.current?.ok);
+  };
+
+  /** Tự học: lưu cửa sổ của các từ người dùng giữ lại (chạy nền, tuần tự). */
+  const learnWindows = (windows: CommittedWindow[], realtime: boolean) => {
+    const picked = windows.filter((w) => !discarded.current.has(w) && !autoSaved.current.has(w) &&
+      w.confidence >= AUTO_MIN_CONFIDENCE && w.frames.length >= 8 &&
+      !(w.memory?.label === w.word && w.memory.similarity >= AUTO_SKIP_SIMILARITY));
+    if (picked.length === 0) return;
+    void (async () => {
+      const learned: string[] = [];
+      for (const w of picked) {
+        try {
+          const { result, sample } = await prepareSample(w.word, w.frames, "auto");
+          // Mô hình gốc rất chắc là từ khác → có thể chính phiên này đã nhận nhầm: không học.
+          if (!sample || result.warning === "model_disagrees" || discarded.current.has(w)) continue;
+          if (await addSample(sample)) {
+            autoSaved.current.set(w, sample.id);
+            learned.push(w.word);
+            // Người dùng hoàn tác đúng lúc đang lưu: bỏ mẫu vừa lưu.
+            if (discarded.current.has(w)) await forget([w]);
+          }
+        } catch {
+          return;          // server không hỗ trợ / mất kết nối: bỏ qua lần tự học này
+        }
+      }
+      if (learned.length > 0) {
+        await reloadSamples();
+        setNotice({
+          text: realtime ? `Đã học mẫu “${learned.join("”, “")}”.` : `Đã tự học ${learned.length} mẫu mới từ câu vừa ký.`,
+          tone: "ok",
+        });
+      }
+    })();
+  };
+
+  /** Bỏ các cửa sổ người dùng đã hoàn tác/xoá: huỷ lượt học đang chờ, xoá mẫu đã học từ chúng. */
+  const forget = async (windows: CommittedWindow[]) => {
+    let removed = 0;
+    for (const w of windows) {
+      discarded.current.add(w);
+      const timer = pendingLearn.current.get(w);
+      if (timer) clearTimeout(timer);
+      pendingLearn.current.delete(w);
+      const id = autoSaved.current.get(w);
+      if (id) {
+        await deleteSample(id);
+        autoSaved.current.delete(w);
+        removed += 1;
+      }
+    }
+    if (removed > 0) await reloadSamples();
+  };
+
+  learnRef.current = {
+    committed: (w) => {
+      if (settingsRef.current.learnMode !== "realtime" || !canLearn()) return;
+      // Chờ một nhịp: từ bị hoàn tác ngay sau khi chốt thì không học (và không phải xoá lại).
+      pendingLearn.current.set(w, setTimeout(() => {
+        pendingLearn.current.delete(w);
+        if (canLearn()) learnWindows([w], true);
+      }, REALTIME_GRACE_MS));
+    },
+    sentence: (windows) => {
+      if (settingsRef.current.learnMode === "sentence" && canLearn()) learnWindows(windows, false);
+    },
+    discarded: (windows) => void forget(windows),
+  };
+
+  const saveCorrection = async (label: string) => {
+    const committed = recognizerRef.current?.lastCommitted;
+    if (!committed || recording) return;
+    setRecording({ label, stage: "saving", count: 0 });
+    try {
+      // Cửa sổ này đã (hoặc sắp) được tự học với nhãn sai → bỏ mẫu đó trước.
+      await forget([committed]);
+      await storeSample(label, committed.frames);
+    } catch (err) {
+      setNotice({ text: `Không lưu được mẫu: ${(err as Error).message}`, tone: "warn" });
+    } finally {
+      setRecording(null);
+    }
+  };
+
+  const removeLabel = async (label: string) => {
+    await deleteLabel(label);
+    await reloadSamples();
+  };
+
+  const removeAll = async () => {
+    await clearSamples();
+    await reloadSamples();
+    setNotice({ text: "Đã xoá toàn bộ mẫu cá nhân trên trình duyệt này.", tone: "ok" });
+  };
+
+  const usableSamples = featureDim === undefined ? samples : samples.filter((s) => s.featureDim === featureDim);
+
   const phase: Phase = state?.phase ?? "stopped";
   const running = phase !== "stopped";
+  // Điện thoại đang chạy: camera phủ gần hết màn hình, phụ đề và nút nằm đè ở góc (như app camera).
+  const immersive = touch && running;
+  const front = (state?.facing ?? "user") === "user";
+  // Chỉ lật gương hình xem trước của camera trước; camera sau hiện đúng như mắt người cầm máy thấy.
+  const mirrorView = settings.mirrorPreview && front;
   const words = state?.words ?? [];
   const prediction = state?.prediction ?? null;
   const showCandidate = running && phase === "signing" && state?.candidate && state.count > 0;
   const bufferProgress = state && state.windowFrames > 0 ? Math.min(1, state.buffered / state.windowFrames) : 0;
+
+  // Mỗi lần chốt thêm một từ → tăng id để chạy lại hoạt ảnh nhấn mạnh (xoá/undo thì không).
+  const [commit, setCommit] = useState<{ id: number; word: string } | null>(null);
+  const prevCount = useRef(0);
+  const commitId = useRef(0);
+  const wordCount = words.length;
+  const lastWord = words[wordCount - 1];
+  useEffect(() => {
+    if (wordCount > prevCount.current && lastWord) setCommit({ id: ++commitId.current, word: lastWord });
+    else if (wordCount === 0) setCommit(null); // tránh phát lại khi bật camera lại
+    prevCount.current = wordCount;
+  }, [wordCount, lastWord]);
 
   const toggle = () => {
     const recognizer = recognizerRef.current;
@@ -288,6 +588,8 @@ export default function Home() {
       void recognizer.start();
     }
   };
+
+  const switchCamera = () => void recognizerRef.current?.switchCamera();
 
   const endSentence = () => {
     const recognizer = recognizerRef.current;
@@ -307,6 +609,12 @@ export default function Home() {
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
   };
+
+  // Khoá cuộn trang phía sau khung camera toàn màn hình.
+  useEffect(() => {
+    document.documentElement.classList.toggle("immersive", immersive);
+    return () => document.documentElement.classList.remove("immersive");
+  }, [immersive]);
 
   // Sheet cài đặt: Esc để đóng, đưa focus vào sheet khi mở.
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -337,6 +645,14 @@ export default function Home() {
             {healthText}
           </span>
           <ThemeToggle />
+          <button
+            className={`icon-button${settings.personalize && usableSamples.length > 0 ? " is-on" : ""}`}
+            onClick={() => setPersonalizeOpen(true)}
+            aria-label="Mở cá nhân hoá"
+            title={settings.personalize && usableSamples.length > 0 ? `Cá nhân hoá: ${usableSamples.length} mẫu` : "Cá nhân hoá"}
+          >
+            <Icon name="user" />
+          </button>
           <button className="icon-button" onClick={() => setSettingsOpen(true)} aria-label="Mở cài đặt">
             <Icon name="settings" />
           </button>
@@ -345,15 +661,15 @@ export default function Home() {
 
       <main className="workspace">
         <section className="stage" aria-label="Camera">
-          <div className={`frame phase-${phase}`}>
+          <div className={`frame phase-${phase}${immersive ? " immersive" : ""}`}>
             <video
               ref={videoRef}
-              className={settings.mirrorPreview ? "mirror" : undefined}
+              className={mirrorView ? "mirror" : undefined}
               playsInline
               muted
             />
             {settings.debugCrop && (
-              <canvas ref={overlayRef} className={`debug-overlay${settings.mirrorPreview ? " mirror" : ""}`} aria-hidden="true" />
+              <canvas ref={overlayRef} className={`debug-overlay${mirrorView ? " mirror" : ""}`} aria-hidden="true" />
             )}
             <span className="corner tl" /><span className="corner tr" />
             <span className="corner bl" /><span className="corner br" />
@@ -370,6 +686,28 @@ export default function Home() {
             )}
             {phase === "starting" && <div className="frame-empty"><p className="frame-empty-title">Đang mở camera…</p></div>}
 
+            {recording && (
+              <div className="record-overlay" role="status">
+                <p className="record-label">Mẫu: <strong>{recording.label}</strong></p>
+                {recording.stage === "countdown" && (
+                  <>
+                    <span key={recording.count} className="record-count">{recording.count}</span>
+                    <p className="record-hint">Chuẩn bị ký, bắt đầu khi hết đếm</p>
+                  </>
+                )}
+                {recording.stage === "capture" && (
+                  <>
+                    <span className="record-bar">
+                      <span style={{ transform: `scaleX(${(state?.capture?.done ?? 0) / SAMPLE_FRAMES})` }} />
+                    </span>
+                    <p className="record-hint">Đang ghi, ký một lần trọn vẹn</p>
+                    <button className="btn btn-ghost" onClick={() => recognizerRef.current?.cancelCapture()}>Huỷ</button>
+                  </>
+                )}
+                {recording.stage === "saving" && <p className="record-hint">Đang kiểm tra mẫu…</p>}
+              </div>
+            )}
+
             {running && phase !== "starting" && (
               <>
                 <div className="hud-phase" role="status">
@@ -380,9 +718,29 @@ export default function Home() {
                   <Swap value={phase}>{PHASE_TEXT[phase]}</Swap>
                 </div>
                 {state?.latencyMs != null && (
-                  <span className="hud-latency" title={`Từ lúc chụp frame tới lúc có kết quả; MediaPipe ${state.delegate ?? ""} trên trình duyệt ${state.detectMs ?? "–"} ms/frame`}>
-                    {state.latencyMs} ms
+                  <span
+                    className={`hud-latency${state.captureFps != null && state.captureFps < 12 ? " slow" : ""}`}
+                    title={`Từ lúc chụp frame tới lúc có kết quả; MediaPipe ${state.delegate ?? ""} trên trình duyệt ${state.detectMs ?? "–"} ms/frame; thu ${state.captureFps ?? "–"} fps (chuẩn 15)`}
+                  >
+                    {state.latencyMs} ms{state.captureFps != null ? ` · ${Math.round(state.captureFps)} fps` : ""}
                   </span>
+                )}
+                {commit && (
+                  <>
+                    <span key={`flash-${commit.id}`} className="frame-flash" aria-hidden="true" />
+                    <span key={`wave-${commit.id}`} className="frame-wave" aria-hidden="true" />
+                    <span key={`stamp-${commit.id}`} className="hud-stamp" aria-hidden="true">
+                      <svg className="stamp-check" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10" pathLength={1} />
+                        <path d="M7.5 12.5l3 3 6-6.5" pathLength={1} />
+                      </svg>
+                      <span className="stamp-word">
+                        {graphemes(commit.word).map((ch, i) => (
+                          <span key={i} style={{ "--i": i } as React.CSSProperties}>{ch}</span>
+                        ))}
+                      </span>
+                    </span>
+                  </>
                 )}
                 {showCandidate && (
                   <div className="hud-candidate" key={state!.candidate}>
@@ -394,6 +752,65 @@ export default function Home() {
                     </span>
                   </div>
                 )}
+              </>
+            )}
+
+            {immersive && (
+              <>
+                {/* Phụ đề ở góc dưới trái: các từ vừa ký (từ đang chờ chốt mờ dần), bên dưới là câu đã ghép. */}
+                <div className="live-caption" aria-live="polite">
+                  {words.length > 0 || showCandidate ? (
+                    <>
+                      <div className="live-tokens">
+                        {words.map((word, i) => (
+                          <span key={`${i}-${word}`} className="live-token">{word}</span>
+                        ))}
+                        {showCandidate && (
+                          <span
+                            key={`ghost-${state!.candidate}`}
+                            className="live-token ghost"
+                            style={{ "--fill": state!.count / state!.required } as React.CSSProperties}
+                          >
+                            {state!.candidate}
+                          </span>
+                        )}
+                      </div>
+                      {sentence.text && <p className="live-text">{sentence.text}</p>}
+                    </>
+                  ) : history[0] ? (
+                    <>
+                      <span className="live-label">Câu vừa xong</span>
+                      <p className="live-text">{history[0].text}</p>
+                    </>
+                  ) : (
+                    <p className="live-hint">Đưa tay vào khung hình và bắt đầu ký.</p>
+                  )}
+                </div>
+
+                {state?.error && <p className="live-error" role="alert">{state.error}</p>}
+
+                {/* Nút dọc mép phải, trong tầm ngón cái. */}
+                <div className="live-actions">
+                  {(state?.cameraCount ?? 0) > 1 && (
+                    <button
+                      className="round-btn"
+                      onClick={switchCamera}
+                      disabled={state?.switching || phase === "starting"}
+                      aria-label={front ? "Chuyển sang camera sau" : "Chuyển sang camera trước"}
+                    >
+                      <Icon name="flip" />
+                    </button>
+                  )}
+                  <button className="round-btn" onClick={() => recognizerRef.current?.undo()} disabled={words.length === 0} aria-label="Xoá từ cuối">
+                    <Icon name="undo" />
+                  </button>
+                  <button className="round-btn" onClick={endSentence} disabled={words.length === 0} aria-label="Kết thúc câu">
+                    <Icon name="flag" />
+                  </button>
+                  <button className="round-btn stop" onClick={toggle} aria-label="Dừng phiên dịch">
+                    <Icon name="stop" />
+                  </button>
+                </div>
               </>
             )}
           </div>
@@ -421,6 +838,7 @@ export default function Home() {
           </div>
 
           {state?.error && <p className="error" role="alert">{state.error}</p>}
+          {notice && <p className={`notice notice-${notice.tone}`} role="status">{notice.text}</p>}
 
           <div className={`insight ${prediction ? "" : "is-empty"}`} aria-live="polite">
             <div className="insight-head">
@@ -429,6 +847,11 @@ export default function Home() {
                 <Swap value={prediction.rejection_reason ?? ""} className="insight-reject">
                   {REJECT_TEXT[prediction.rejection_reason ?? ""] ?? "Chưa chắc chắn"}
                 </Swap>
+              )}
+              {prediction?.memory && prediction.memory.similarity >= 0.5 && (
+                <span className="insight-memory" title="Độ giống với mẫu cá nhân gần nhất">
+                  Giống mẫu “{prediction.memory.label}” {percent(prediction.memory.similarity)}
+                </span>
               )}
             </div>
             <ol className="bars">
@@ -521,6 +944,31 @@ export default function Home() {
           </div>
         </section>
       </main>
+
+      <PersonalizeSheet
+        open={personalizeOpen}
+        onClose={() => setPersonalizeOpen(false)}
+        classes={health?.classes ?? []}
+        samples={usableSamples}
+        staleCount={samples.length - usableSamples.length}
+        enabled={settings.personalize}
+        strength={settings.memoryStrength}
+        running={running}
+        busy={recording !== null}
+        activeExemplars={state?.memoryExemplars ?? null}
+        memoryError={state?.memoryError ?? null}
+        committed={commit ? recognizerRef.current?.lastCommitted ?? null : null}
+        autoLearn={settings.autoLearn}
+        learnMode={settings.learnMode}
+        onLearnMode={(value) => update("learnMode", value)}
+        onAutoLearn={(value) => update("autoLearn", value)}
+        onEnabled={(value) => update("personalize", value)}
+        onStrength={(value) => update("memoryStrength", value)}
+        onRecord={(label) => void recordSample(label)}
+        onSaveCorrection={(label) => void saveCorrection(label)}
+        onDeleteLabel={(label) => void removeLabel(label)}
+        onClearAll={() => void removeAll()}
+      />
 
       <div className={`sheet-backdrop ${settingsOpen ? "open" : ""}`} onClick={() => setSettingsOpen(false)} aria-hidden="true" />
       <aside
@@ -633,6 +1081,7 @@ export default function Home() {
               <p className="help">
                 Camera: {state.resolution}, pad về 1280×1280. MediaPipe chạy trên trình duyệt
                 {state.delegate ? ` (${state.delegate}${state.detectMs != null ? `, ${state.detectMs} ms/frame` : ""})` : ""}, chỉ gửi landmark lên API.
+                {state.captureFps != null && ` Thu thật ${state.captureFps} fps (chuẩn 15; máy chậm hơn vẫn dự đoán đúng 2 giây nhưng ít chi tiết chuyển động hơn).`}
               </p>
             )}
           </section>

@@ -10,6 +10,7 @@ from src.data.data_reader import DataHandler
 from src.data.reextract import find_raw_samples, reextract_sample
 from src.features.extract import FEATURE_DIM, FEATURE_VERSION, SEQ_FEATURE_DIM, process_sequence
 from src.features.frame import FRAME_SIZE
+from src.features.landmarks import LANDMARKS_FILE, load_landmarks
 
 
 class ReextractTests(unittest.TestCase):
@@ -32,7 +33,9 @@ class ReextractTests(unittest.TestCase):
             features[:, 0] = 1.0
             features[:, -1] = 1.0
 
-            with patch("src.data.reextract.extract_video_features", return_value=(features, 25.0)):
+            marks = (np.full((8, 33, 4), 0.5, np.float32), np.full((8, 2, 21, 3), np.nan, np.float32),
+                     np.full((8, 2, 21, 3), np.nan, np.float32))
+            with patch("src.data.reextract.extract_video_features", return_value=(features, 25.0, marks)):
                 result = reextract_sample(video, raw, processed, backup)
 
             self.assertEqual(result["frames"], 8)
@@ -47,6 +50,9 @@ class ReextractTests(unittest.TestCase):
             raw_features = np.stack([DataHandler._load_feature(target / f"{i}.npz") for i in range(8)])
             self.assertEqual(process_sequence(raw_features).shape, (30, SEQ_FEATURE_DIM))
             self.assertEqual(find_raw_samples(raw), [video])
+            pose, hands, _ = load_landmarks(target / LANDMARKS_FILE)
+            self.assertEqual(pose.shape, (8, 33, 4))
+            self.assertTrue(np.isnan(hands).all())
 
     def test_failed_extraction_leaves_old_sample_in_place(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -35,8 +35,8 @@ Luồng liên tục (nhanh hơn nhiều): mỗi client mở một phiên giữ l
         "timestamps": [1234.5, ...],  # tuỳ chọn; ms lúc thu từng frame (tăng dần), mặc định theo fps
         "reset": false,               # tuỳ chọn; xoá cửa sổ trước khi thêm (vd. sau khi chốt một từ)
         "predict": true,              # tuỳ chọn; false = chỉ trích feature các frame mới, không chạy model
-        "window": 30,                 # tuỳ chọn; dự đoán trên tối đa N frame gần nhất (1–cửa sổ phiên)
-        "min_frames": 30,             # tuỳ chọn; dự đoán khi đã có >= N frame (1–window), mặc định = window
+        "window": 30,                 # tuỳ chọn; dự đoán trên N nhịp (frame ở ``fps``) gần nhất (1–cửa sổ phiên)
+        "min_frames": 30,             # tuỳ chọn; dự đoán khi đã có >= N nhịp (1–window), mặc định = window
         "fps": 15, "mirror_data": false, "top_k": 3
       }
 
@@ -52,11 +52,30 @@ Luồng liên tục (nhanh hơn nhiều): mỗi client mở một phiên giữ l
 
   ``window``/``min_frames`` nhỏ hơn cho kết quả sớm hơn (model thấy ít ký hiệu hơn nên kém chính xác hơn);
   ``predict_raw`` tự nội suy số frame đó về 30.
-  Trả ``ready`` (đã đủ ``min_frames``), ``predicted``, ``buffered``, ``window``, ``frames`` và ``hand_frames``
-  (của các frame đem dự đoán), ``elapsed_ms``; khi ``predicted`` (``ready`` và ``predict``) thêm kết quả dự
+
+  Cửa sổ tính theo THỜI GIAN (timestamp của client, thiếu thì suy từ ``fps``): ``window`` = 30 ở ``fps`` 15 là
+  2 giây gần nhất, dù client thu 7 fps (điện thoại, ~15 frame) hay 30 fps (~60 frame). Cửa sổ theo số frame
+  từng làm máy chậm đưa cho model 4 giây cử chỉ (lẫn lúc nghỉ / ký hiệu trước) và ngưỡng ``hand_frames``
+  không bao giờ đạt.
+  Trả ``ready`` (đã đủ ``min_frames``), ``predicted``, ``buffered`` (thời lượng đang giữ, đơn vị nhịp ``fps``),
+  ``window``, ``frames`` (số frame thật đem dự đoán), ``hand_frames`` (thời lượng có tay trong cửa sổ đó, đơn
+  vị nhịp ``fps``), ``capture_fps`` (nhịp thu thật của client), ``elapsed_ms``; khi ``predicted`` (``ready`` và ``predict``) thêm kết quả dự
   đoán như ``/api/predict``.
   Phiên không tồn tại/hết hạn → 404.
 - ``DELETE /api/stream/<id>``   → đóng phiên (204). Phiên không dùng quá ``stream_idle_s`` tự đóng.
+
+Cá nhân hoá (bộ nhớ mẫu, ``src/model/memory.py``): mẫu được lưu ở client, server chỉ giữ trong phiên.
+
+- ``POST /api/memory/sample`` → JSON ``{"label": "toi", "landmarks": [...]}`` (hoặc ``features``) của một lần
+  ký mẫu. Trả ``{"ok", "reason", "warning", "features", "frames", "hand_frames", "prediction"}``: ``features``
+  là feature thô float32 little-endian mã hoá base64 để client lưu; ``ok: false`` (``reason: "few_hands"``)
+  khi tay không xuất hiện đủ lâu; ``warning: "model_disagrees"`` khi mô hình gốc rất chắc đó là từ khác.
+- ``POST /api/stream`` nhận thêm body tuỳ chọn ``{"memory": {"strength": 0.5, "exemplars": [{"label",
+  "features", "frames"}, ...]}}``: mọi dự đoán của phiên dùng bộ nhớ đó, kết quả có thêm ``memory``
+  (lớp có mẫu giống nhất và độ giống). Phản hồi mở phiên có ``memory`` (số mẫu theo lớp, lớp bị bỏ qua).
+- ``POST /api/stream/<id>/memory`` → body ``{"memory": {...}}`` như trên (``null`` hoặc không có mẫu = tắt):
+  thay bộ mẫu của phiên đang mở mà KHÔNG xoá cửa sổ frame (dùng khi tự học theo thời gian thực).
+  Trả ``{"memory": tóm tắt | null}``; phiên không tồn tại → 404.
 
 Chạy::
 
@@ -86,11 +105,13 @@ from src.features.extract import FEATURE_DIM, active_presence, extract
 from src.features.frame import frame_padding
 from src.features.landmarks import dict_to_results
 from src.features.schema import EXPECTED_FRAMES
+from src.model.memory import MAX_EXEMPLARS, MAX_FRAMES, Exemplar, check_exemplar_features
 from src.model.predict import VSLPredictor
 
 DEFAULT_FPS = 15.0
 MAX_TOP_K = 10
 MAX_STREAM_FRAMES = 60
+MIN_SAMPLE_HAND_FRAMES = 8      # mẫu cá nhân: tay phải xuất hiện ít nhất chừng này frame (và >= nửa clip)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
@@ -171,10 +192,16 @@ class StreamSession:
     def __init__(self, factory, window: int) -> None:
         self._factory = factory
         self._extractor = None
-        self.features: deque[np.ndarray] = deque(maxlen=window)
+        self.window = window
+        # Cửa sổ giữ theo THỜI GIAN (``window`` frame ở nhịp ``fps`` lúc train = 2 giây), không theo số frame:
+        # thiết bị chậm (điện thoại ~7 fps) hay nhanh (30 fps) đều cho model đúng 2 giây cử chỉ như lúc train.
+        # maxlen chỉ để chặn bộ nhớ (client gửi tối đa ~60 fps).
+        self.features: deque[np.ndarray] = deque(maxlen=4 * window)
+        self.times: deque[int] = deque(maxlen=4 * window)
         self.last_timestamp = -1
         self.lock = threading.Lock()          # mỗi phiên xử lý tuần tự (tracking phụ thuộc thứ tự frame)
         self.touched = time.monotonic()
+        self.memory = None                    # memory.MemoryEnsemble của người dùng phiên này
 
     @property
     def extractor(self):
@@ -201,6 +228,40 @@ class StreamSession:
             result.append(self.last_timestamp)
         return result
 
+    def clear(self) -> None:
+        self.features.clear()
+        self.times.clear()
+
+    def _interval(self, step: float) -> float:
+        """Khoảng cách thật giữa hai frame của client (trung vị), mặc định ``step`` khi chưa đủ frame."""
+        return float(np.median(np.diff(self.times))) if len(self.times) > 1 else step
+
+    def append(self, features, times, fps: float) -> None:
+        """Thêm frame mới rồi bỏ frame đã ra ngoài cửa sổ ``window`` frame ở nhịp ``fps``."""
+        self.features.extend(features)
+        self.times.extend(times)
+        step = 1000 / fps
+        limit = self.window * step - self._interval(step) / 2
+        while len(self.times) > 1 and self.times[-1] - self.times[0] > limit:
+            self.times.popleft()
+            self.features.popleft()
+
+    def recent(self, window: int, fps: float) -> tuple[np.ndarray, int, int]:
+        """Feature của ``window`` frame (quy về nhịp ``fps``) gần nhất theo thời gian.
+
+        Trả ``(features, covered, buffered)``: ``covered``/``buffered`` là thời lượng của cửa sổ này / của cả
+        bộ đệm, đổi ra số frame ở nhịp ``fps`` (thời lượng = khoảng từ frame đầu tới frame cuối + một khoảng
+        thu của client).
+        """
+        step = 1000 / fps
+        interval = self._interval(step)
+        times = np.asarray(self.times, dtype=np.float64)
+        first = int(np.searchsorted(times, times[-1] - (window * step - interval / 2)))
+        frames = lambda span: int((span + interval) / step + 0.5)
+        covered = min(window, frames(times[-1] - times[first]))
+        buffered = min(self.window, frames(times[-1] - times[0]))
+        return np.stack(list(self.features)[first:]), covered, buffered
+
 
 class StreamStore:
     """Các phiên đang mở; phiên không dùng quá ``idle_s`` giây bị đóng khi có request kế tiếp."""
@@ -219,13 +280,14 @@ class StreamStore:
             if now - session.touched > self.idle_s and not session.lock.locked():
                 self._sessions.pop(sid).close()
 
-    def open(self) -> str | None:
+    def open(self, memory=None) -> str | None:
         with self._lock:
             self._sweep()
             if len(self._sessions) >= self.max_sessions:
                 return None
             sid = secrets.token_urlsafe(12)
             self._sessions[sid] = StreamSession(self.factory, self.window)
+            self._sessions[sid].memory = memory
             return sid
 
     def get(self, sid: str) -> StreamSession | None:
@@ -257,6 +319,49 @@ def _parse_options(body: dict, default_mirror_data: bool) -> tuple[float, bool, 
     return float(fps), mirror_data, top_k
 
 
+def encode_features(features: np.ndarray) -> str:
+    """Feature thô -> base64 của float32 little-endian (gọn hơn JSON số ~3 lần, giữ nguyên NaN)."""
+    return base64.b64encode(np.ascontiguousarray(features, dtype="<f4").tobytes()).decode("ascii")
+
+
+def decode_features(data, frames) -> np.ndarray:
+    """Ngược với ``encode_features``: ``(frames, FEATURE_DIM)``; dữ liệu sai -> BadRequest."""
+    if not isinstance(data, str) or isinstance(frames, bool) or not isinstance(frames, int):
+        raise BadRequest("Mỗi mẫu cần 'features' (chuỗi base64) và 'frames' (số nguyên)")
+    if not 1 <= frames <= MAX_FRAMES:
+        raise BadRequest(f"'frames' của mẫu phải trong [1, {MAX_FRAMES}]")
+    try:
+        raw = base64.b64decode(data, validate=True)
+    except (binascii.Error, ValueError):
+        raise BadRequest("'features' của mẫu không phải base64 hợp lệ") from None
+    if len(raw) != frames * FEATURE_DIM * 4:
+        raise BadRequest(f"'features' của mẫu phải có {frames} x {FEATURE_DIM} số float32")
+    try:
+        return check_exemplar_features(np.frombuffer(raw, dtype="<f4").reshape(frames, FEATURE_DIM))
+    except ValueError as exc:
+        raise BadRequest(str(exc)) from None
+
+
+def parse_memory(body) -> tuple[list[Exemplar], float] | None:
+    """``{"strength", "exemplars": [{"label", "features", "frames"}]}`` -> (mẫu, strength); không có -> None."""
+    if body is None:
+        return None
+    if not isinstance(body, dict):
+        raise BadRequest("'memory' phải là JSON object")
+    strength = body.get("strength", 0.5)
+    if isinstance(strength, bool) or not isinstance(strength, (int, float)) or not 0 <= strength <= 1:
+        raise BadRequest("'memory.strength' phải là số trong [0, 1]")
+    items = body.get("exemplars", [])
+    if not isinstance(items, list) or len(items) > MAX_EXEMPLARS:
+        raise BadRequest(f"'memory.exemplars' phải là mảng tối đa {MAX_EXEMPLARS} mẫu")
+    exemplars = []
+    for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get("label"), str):
+            raise BadRequest("Mỗi mẫu cần 'label' là chuỗi")
+        exemplars.append(Exemplar(item["label"], decode_features(item.get("features"), item.get("frames"))))
+    return exemplars, float(strength)
+
+
 def _int_option(body: dict, key: str, default: int, low: int, high: int) -> int:
     value = body.get(key, default)
     if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
@@ -282,11 +387,21 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
     streams = StreamStore(stream_extractor_factory, window=expected_frames or EXPECTED_FRAMES,
                           max_sessions=max_streams, idle_s=stream_idle_s)
 
-    def run_model(features: np.ndarray, top_k: int) -> dict:
+    def run_model(features: np.ndarray, top_k: int, memory=None) -> dict:
         try:
             with model_lock, torch.inference_mode():
-                return predictor.predict_raw(features, top_k=top_k)
+                return predictor.predict_raw(features, top_k=top_k, ensemble=memory)
         except ValueError as exc:          # vd. feature chứa vô cực
+            raise BadRequest(str(exc)) from None
+
+    def build_memory(parsed):
+        """Kết quả ``parse_memory`` -> ``MemoryEnsemble`` (None khi không có mẫu)."""
+        if parsed is None or not parsed[0]:
+            return None
+        try:
+            with model_lock, torch.inference_mode():
+                return predictor.build_memory(parsed[0], strength=parsed[1])
+        except ValueError as exc:
             raise BadRequest(str(exc)) from None
 
     def count_hand_frames(features) -> int:
@@ -395,11 +510,57 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
     def stream_open():
         if request.method == "OPTIONS":
             return "", 204
-        sid = streams.open()
+        body = request.get_json(silent=True) if request.content_length else None
+        memory = build_memory(parse_memory(body.get("memory")) if isinstance(body, dict) else None)
+        sid = streams.open(memory)
         if sid is None:
             return jsonify(error=f"Server đã đủ {streams.max_sessions} phiên, thử lại sau"), 503
         # binary: server nhận multipart + cờ predict; landmarks: nhận landmark thay ảnh (client cũ bỏ qua).
-        return jsonify(session_id=sid, window=streams.window, binary=True, landmarks=True), 201
+        # memory: server hỗ trợ bộ nhớ mẫu cá nhân (null khi phiên không dùng).
+        return jsonify(session_id=sid, window=streams.window, binary=True, landmarks=True,
+                       memory=memory.summary() if memory is not None else None), 201
+
+    @app.route("/api/stream/<sid>/memory", methods=["POST", "OPTIONS"])
+    def stream_memory(sid: str):
+        if request.method == "OPTIONS":
+            return "", 204
+        body = json_body()
+        parsed = parse_memory(body.get("memory"))
+        memory = build_memory(parsed)
+        session = streams.get(sid)
+        if session is None:
+            return jsonify(error="Phiên không tồn tại hoặc đã hết hạn"), 404
+        session.memory = memory
+        return jsonify(memory=memory.summary() if memory is not None else None)
+
+    @app.route("/api/memory/sample", methods=["POST", "OPTIONS"])
+    def memory_sample():
+        if request.method == "OPTIONS":
+            return "", 204
+        body = json_body()
+        label = body.get("label")
+        if not isinstance(label, str) or label not in predictor.classes:
+            raise BadRequest("'label' phải là một lớp của checkpoint (xem /api/health)")
+        if "landmarks" in body:
+            landmarks = body["landmarks"]
+            if not isinstance(landmarks, list) or not 1 <= len(landmarks) <= MAX_FRAMES:
+                raise BadRequest(f"'landmarks' phải là mảng 1–{MAX_FRAMES} frame")
+            features = landmarks_to_features(landmarks)
+        else:
+            features = decode_features(body.get("features"), body.get("frames"))
+        try:
+            features = check_exemplar_features(features)
+        except ValueError as exc:
+            raise BadRequest(str(exc)) from None
+        hand_frames = count_hand_frames(features)
+        ok = hand_frames >= max(MIN_SAMPLE_HAND_FRAMES, len(features) // 2)
+        result = run_model(features, 3) if ok else None
+        warning = None
+        if result is not None and result["top"][0]["label"] != label and result["top"][0]["confidence"] >= 0.9:
+            warning = "model_disagrees"
+        return jsonify(ok=ok, reason=None if ok else "few_hands", warning=warning, label=label,
+                       features=encode_features(features), frames=int(len(features)), hand_frames=hand_frames,
+                       prediction=result)
 
     @app.route("/api/stream/<sid>", methods=["POST", "DELETE", "OPTIONS"])
     def stream_frames(sid: str):
@@ -429,21 +590,24 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
             return jsonify(error="Phiên không tồn tại hoặc đã hết hạn"), 404
         with session.lock:
             if reset:
-                session.features.clear()
-            if given is not None:
-                session.features.extend(given)              # MediaPipe đã chạy ở client
-            else:
-                for frame, ts in zip(decoded, session.next_timestamps(timestamps, count, fps)):
-                    session.features.append(session.extractor.extract(frame, timestamp_ms=ts, mirror_data=mirror_data))
+                session.clear()
+            times = session.next_timestamps(timestamps, count, fps)
+            if given is None:
+                given = [session.extractor.extract(frame, timestamp_ms=ts, mirror_data=mirror_data)
+                         for frame, ts in zip(decoded, times)]
+            session.append(given, times, fps)              # landmark: MediaPipe đã chạy ở client
             session.touched = time.monotonic()
-            buffered = len(session.features)
-            recent = np.stack(list(session.features)[-window_size:])
+            recent, covered, buffered = session.recent(window_size, fps)
 
         ready = buffered >= min_frames
         predicted = ready and predict_now
-        result = run_model(recent, top_k) if predicted else {}
+        result = run_model(recent, top_k, session.memory) if predicted else {}
+        # buffered / hand_frames tính theo đơn vị frame ở nhịp ``fps`` (như lúc train) dù client thu nhanh hay chậm;
+        # frames là số frame thật đem dự đoán, capture_fps là nhịp thu thật của client.
+        hand_frames = round(count_hand_frames(recent) * covered / len(recent))
+        capture_fps = round(1000 / session._interval(1000 / fps), 1)
         result.update(ready=ready, predicted=predicted, buffered=buffered, window=window_size,
-                      frames=int(recent.shape[0]), hand_frames=count_hand_frames(recent),
+                      frames=int(recent.shape[0]), hand_frames=hand_frames, capture_fps=capture_fps,
                       elapsed_ms=round((time.perf_counter() - started) * 1000, 1))
         return jsonify(result)
 

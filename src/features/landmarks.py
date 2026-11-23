@@ -77,3 +77,63 @@ def results_to_dict(pose_res, hand_res) -> dict:
     if world is not None and len(world) >= len(hands):
         out["hands_world"] = [rows(h) for h in world[:len(hands)]]
     return out
+
+
+# =============================================================================
+# LANDMARK THÔ DẠNG MẢNG (lưu cạnh feature của mỗi mẫu: data/processed/<lớp>/<id>/landmarks.npz)
+# =============================================================================
+LANDMARKS_FILE = "landmarks.npz"
+
+
+def results_to_arrays(pose_res, hand_res) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Kết quả MediaPipe của 1 frame → ``pose (33, 4)``, ``hands (2, 21, 3)``, ``world (2, 21, 3)`` float32.
+
+    Phần không có (không người, < 2 tay, thiếu world) là NaN. Thứ tự tay giữ nguyên như MediaPipe trả về
+    (``extract`` tự ghép trái/phải theo cổ tay pose nên thứ tự không quan trọng).
+    """
+    frame = results_to_dict(pose_res, hand_res)
+    pose = np.full((POSE_POINTS, 4), np.nan, dtype=np.float32)
+    hands = np.full((MAX_HANDS, HAND_POINTS, 3), np.nan, dtype=np.float32)
+    world = np.full((MAX_HANDS, HAND_POINTS, 3), np.nan, dtype=np.float32)
+    if frame["pose"] is not None:
+        pose[:] = frame["pose"]
+    for k, h in enumerate(frame["hands"]):
+        hands[k] = h
+    for k, h in enumerate(frame.get("hands_world") or []):
+        world[k] = h
+    return pose, hands, world
+
+
+def arrays_to_results(pose: np.ndarray, hands: np.ndarray, world: np.ndarray) -> tuple[SimpleNamespace, SimpleNamespace]:
+    """Ngược lại ``results_to_arrays`` cho 1 frame: hàng/tay có NaN coi như không detect được."""
+    frame = {"pose": pose.tolist() if np.isfinite(pose).all() else None, "hands": []}
+    kept_world = []
+    for h, w in zip(hands, world):
+        if np.isfinite(h).all():
+            frame["hands"].append(h.tolist())
+            kept_world.append(w.tolist() if np.isfinite(w).all() else None)
+    if frame["hands"] and all(w is not None for w in kept_world):
+        frame["hands_world"] = kept_world
+    return dict_to_results(frame)
+
+
+def save_landmarks(path, pose: np.ndarray, hands: np.ndarray, world: np.ndarray) -> None:
+    """Ghi landmark của cả clip: pose (T, 33, 4), hands / world (T, 2, 21, 3)."""
+    pose, hands, world = check_landmarks(pose, hands, world)
+    np.savez_compressed(path, pose=pose, hands=hands, world=world)
+
+
+def load_landmarks(path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    with np.load(path, allow_pickle=False) as data:
+        return check_landmarks(data["pose"], data["hands"], data["world"])
+
+
+def check_landmarks(pose, hands, world) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    pose, hands, world = (np.asarray(a, dtype=np.float32) for a in (pose, hands, world))
+    T = len(pose)
+    if (pose.shape != (T, POSE_POINTS, 4) or hands.shape != (T, MAX_HANDS, HAND_POINTS, 3)
+            or world.shape != hands.shape):
+        raise ValueError(f"Landmark sai shape: pose {pose.shape}, hands {hands.shape}, world {world.shape}")
+    if any(np.isinf(a).any() for a in (pose, hands, world)):
+        raise ValueError("Landmark chứa vô cực")
+    return pose, hands, world

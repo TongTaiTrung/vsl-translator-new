@@ -15,7 +15,7 @@ Use the project virtualenv at `.venv/` (Python 3.12). Install with `pip install 
 Tests use `unittest`, not pytest, which isn't installed. `tests/` has no `__init__.py`, so `discover` fails. Run modules by dotted name from the repo root:
 
 ```bash
-.venv/bin/python -m unittest tests.test_predict tests.test_reextract tests.test_feature_augmentation tests.test_training_robustness tests.test_builtin_collection tests.test_training_p1 tests.test_evaluation tests.test_feature_v3 tests.test_app tests.test_fast tests.test_server
+.venv/bin/python -m unittest tests.test_predict tests.test_reextract tests.test_feature_augmentation tests.test_training_robustness tests.test_builtin_collection tests.test_training_p1 tests.test_evaluation tests.test_feature_v3 tests.test_app tests.test_fast tests.test_server tests.test_memory tests.test_camera tests.test_view
 .venv/bin/python -m unittest tests.test_predict.PredictorTests.test_checkpoint_prediction_is_json_ready_and_validates_shape
 ```
 
@@ -35,8 +35,11 @@ The normal workflow runs through the notebooks in `notebooks/`, from the project
 **Data storage (`src/data/data_reader.py:DataHandler`).** `DataHandler` owns the dataset layout:
 - `data/raw/<class>/<id>.mp4`: original recordings
 - `data/processed/<class>/<id>/<frame>.npz` plus meta: raw per-frame features
+- `data/processed/<class>/<id>/landmarks.npz` (original samples only, written by `reextract`): raw MediaPipe pose `(T,33,4)`, hands and hand-world `(T,2,21,3)`, NaN when absent (`src/features/landmarks.py`). `_frame_paths` ignores it because its stem is not numeric.
 
 Class names are NFC-normalized Vietnamese. `augment.py` and `reextract.py` call its *private static* helpers directly (`_read_meta`, `_frame_paths`, `_load_feature`) and its constants (`FEATURE_DIM`, `PRESENCE_COLS`, `MIN_FRAMES`, `SEQUENCE_LENGTH`). Changing those signatures breaks both modules.
+
+**Setup shift and landmark augmentation.** Every class except `m` was recorded in one session, and the same sign in two setups (`m` on 16/11 vs 18/11) is farther apart in feature space than two different signs in one setup, so CV (grouped by origin sample) does not measure real use. `src/features/view.py` simulates another recording setup on landmarks (camera yaw/pitch/roll orbit around mid-shoulder, distance/FOV via perspective, hand size, signing position, per-clip finger-joint bias, because rigid rotation leaves handshape unchanged but MediaPipe's joint estimates drift between setups) and recomputes features with `extract`; `IDENTITY` reproduces the stored features. `augment.make_variant` uses it whenever `landmarks.npz` exists and falls back to feature noise plus `rotate_view_pitch` otherwise. `src/model/benchmark.py` holds out `class@session` (or `@session`) entirely: `invariance` (no training), `build` (in-memory augmentation, `--mode landmark|feature|none`), `train`, `eval`. Keep its runs under `runs/experiments/` so `VSLPredictor` does not pick them as the newest `runs/*/ensemble.pt`.
 
 **Grouping and augmentation.** Augmented samples record `origin_sample_id` in their meta and share their source's group. Cross-validation (`make_folds`, StratifiedGroupKFold) keeps each origin group together, and validation/OOF metrics use original samples only (`validation_mask`). Never augment an augmented sample. Keep these invariants: they are the project's only guard against leakage.
 

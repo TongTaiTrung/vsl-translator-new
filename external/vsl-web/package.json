@@ -6,6 +6,8 @@
     "mediapipe": "node scripts/copy-mediapipe.mjs",
     "predev": "node scripts/copy-mediapipe.mjs",
     "dev": "next dev",
+    "predev:lan": "node scripts/copy-mediapipe.mjs",
+    "dev:lan": "node scripts/dev-lan.mjs",
     "prebuild": "node scripts/copy-mediapipe.mjs",
     "build": "next build",
     "start": "next start",

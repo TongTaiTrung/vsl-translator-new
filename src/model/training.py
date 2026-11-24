@@ -119,9 +119,9 @@ def get_device() -> torch.device:
 def default_groups(d: int) -> list[tuple[int, int]]:
     """Nhóm cột theo bố cục FEATURE_SLICES (FEATURE_DIM hoặc SEQ_FEATURE_DIM). Khác -> 1 nhóm."""
     if d in (FEATURE_DIM, SEQ_FEATURE_DIM):
-        S = FEATURE_SLICES   # vị trí | thủ hình | điểm bàn tay | hướng | hiện diện | chuyển động | nét
-        b = [0, S["handshape"].start, S["hand_local"].start, S["orientation"].start, S["presence"].start,
-             FEATURE_DIM]
+        S = FEATURE_SLICES   # vị trí | thủ hình | điểm bàn tay | độ cong ngón | hướng | hiện diện | chuyển động | nét
+        b = [0, S["handshape"].start, S["hand_local"].start, S["finger_curl"].start, S["orientation"].start,
+             S["presence"].start, FEATURE_DIM]
         if d == SEQ_FEATURE_DIM:
             b += [STROKE_SLICE.start, SEQ_FEATURE_DIM]   # nhóm riêng: group-drop vị trí buộc model dùng nét
     else:

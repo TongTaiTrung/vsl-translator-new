@@ -1,6 +1,6 @@
 # Module `src/features`
 
-Chuyển khung hình BGR thành vector đặc trưng VSL và biến một clip có độ dài bất kỳ thành tensor cố định `(30, 170)`.
+Chuyển khung hình BGR thành vector đặc trưng VSL và biến một clip có độ dài bất kỳ thành tensor cố định `(30, 418)` (feature v7).
 
 ## Kiến trúc
 
@@ -8,8 +8,8 @@ Chuyển khung hình BGR thành vector đặc trưng VSL và biến một clip c
 flowchart LR
     A[BGR frame] -->|frame_padding| B[1280x1280 BGR]
     B --> C[MediaPipe results]
-    C -->|extract| D[(T, 131) raw<br/>có NaN]
-    D -->|process_sequence| E[(30, 170) processed]
+    C -->|extract| D[(T, 367) raw<br/>có NaN]
+    D -->|process_sequence| E[(30, 418) processed]
 ```
 
 ### Các file
@@ -17,7 +17,7 @@ flowchart LR
 | File | Nội dung |
 |---|---|
 | `frame.py` | `FRAME_SIZE`, `frame_padding` / `pad_frame` |
-| `schema.py` | Hằng số chia sẻ: `EXPECTED_FRAMES = 30`, `FRAME_FEATURE_DIM = 131` |
+| `schema.py` | Hằng số chia sẻ: `EXPECTED_FRAMES = 30`, `FRAME_FEATURE_DIM` (= `extract.FEATURE_DIM` = 367) |
 | `extract.py` | `extract`, `process_sequence`, layout đặc trưng, hằng số trích xuất |
 | `__init__.py` | Rỗng — import trực tiếp từ module con |
 
@@ -32,7 +32,7 @@ flowchart LR
 
 Kết quả luôn là `(1280, 1280, 3) uint8`, không méo tỉ lệ. `pad_frame` là alias.
 
-## `extract.py` — 131 đặc trưng/frame
+## `extract.py` — 367 đặc trưng/frame
 
 ### Hệ quy chiếu
 
@@ -61,7 +61,9 @@ Không tin nhãn `handedness` (có thể bị đảo khi ảnh lật gương). T
 - Bỏ ghép nếu khoảng cách > `MAX_MATCH_DIST = 0.8`.
 - `presence` là confidence mềm `exp(-(d / 0.35)^2)`, không phải cờ 0/1.
 
-### Bố cục 131 chiều
+### Bố cục 367 chiều (v7)
+
+Mọi module khác lấy chỉ số cột từ `FEATURE_SLICES` / `SIDE_COLUMNS` / `LEFT_MIRROR`, không hard-code.
 
 | Nhóm | Slice | Kích thước | Nội dung |
 |---|---|---|---|
@@ -69,17 +71,36 @@ Không tin nhãn `handedness` (có thể bị đảo khi ảnh lật gương). T
 | `inter_hand_vec` | `18:21` | 3 | Tâm bàn tay trái − phải |
 | `body_contact` | `21:43` | 22 | Mỗi tay 11: độ gần 11 vùng cơ thể |
 | `hand_contact` | `43:47` | 4 | Lòng-lòng, cái-cái, trỏ-trỏ, cặp điểm gần nhất |
-| `handshape` | `47:111` | 64 | Mỗi tay 32: 15 cos khớp, 5 độ duỗi, 4 độ xòe, 8 tiếp xúc đầu ngón |
-| `orientation` | `111:129` | 18 | Mỗi tay 9: `palm_dir` 3, `palm_normal` 3, 3 cos góc cổ tay so với cẳng tay |
-| `presence` | `129:131` | 2 | Confidence hiện diện tay trái/phải |
+| `face_vec` | `47:59` | 12 | Mỗi tay: tâm lòng bàn tay − mũi, đầu ngón trỏ − mũi |
+| `hand_scale` | `59:61` | 2 | Cỡ lòng bàn tay trên ảnh / độ rộng vai |
+| `handshape` | `61:137` | 76 | Mỗi tay 38: 15 cos khớp, 5 độ duỗi, 4 độ xòe, 8 tiếp xúc đầu ngón, 3 vị trí ngón cái, 3 thứ tự đầu ngón (từ `hand_world`) |
+| `hand_local` | `137:257` | 120 | Mỗi tay 60: 20 điểm trong hệ trục lòng bàn tay (từ `hand_world`) |
+| `finger_curl` | `257:347` | 90 | Mỗi tay 45 (v7): độ cong từng ngón, đo trên **cả** landmark ảnh và `hand_world`, xem dưới |
+| `orientation` | `347:365` | 18 | Mỗi tay 9: `palm_dir` 3, `palm_normal` 3, 3 cos góc cổ tay so với cẳng tay |
+| `presence` | `365:367` | 2 | Confidence hiện diện tay trái/phải |
 
-Bên trong mỗi tay, thứ tự luôn là **trái trước, phải sau**. Các mốc quan trọng:
+`process_sequence` nối thêm 39 cột chuyển động (`367:406`) và 12 cột nét (`406:418`).
 
-- `hand_pos`: trái `0:9`, phải `9:18`
-- `body_contact`: trái `21:32`, phải `32:43`
-- `handshape`: trái `47:79`, phải `79:111`
-- `orientation`: trái `111:120`, phải `120:129`
-- `presence`: trái `129`, phải `130`
+### `finger_curl` (v7)
+
+Mỗi tay 45 số, thứ tự `[ảnh: góc 15 khớp (rad), tổng gập 5 ngón, gập PIP+DIP 5 ngón, độ thẳng 5 ngón |
+world: tổng gập 5, gập PIP+DIP 5, độ thẳng 5]`. Ngón theo thứ tự cái, trỏ, giữa, nhẫn, út; khớp theo chuỗi
+cổ tay → gốc ngón → … → đầu ngón (với ngón cái: CMC, MCP, IP).
+
+- Góc khớp = `atan2(|a×b|, a·b)` giữa hai đốt liên tiếp (rad). Tuyến tính theo độ gập, khác `cos` ở `handshape` vốn
+  nén phần gập nhẹ (cos 16° = 0.96, cos 32° = 0.85) và khác `arccos` (đạo hàm vô hạn quanh 0° → khuếch đại jitter).
+- Tổng gập / gập PIP+DIP cộng 2–3 khớp của một ngón, nên lệch ngẫu nhiên từng khớp của MediaPipe triệt bớt nhau.
+- Độ thẳng = |đầu ngón − gốc ngón| / tổng độ dài 3 đốt: 1 khi duỗi, nhỏ dần khi móc/cuộn.
+- Mọi giá trị bất biến khi xoay, tịnh tiến, co giãn và soi gương (không cần đổi dấu trong `LEFT_MIRROR`,
+  `rotate_view_pitch` giữ nguyên). Nhóm có stem riêng trong `training.default_groups`, nên group-drop buộc model học
+  được cả từ độ cong ngón khi các nhóm khác bị tắt.
+
+Lý do: các cặp hay nhầm khác nhau chủ yếu ở **độ móc ngón** — `u` (trỏ + giữa duỗi thẳng) với dấu â/ô/ê (trỏ + giữa
+móc: PIP lệch ~16–37°, DIP ~23–29° trên `hand_world`), `i` (út duỗi) với dấu ơ/ư (út móc, ngón cái duỗi). Đo trên clip
+gốc, `hand_world` làm phẳng độ móc (PIP+DIP ngón trỏ của dấu mũ: ~1.5 rad trên world, ~2.3 rad trên ảnh; của `u`:
+0.8 và 0.2), nên độ tách giữa hai lớp so với độ lệch giữa hai session của lớp `m` lớn hơn 2–3 lần khi đo trên landmark
+ảnh. z ảnh của tay cùng thang với x, y (frame vuông) nên góc 3D đo trực tiếp được. Giữ cả hai nguồn vì chúng là hai
+đầu ra khác nhau của mạng.
 
 ### 11 neo cơ thể cho `body_contact`
 
@@ -92,7 +113,7 @@ Thứ tự: trán, mũi, miệng, cằm, má trái, má phải, cổ, ngực, b�
 - Nếu visibility cổ tay/khuỷu tay pose thấp, góc cổ tay là `NaN`.
 - `NaN` chỉ được xử lý ở `process_sequence`, không ở `extract`.
 
-## `process_sequence` — chuỗi → `(30, 170)`
+## `process_sequence` — chuỗi → `(30, 418)`
 
 Đầu vào `(T, 131)`, đầu ra `(target_len, 170)`. Các bước theo thứ tự:
 
@@ -117,10 +138,11 @@ Các cột chuyển động nằm ở `131:170`:
 ## Điểm thiết kế đáng lưu ý
 
 - Đặc trưng bất biến với vị trí/khoảng cách người ký nhờ hệ trục thân và đơn vị độ rộng vai.
-- Thủ hình/hướng bàn tay dùng `hand_world_landmarks` khi có (`USE_HAND_WORLD = True`) vì ổn định hơn toạ độ ảnh.
+- `handshape`, `hand_local`, hướng bàn tay dùng `hand_world_landmarks` khi có (`USE_HAND_WORLD = True`); `finger_curl` (v7)
+  dùng cả landmark ảnh vì `hand_world` làm phẳng độ móc ngón.
 - Không làm mượt các cột `handshape` — giữ rung/búng ngón.
 - Chuyển động tính **sau** khi co giãn thời gian, nên biên độ phụ thuộc `target_len` và độc lập tốc độ tuyệt đối của người ký.
-- `FEATURE_VERSION = 2`: đổi bố cục đặc trưng phải tăng version và trích xuất lại dữ liệu.
+- `FEATURE_VERSION = 7`: đổi bố cục đặc trưng phải tăng version và trích xuất lại dữ liệu.
 
 ## Phụ thuộc
 

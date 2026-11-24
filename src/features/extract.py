@@ -20,7 +20,7 @@ from scipy.interpolate import interp1d
 
 from src.builtin.mediapipe_builtin.defs import HandLandmarkerResult, PoseLandmarkerResult
 
-FEATURE_VERSION = 6
+FEATURE_VERSION = 7
 
 # =============================================================================
 # CẤU HÌNH
@@ -58,10 +58,11 @@ _GROUPS = (
     ("face_vec", 12),        # mỗi tay: tâm lòng bàn tay - mũi, đầu ngón trỏ - mũi (không phụ thuộc chiều cao)
     ("hand_scale", 2),       # mỗi tay: cỡ lòng bàn tay trên ảnh / độ rộng vai -> độ sâu tay so với thân
                              # (ổn định hơn z của pose; bất biến khi xoay bàn tay và lật gương)
-    # --- THỦ HÌNH (196) ---
+    # --- THỦ HÌNH (286) ---
     ("handshape", 76),       # mỗi tay 38: 15 cos khớp, 5 độ duỗi, 4 độ xòe, 8 tiếp xúc đầu ngón,
                              #             3 vị trí ngón cái, 3 thứ tự đầu ngón
     ("hand_local", 120),     # mỗi tay 60: 20 điểm (bỏ cổ tay) trong hệ trục lòng bàn tay, đơn vị palm_size
+    ("finger_curl", 90),     # mỗi tay 45: độ cong từng ngón (v7), xem _finger_curl
     # --- HƯỚNG BÀN TAY (18) ---
     ("orientation", 18),     # mỗi tay 9: palm_dir, palm_normal, 3 góc cổ tay so với cẳng tay
     # --- CỜ HIỆN DIỆN (2) ---
@@ -72,7 +73,7 @@ _off = 0
 for _name, _size in _GROUPS:
     _SL[_name] = slice(_off, _off + _size)
     _off += _size
-FEATURE_DIM = _off  # 277
+FEATURE_DIM = _off  # 367
 
 # Chuyển động (tính trong process_sequence): đạo hàm của vị trí tay + hướng bàn tay
 _IDX = np.arange(FEATURE_DIM)
@@ -83,7 +84,7 @@ MOTION_DIM = len(_MOTION_COLS)               # 39
 # frame có độ dời đầu ngón trỏ lớn nhất trong cửa sổ, lặp lại ở mọi frame -> không phụ thuộc cú vẩy rơi vào frame nào.
 _STROKE_SRC = [(_SL["hand_pos"].start + 9 * side + 6, _SL["hand_pos"].start + 9 * side) for side in (0, 1)]
 STROKE_DIM = 12                              # 2 tay x (trỏ 3 + lòng bàn tay 3)
-SEQ_FEATURE_DIM = FEATURE_DIM + MOTION_DIM + STROKE_DIM   # 328
+SEQ_FEATURE_DIM = FEATURE_DIM + MOTION_DIM + STROKE_DIM   # 418
 
 # Bố cục công khai: mọi module khác suy ra chỉ số cột từ đây, không hard-code.
 FEATURE_SLICES: dict[str, slice] = dict(_SL)
@@ -95,8 +96,8 @@ STROKE_SLICE = slice(MOTION_SLICE.stop, SEQ_FEATURE_DIM)
 def _side_raw_cols(side: int) -> np.ndarray:
     """Cột thô (trong FEATURE_DIM) chỉ thuộc tay trái (0) hoặc phải (1)."""
     cols = []
-    for name in ("hand_pos", "body_contact", "face_vec", "hand_scale", "handshape", "hand_local", "orientation",
-                 "presence"):
+    for name in ("hand_pos", "body_contact", "face_vec", "hand_scale", "handshape", "hand_local", "finger_curl",
+                 "orientation", "presence"):
         sl = _SL[name]
         half = (sl.stop - sl.start) // 2
         cols.append(_IDX[sl.start + side * half: sl.start + (side + 1) * half])
@@ -128,7 +129,8 @@ SIDE_COLUMNS: dict[str, np.ndarray] = {
 def _left_mirror() -> tuple[np.ndarray, np.ndarray]:
     """(perm, sign) đưa cột tay trái (thứ tự SIDE_COLUMNS["left"]) về hệ của tay phải qua gương trục x:
     đảo dấu toạ độ x, palm_dir.x, palm_normal.x (normal trái đã lật), góc cổ tay ngang, face_vec.x;
-    đổi chỗ neo má trái/phải và vai trái/phải. hand_local, hand_scale tự đối xứng gương nên giữ nguyên."""
+    đổi chỗ neo má trái/phải và vai trái/phải. hand_local, hand_scale, finger_curl (góc, tỉ số độ dài) tự đối xứng
+    gương nên giữ nguyên."""
     cols = SIDE_COLUMNS["left"]
     pos = {int(c): i for i, c in enumerate(cols)}
     hp, bc, ori = _SL["hand_pos"].start, _SL["body_contact"].start, _SL["orientation"].start
@@ -160,7 +162,7 @@ def rotate_view_pitch(features: np.ndarray, degrees: float) -> np.ndarray:
     Xoay quanh trục x của thân (qua giữa hai vai): y' = y cos + z sin, z' = -y sin + z cos, với z hướng ra xa camera,
     nên điểm ở trước thân hiện cao hơn khi nhìn từ dưới. Vị trí (hand_pos, inter_hand_vec, face_vec) xoay trong thang
     độ sâu thật (z lưu = Z_POSE * POSE_Z_GAIN * độ sâu thật); palm_dir, palm_normal xoay trực tiếp. Bất biến, giữ nguyên: thủ hình,
-    hand_local, hand_scale, góc cổ tay (tích vô hướng với cẳng tay cùng xoay), tiếp xúc, presence. body_contact chỉ xấp xỉ
+    hand_local, finger_curl, hand_scale, góc cổ tay (tích vô hướng với cẳng tay cùng xoay), tiếp xúc, presence. body_contact chỉ xấp xỉ
     bất biến (neo ngực/bụng cố định, z giảm trọng số) nên cũng giữ nguyên. NaN giữ NaN.
     """
     out = np.array(features, dtype=np.float32, copy=True)
@@ -245,6 +247,47 @@ def _hand_scale(img: np.ndarray, shoulder_width: float) -> float:
     """
     bones = np.linalg.norm(img[_PALM_BONES[:, 0]] - img[_PALM_BONES[:, 1]], axis=-1)
     return float(bones.mean() / max(shoulder_width, 1e-6))
+
+
+_FINGER_CHAINS = np.array([[0, 1, 2, 3, 4], [0, 5, 6, 7, 8], [0, 9, 10, 11, 12],
+                           [0, 13, 14, 15, 16], [0, 17, 18, 19, 20]])   # cổ tay -> gốc -> ... -> đầu ngón
+CURL_DIM = 45   # mỗi tay
+
+
+def _curl_stats(pts: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """pts (21,3) -> (góc gập 15 khớp [rad], tổng gập mỗi ngón 5, gập PIP+DIP mỗi ngón 5, độ thẳng mỗi ngón 5).
+
+    Góc (rad) tuyến tính theo độ gập, khác cos (cos 16° = 0.96, cos 32° = 0.85: phần gập nhẹ bị nén).
+    Tổng theo ngón cộng 2-3 khớp nên lệch ngẫu nhiên từng khớp của MediaPipe triệt bớt nhau.
+    Độ thẳng = |đầu ngón - gốc ngón| / tổng độ dài 3 đốt: 1 = duỗi thẳng, nhỏ dần khi móc/cuộn.
+    Mọi giá trị bất biến khi xoay, tịnh tiến, co giãn và soi gương.
+    """
+    bones = np.diff(pts[_FINGER_CHAINS], axis=1)                          # (5, 4, 3)
+    lengths = np.linalg.norm(bones, axis=-1)                              # (5, 4)
+    a, b = bones[:, :-1].astype(np.float64), bones[:, 1:].astype(np.float64)
+    # atan2(|a x b|, a.b) thay arccos(cos): arccos có đạo hàm vô hạn quanh 0° nên khuếch đại jitter của ngón duỗi.
+    angles = np.arctan2(np.linalg.norm(np.cross(a, b), axis=-1), np.sum(a * b, axis=-1))   # (5, 3)
+    total = angles.sum(axis=1)
+    hook = angles[:, 1:].sum(axis=1)
+    chord = np.linalg.norm(pts[_FINGER_CHAINS[:, 4]] - pts[_FINGER_CHAINS[:, 1]], axis=-1)
+    straight = chord / (lengths[:, 1:].sum(axis=1) + 1e-9)
+    return angles.ravel(), total, hook, straight
+
+
+def _finger_curl(img: np.ndarray, world: np.ndarray) -> np.ndarray:
+    """(CURL_DIM,) độ cong ngón của một tay, đo trên CẢ landmark ảnh lẫn hand_world.
+
+    [ảnh: góc 15 khớp, tổng gập 5, gập PIP+DIP 5, độ thẳng 5 | world: tổng gập 5, gập PIP+DIP 5, độ thẳng 5]
+
+    Thủ hình cũ (cos khớp, hand_local) chỉ lấy từ hand_world, nhưng đo trên dữ liệu thật hand_world làm phẳng
+    độ móc của ngón: "u" và dấu â/ô/ê (trỏ + giữa duỗi thẳng / móc xuống, PIP+DIP lệch ~40-90°), "i" và
+    dấu ơ/ư (út duỗi / móc, ngón cái duỗi) tách xa gấp 2-3 lần khi đo trên landmark ảnh, kể cả khi giả lập
+    đổi bối cảnh quay (src/features/view.py). Hai nguồn là hai đầu ra khác nhau của mạng nên giữ cả hai.
+    z ảnh của tay cùng thang với x, y (frame vuông) nên góc 3D đo trực tiếp được.
+    """
+    i_ang, i_total, i_hook, i_straight = _curl_stats(img)
+    _, w_total, w_hook, w_straight = _curl_stats(world)
+    return np.concatenate([i_ang, i_total, i_hook, i_straight, w_total, w_hook, w_straight]).astype(np.float32)
 
 
 def _hand_hand_contacts(lp: np.ndarray, rp: np.ndarray) -> np.ndarray:
@@ -356,7 +399,7 @@ def _hand_shape_and_orientation(
 # =============================================================================
 def extract(pose_res: PoseLandmarkerResult, hand_res: HandLandmarkerResult) -> np.ndarray:
     """
-    Trích xuất FEATURE_DIM (=277) đặc trưng của 4 thành tố VSL trên 1 frame.
+    Trích xuất FEATURE_DIM (=367) đặc trưng của 4 thành tố VSL trên 1 frame.
     Giá trị không xác định được trả NaN (process_sequence sẽ xử lý).
     """
     nan_out = np.full(FEATURE_DIM, np.nan, dtype=np.float32)
@@ -397,7 +440,7 @@ def extract(pose_res: PoseLandmarkerResult, hand_res: HandLandmarkerResult) -> n
     hand_wrists = np.array([[h[0].x, h[0].y] for h in hand_lms], dtype=np.float32).reshape(-1, 2)
     assign = _assign_hands(hand_wrists, pose_pts[[15, 16], :2], shoulder_width)
 
-    sides = []  # mỗi phần tử: (pts(6,3), handshape(38), orient(9), present)
+    sides = []  # mỗi phần tử: (pts(6,3), handshape(38), orient(9), hand_local(60), curl(45), present, scale)
     for side in (0, 1):
         is_left = side == 0
         w_idx, e_idx = 15 + side, 13 + side
@@ -426,6 +469,7 @@ def extract(pose_res: PoseLandmarkerResult, hand_res: HandLandmarkerResult) -> n
             local = shape_pts @ rot
 
             shape, orient, hloc = _hand_shape_and_orientation(local, is_left, forearm)
+            curl = _finger_curl(img, shape_pts)
             present = _hand_match_confidence(hand_wrists[h_idx], pose_pts[w_idx, :2], shoulder_width)
             scale = _hand_scale(img, shoulder_width)
         else:
@@ -434,12 +478,13 @@ def extract(pose_res: PoseLandmarkerResult, hand_res: HandLandmarkerResult) -> n
             shape = np.full((_SL["handshape"].stop - _SL["handshape"].start) // 2, np.nan, dtype=np.float32)
             orient = np.full(9, np.nan, dtype=np.float32)
             hloc = np.full(60, np.nan, dtype=np.float32)
+            curl = np.full(CURL_DIM, np.nan, dtype=np.float32)
             present = 0.0
             scale = np.nan
-        sides.append((pts, shape, orient, hloc, present, scale))
+        sides.append((pts, shape, orient, hloc, curl, present, scale))
 
-    ((l_pts, l_shape, l_orient, l_loc, l_pres, l_scale),
-     (r_pts, r_shape, r_orient, r_loc, r_pres, r_scale)) = sides
+    ((l_pts, l_shape, l_orient, l_loc, l_curl, l_pres, l_scale),
+     (r_pts, r_shape, r_orient, r_loc, r_curl, r_pres, r_scale)) = sides
     nose = norm_pose[0]
 
     # ---- VỊ TRÍ ----
@@ -455,11 +500,12 @@ def extract(pose_res: PoseLandmarkerResult, hand_res: HandLandmarkerResult) -> n
     # ---- THỦ HÌNH / HƯỚNG ----
     handshape = np.concatenate([l_shape, r_shape])                             # 76
     hand_local = np.concatenate([l_loc, r_loc])                                # 120
+    finger_curl = np.concatenate([l_curl, r_curl])                             # 90
     orientation = np.concatenate([l_orient, r_orient])                         # 18
     presence = np.array([l_pres, r_pres], dtype=np.float32)                    # 2
 
     out = np.concatenate([hand_pos, inter_hand_vec, body_contact, hand_contact, face_vec, hand_scale,
-                          handshape, hand_local, orientation, presence]).astype(np.float32)
+                          handshape, hand_local, finger_curl, orientation, presence]).astype(np.float32)
     return out
 
 

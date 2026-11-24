@@ -228,7 +228,7 @@ class FeatureV6Tests(unittest.TestCase):
     """v6: hệ trục thân không phụ thuộc hông; rotate_view_pitch mô phỏng camera cao/thấp để augment."""
 
     def test_version_bumped(self):
-        self.assertEqual(fx.FEATURE_VERSION, 6)
+        self.assertGreaterEqual(fx.FEATURE_VERSION, 6)
 
     def test_frame_does_not_depend_on_hip_visibility(self):
         pose, image, world = _scene()
@@ -410,3 +410,73 @@ class StrokeTests(unittest.TestCase):
         np.testing.assert_allclose(mirrored, right[0, fx.STROKE_SLICE.start + 6:], atol=1e-5)
         self.assertIn((fx.STROKE_SLICE.start, fx.SEQ_FEATURE_DIM), tr.default_groups(fx.SEQ_FEATURE_DIM))
 
+
+
+def _bend(hand: np.ndarray, finger: int, degrees: float) -> np.ndarray:
+    """Gập PIP và DIP của ngón `finger` (1 = trỏ ... 4 = út) mỗi khớp `degrees` độ, quanh trục ngang lòng bàn tay."""
+    from src.features.view import _rotate_about
+    out = hand.copy()
+    chain = fx._FINGER_CHAINS[finger]
+    axis = out[17] - out[5]
+    for j in (2, 3):                                 # PIP, DIP
+        out[chain[j + 1:]] = _rotate_about(out[chain[j + 1:]], out[chain[j]], axis, degrees)
+    return out
+
+
+class FingerCurlTests(unittest.TestCase):
+    """v7: độ cong từng ngón (góc rad, tổng gập, PIP+DIP, độ thẳng) đo trên cả landmark ảnh lẫn hand_world."""
+
+    def test_version_and_layout(self):
+        self.assertEqual(fx.FEATURE_VERSION, 7)
+        sl = fx.FEATURE_SLICES["finger_curl"]
+        self.assertEqual(sl.stop - sl.start, 2 * fx.CURL_DIM)
+        for side in ("left", "right"):
+            half = fx.CURL_DIM
+            start = sl.start + (0 if side == "left" else half)
+            self.assertTrue(np.isin(np.arange(start, start + half), fx.SIDE_COLUMNS[side]).all())
+        self.assertIn((sl.start, sl.stop), tr.default_groups(fx.SEQ_FEATURE_DIM))   # nhóm stem riêng
+
+    def test_straight_finger_has_zero_angles_and_unit_straightness(self):
+        ang, total, hook, straight = fx._curl_stats(_hand(0.5))
+        np.testing.assert_allclose(ang.reshape(5, 3)[1:, 1:], 0.0, atol=1e-6)   # PIP, DIP ngón 2-5 duỗi
+        np.testing.assert_allclose(hook[1:], 0.0, atol=1e-6)
+        np.testing.assert_allclose(straight[1:], 1.0, atol=1e-6)
+
+    def test_hooking_a_finger_shows_up_only_in_that_finger(self):
+        flat = fx._curl_stats(_hand(0.5))
+        hooked = fx._curl_stats(_bend(_hand(0.5), 1, 40.0))   # móc ngón trỏ như dấu mũ
+        self.assertAlmostEqual(hooked[2][1], np.radians(80.0), places=4)
+        self.assertLess(hooked[3][1], 0.9)
+        np.testing.assert_allclose(hooked[2][2:], flat[2][2:], atol=1e-6)        # ngón khác không đổi
+
+    def test_invariant_to_rotation_scale_translation_and_mirror(self):
+        hand = _bend(_hand(0.3), 4, 25.0)
+        a = np.radians(37.0)
+        rot = np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]])
+        base = fx._finger_curl(hand, hand * 0.01)
+        moved = fx._finger_curl(2.5 * hand @ rot.T + 3.0, hand * np.array([-0.01, 0.01, 0.01]))
+        np.testing.assert_allclose(moved, base, atol=1e-5)
+
+    def test_image_and_world_sources_are_both_used(self):
+        hand = _hand(0.5)
+        base = fx._finger_curl(hand, hand)
+        world_hooked = fx._finger_curl(hand, _bend(hand, 1, 30.0))
+        np.testing.assert_allclose(world_hooked[:30], base[:30], atol=1e-6)   # phần ảnh giữ nguyên
+        self.assertGreater(np.abs(world_hooked[30:] - base[30:]).max(), 0.5)
+
+    def test_extract_fills_detected_side_and_nans_missing_side(self):
+        pose, image, world = _scene()
+        out = fx.extract(*_results(pose, image, world))
+        sl = fx.FEATURE_SLICES["finger_curl"]
+        left, right = out[sl.start:sl.start + fx.CURL_DIM], out[sl.start + fx.CURL_DIM:sl.stop]
+        self.assertTrue(np.isnan(left).all())
+        self.assertTrue(np.isfinite(right).all())
+        np.testing.assert_allclose(right, fx._finger_curl(image, world), atol=1e-5)
+
+    def test_left_mirror_keeps_curl_unsigned(self):
+        perm, sign = fx.LEFT_MIRROR
+        cols = fx.SIDE_COLUMNS["left"]
+        sl = fx.FEATURE_SLICES["finger_curl"]
+        pos = np.isin(cols, np.arange(sl.start, sl.stop))
+        self.assertTrue((sign[pos] == 1.0).all())
+        self.assertTrue((perm[pos] == np.flatnonzero(pos)).all())

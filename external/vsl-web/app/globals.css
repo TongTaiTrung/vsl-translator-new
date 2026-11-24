@@ -147,48 +147,15 @@ p {
   animation: rise 700ms var(--ease-out) both;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-/* Hai bàn tay cách điệu: hai thanh nghiêng về nhau. */
-.brand-mark {
-  display: inline-flex;
-  gap: 4px;
-  height: 22px;
-  align-items: flex-end;
-}
-
-.brand-mark i {
-  display: block;
-  width: 7px;
-  height: 22px;
-  border-radius: 4px;
-  background: var(--jade);
-  transform-origin: bottom center;
-  transform: rotate(-12deg);
-}
-
-.brand-mark i + i {
-  height: 16px;
-  background: var(--ink);
-  transform: rotate(14deg);
-}
-
-.brand-name {
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
 .topbar-right {
   display: flex;
+  margin-left: auto;
   align-items: center;
   gap: 8px;
 }
 
 .health {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -198,6 +165,7 @@ p {
   color: var(--muted);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .health-dot {
@@ -1542,8 +1510,26 @@ p {
     height: 60px;
   }
 
+  .topbar-right {
+    flex-shrink: 0;
+  }
+
+  .topbar-right {
+    gap: 4px;
+  }
+
+  /* Hẹp: chỉ còn chấm trạng thái, chữ vẫn có cho trình đọc màn hình và tooltip. */
   .health {
-    padding: 0 8px;
+    padding: 0 10px;
+  }
+
+  .health-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .frame {

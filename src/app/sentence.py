@@ -56,6 +56,7 @@ QUY TẮC:
 2. Được thêm hư từ, trợ từ, từ nối cần thiết (là, của, ở, thì, ạ, và...) và sắp xếp lại cho đúng ngữ pháp.
 3. Nếu chuỗi chưa thành câu trọn vẹn (người dùng đang ký dở), trả về cụm từ tự nhiên nhất, không tự thêm ý.
 4. Chỉ trả về đúng kết quả trên một dòng: không giải thích, không ngoặc kép, không tiền tố kiểu "Câu:".
+5. Kết quả LUÔN kết thúc bằng dấu câu: dấu chấm "." (hoặc "?" nếu là câu hỏi, "!" nếu là câu cảm thán), kể cả khi chỉ là một cụm từ.
 
 BẢNG CHÚ GIẢI NHÃN:
 {glossary}
@@ -64,7 +65,7 @@ VÍ DỤ:
 Nhãn: xin chào | toi | ten_la | [đánh vần: T-R-U-N-G]
 Kết quả: Xin chào, tôi tên là Trung.
 Nhãn: toi | địa chỉ
-Kết quả: Địa chỉ của tôi
+Kết quả: Địa chỉ của tôi.
 Nhãn: cảm ơn | cảm ơn
 Kết quả: Cảm ơn.
 Nhãn: [đánh vần: M-I-N-H-B-I-(dấu nặng)-N-G-U]
@@ -247,7 +248,9 @@ def clean_completion(text: str) -> str:
     text = _THINK_RE.sub("", text or "").strip()
     text = re.sub(r"^(kết quả|câu)\s*:\s*", "", text, flags=re.IGNORECASE)
     line = next((part.strip() for part in text.splitlines() if part.strip()), "")
-    return line.strip('"“”\'')
+    line = line.strip('"“”\'')
+    # Luôn kết thúc câu bằng dấu câu, kể cả khi LLM quên.
+    return line + "." if line and line[-1] not in ".?!…" else line
 
 
 def load_api_key(env_var: str = "GROQ_API_KEY", env_file: str | Path | None = None) -> str | None:

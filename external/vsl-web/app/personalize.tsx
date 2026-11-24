@@ -65,7 +65,7 @@ export function PersonalizeSheet(props: Props) {
       : props.activeExemplars != null
         ? `Đang dùng ${props.activeExemplars} mẫu.`
         : running
-          ? "Mẫu sẽ được dùng từ cửa sổ dự đoán kế tiếp."
+          ? "Mẫu sẽ áp dụng từ lần dự đoán kế tiếp."
           : `${samples.length} mẫu sẽ được dùng khi bật camera.`;
 
   return (
@@ -90,8 +90,8 @@ export function PersonalizeSheet(props: Props) {
         <div className="sheet-body">
           <section className="group">
             <p className="help">
-              Ký mẫu vài từ theo cách của bạn để mô hình nhận ra bạn tốt hơn, không cần train lại. Mẫu chỉ lưu trên
-              trình duyệt này (landmark, không có hình ảnh) và chỉ gửi lên server trong lúc nhận diện.
+              Ký vài từ theo cách của bạn để mô hình nhận ra bạn tốt hơn, không cần train lại. Mẫu (chỉ landmark,
+              không có hình) lưu trên trình duyệt này và chỉ gửi lên server khi nhận diện.
             </p>
             <label className="check">
               <input type="checkbox" checked={enabled} onChange={(e) => props.onEnabled(e.target.checked)} />
@@ -123,9 +123,9 @@ export function PersonalizeSheet(props: Props) {
             </div>
             <p className="help">
               {learnMode === "realtime"
-                ? "Mỗi từ mô hình đã khá chắc được lưu làm mẫu vài giây sau khi chốt và dùng ngay cho từ kế tiếp. Hoàn tác hoặc xoá từ đó (kể cả sau này) sẽ xoá luôn mẫu đã học."
-                : "Khi câu kết thúc, những từ bạn giữ lại (không xoá, không hoàn tác) mà mô hình đã khá chắc được lưu làm mẫu."}
-              {` Tối đa ${MAX_AUTO_PER_LABEL} mẫu tự học mỗi từ. Từ bị nhận sai: hoàn tác hoặc dùng “Sửa từ vừa nhận”.`}
+                ? "Từ mô hình khá chắc được lưu làm mẫu vài giây sau khi chốt và dùng ngay cho từ kế tiếp. Xoá hoặc hoàn tác từ đó sẽ xoá mẫu đã học."
+                : "Khi hết câu, những từ bạn giữ lại mà mô hình khá chắc sẽ được lưu làm mẫu."}
+              {` Tối đa ${MAX_AUTO_PER_LABEL} mẫu tự học mỗi từ. Từ nhận sai: hoàn tác hoặc dùng “Sửa từ vừa nhận”.`}
             </p>
             <p className="help">
               {status}
@@ -135,7 +135,7 @@ export function PersonalizeSheet(props: Props) {
               <p className="error" role="alert">Server từ chối mẫu, đang dùng mô hình gốc: {props.memoryError}</p>
             )}
             {props.staleCount > 0 && (
-              <p className="help">{props.staleCount} mẫu ghi với phiên bản đặc trưng cũ nên không được dùng. Hãy ghi lại.</p>
+              <p className="help">{props.staleCount} mẫu thuộc phiên bản đặc trưng cũ, không được dùng. Hãy ghi lại.</p>
             )}
           </section>
 
@@ -144,7 +144,7 @@ export function PersonalizeSheet(props: Props) {
             {committed ? (
               <>
                 <p className="help">
-                  Vừa chốt <strong>{committed.word}</strong>. Nếu sai, chọn từ bạn thực sự ký và lưu cửa sổ đó làm mẫu.
+                  Vừa chốt <strong>{committed.word}</strong>. Nếu sai, chọn từ đúng rồi lưu làm mẫu.
                 </p>
                 <div className="memory-correct">
                   <select value={correction} onChange={(e) => setCorrection(e.target.value)} aria-label="Từ đúng">
@@ -157,7 +157,7 @@ export function PersonalizeSheet(props: Props) {
                 </div>
               </>
             ) : (
-              <p className="help">Khi có từ được chốt, bạn có thể sửa nhãn và lưu nó làm mẫu ở đây.</p>
+              <p className="help">Từ vừa chốt sẽ hiện ở đây để bạn sửa và lưu làm mẫu.</p>
             )}
           </section>
 
@@ -189,8 +189,8 @@ export function PersonalizeSheet(props: Props) {
               })}
             </ul>
             <p className="help">
-              Mỗi từ giữ tối đa {MAX_PER_LABEL} mẫu (chấm đặc: ghi tay, chấm viền: tự học). Mẫu mới thay mẫu cũ nhất;
-              mẫu tự học không bao giờ thay mẫu ghi tay.
+              Tối đa {MAX_PER_LABEL} mẫu mỗi từ (chấm đặc: ghi tay, chấm viền: tự học). Mẫu mới thay mẫu cũ nhất;
+              mẫu tự học không thay mẫu ghi tay.
             </p>
           </section>
 
@@ -198,7 +198,7 @@ export function PersonalizeSheet(props: Props) {
             className="link danger"
             disabled={samples.length === 0 || busy}
             onClick={() => {
-              if (window.confirm(`Xoá toàn bộ ${samples.length} mẫu cá nhân trên trình duyệt này? Không hoàn tác được.`)) {
+              if (window.confirm(`Xoá ${samples.length} mẫu cá nhân trên trình duyệt này? Không hoàn tác được.`)) {
                 props.onClearAll();
               }
             }}

@@ -12,7 +12,7 @@ const sans = Be_Vietnam_Pro({
 });
 
 export const metadata: Metadata = {
-  title: "UrSound — Phiên dịch ngôn ngữ ký hiệu",
+  title: "Phiên dịch ngôn ngữ ký hiệu",
   description: "Phiên dịch ngôn ngữ ký hiệu Việt Nam từ webcam thành câu hoàn chỉnh, theo thời gian thực.",
 };
 

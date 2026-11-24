@@ -123,6 +123,11 @@ class SentenceTests(unittest.TestCase):
     def test_clean_completion_strips_thinking_and_prefix(self):
         self.assertEqual(clean_completion('<think>hmm</think>\nKết quả: "Tôi tên là Trung."'), "Tôi tên là Trung.")
 
+    def test_clean_completion_adds_missing_final_period(self):
+        self.assertEqual(clean_completion("Xin chào tôi Muời tuổi"), "Xin chào tôi Muời tuổi.")
+        self.assertEqual(clean_completion("Bạn tên là gì?"), "Bạn tên là gì?")
+        self.assertEqual(clean_completion(""), "")
+
     def test_compose_uses_fallback_on_error(self):
         composer = SentenceComposer(FakeClient(error=RuntimeError("down")), background=False)
         composer.submit(["toi"])

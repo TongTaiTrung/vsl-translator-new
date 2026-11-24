@@ -133,7 +133,7 @@ interface FinishedSentence extends Sentence {
 async function composeSentence(words: string[], settings: Settings): Promise<Sentence> {
   const fallback = naiveSentence(words);
   if (!settings.groqKey.trim()) {
-    return { text: fallback, status: "fallback", note: "Chưa có Groq key — câu ghép thô" };
+    return { text: fallback, status: "fallback", note: "Chưa có Groq key: ghép thô" };
   }
   try {
     const response = await fetch("/api/compose", {
@@ -153,7 +153,7 @@ async function composeSentence(words: string[], settings: Settings): Promise<Sen
 
 const PHASE_TEXT: Record<Phase, string> = {
   stopped: "Camera đang tắt",
-  starting: "Đang tải MediaPipe, mở camera",
+  starting: "Đang tải MediaPipe…",
   buffering: "Đang chuẩn bị",
   idle: "Đưa tay lên để ký",
   entering: "Đang vào ký hiệu",
@@ -363,7 +363,7 @@ export default function Home() {
         setHealth({ ok: response.ok, classes: body.classes, checkpoint: body.checkpoint, featureDim: body.feature_dim });
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
-          setHealth({ ok: false, error: "Không kết nối được API dự đoán" });
+          setHealth({ ok: false, error: "Không kết nối được API" });
         }
       }
     }, 400);
@@ -422,14 +422,14 @@ export default function Home() {
   const storeSample = async (label: string, frames: FrameLandmarks[]) => {
     const { result, sample } = await prepareSample(label, frames, "manual");
     if (!sample) {
-      setNotice({ text: `Chưa lưu: tay không xuất hiện đủ lâu (${result.hand_frames}/${result.frames} frame). Hãy ký lại.`, tone: "warn" });
+      setNotice({ text: `Chưa lưu: tay xuất hiện quá ngắn (${result.hand_frames}/${result.frames} frame). Hãy ký lại.`, tone: "warn" });
       return;
     }
     await addSample(sample);
     await reloadSamples();
     const top = result.prediction?.top[0];
     setNotice(result.warning === "model_disagrees" && top
-      ? { text: `Đã lưu mẫu “${label}”. Lưu ý: mô hình gốc thấy giống “${top.label}” (${Math.round(top.confidence * 100)}%); nếu ký nhầm, hãy xoá và ghi lại.`, tone: "warn" }
+      ? { text: `Đã lưu mẫu “${label}”. Mô hình gốc thấy giống “${top.label}” (${Math.round(top.confidence * 100)}%); nếu ký nhầm, hãy xoá và ghi lại.`, tone: "warn" }
       : { text: `Đã lưu mẫu “${label}”.`, tone: "ok" });
   };
 
@@ -486,7 +486,7 @@ export default function Home() {
       if (learned.length > 0) {
         await reloadSamples();
         setNotice({
-          text: realtime ? `Đã học mẫu “${learned.join("”, “")}”.` : `Đã tự học ${learned.length} mẫu mới từ câu vừa ký.`,
+          text: realtime ? `Đã học mẫu “${learned.join("”, “")}”.` : `Đã tự học ${learned.length} mẫu từ câu vừa ký.`,
           tone: "ok",
         });
       }
@@ -549,7 +549,7 @@ export default function Home() {
   const removeAll = async () => {
     await clearSamples();
     await reloadSamples();
-    setNotice({ text: "Đã xoá toàn bộ mẫu cá nhân trên trình duyệt này.", tone: "ok" });
+    setNotice({ text: "Đã xoá mẫu cá nhân trên trình duyệt này.", tone: "ok" });
   };
 
   const usableSamples = featureDim === undefined ? samples : samples.filter((s) => s.featureDim === featureDim);
@@ -635,14 +635,10 @@ export default function Home() {
   return (
     <div className="shell">
       <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true"><i /><i /></span>
-          <span className="brand-name">UrSound</span>
-        </div>
         <div className="topbar-right">
           <span className={`health ${health?.ok ? "ok" : health ? "bad" : "wait"}`} title={health?.checkpoint}>
             <i className="health-dot" />
-            {healthText}
+            <span className="health-text">{healthText}</span>
           </span>
           <ThemeToggle />
           <button
@@ -681,7 +677,7 @@ export default function Home() {
                   <Icon name="play" />
                 </button>
                 <p className="frame-empty-title">Bắt đầu phiên dịch</p>
-                <p className="frame-empty-note">Camera chỉ dùng để nhận diện, không ghi lại hình ảnh.</p>
+                <p className="frame-empty-note">Camera chỉ dùng để nhận diện, không lưu hình.</p>
               </div>
             )}
             {phase === "starting" && <div className="frame-empty"><p className="frame-empty-title">Đang mở camera…</p></div>}
@@ -783,7 +779,7 @@ export default function Home() {
                       <p className="live-text">{history[0].text}</p>
                     </>
                   ) : (
-                    <p className="live-hint">Đưa tay vào khung hình và bắt đầu ký.</p>
+                    <p className="live-hint">Đưa tay vào khung hình để ký.</p>
                   )}
                 </div>
 
@@ -880,7 +876,7 @@ export default function Home() {
 
           <p className={`caption-text ${sentence.text ? "" : "placeholder"}`} aria-live="polite">
             <Swap value={sentence.text || "empty"}>
-              {sentence.text || "Câu dịch sẽ hiện ở đây khi bạn bắt đầu ký."}
+              {sentence.text || "Câu dịch sẽ hiện ở đây."}
             </Swap>
           </p>
           {sentence.note && <p className="caption-note">{sentence.note}</p>}
@@ -913,7 +909,7 @@ export default function Home() {
               )}
             </div>
             {history.length === 0 ? (
-              <p className="transcript-empty">Các câu đã hoàn chỉnh sẽ được lưu ở đây để chép hoặc đọc to.</p>
+              <p className="transcript-empty">Câu hoàn chỉnh sẽ lưu ở đây để chép hoặc đọc to.</p>
             ) : (
               <ol className="history">
                 {history.map((item) => (
@@ -1005,7 +1001,7 @@ export default function Home() {
               <span>Ghi nhớ key trên trình duyệt này</span>
             </label>
             <p className="help">
-              Key chỉ đi kèm từng yêu cầu ghép câu tới Groq, server không lưu. Không có key thì các từ được ghép thô.
+              Key chỉ gửi kèm yêu cầu ghép câu tới Groq, server không lưu. Không có key thì ghép thô.
             </p>
             <label className="field">
               <span>Model Groq</span>
@@ -1067,11 +1063,11 @@ export default function Home() {
             </label>
             <label className="check">
               <input type="checkbox" checked={settings.mirrorData} onChange={(e) => update("mirrorData", e.target.checked)} />
-              <span>Lật ảnh trước khi nhận diện (phải giống lúc thu dữ liệu)</span>
+              <span>Lật ảnh khi nhận diện (khớp lúc thu dữ liệu)</span>
             </label>
             <label className="check">
               <input type="checkbox" checked={settings.debugCrop} onChange={(e) => update("debugCrop", e.target.checked)} />
-              <span>Hiện khung crop người chính (debug)</span>
+              <span>Hiện khung crop người ký (debug)</span>
             </label>
             <label className="field">
               <span>Địa chỉ API nhận diện</span>
@@ -1081,7 +1077,7 @@ export default function Home() {
               <p className="help">
                 Camera: {state.resolution}, pad về 1280×1280. MediaPipe chạy trên trình duyệt
                 {state.delegate ? ` (${state.delegate}${state.detectMs != null ? `, ${state.detectMs} ms/frame` : ""})` : ""}, chỉ gửi landmark lên API.
-                {state.captureFps != null && ` Thu thật ${state.captureFps} fps (chuẩn 15; máy chậm hơn vẫn dự đoán đúng 2 giây nhưng ít chi tiết chuyển động hơn).`}
+                {state.captureFps != null && ` Thu ${state.captureFps} fps (chuẩn 15; máy chậm vẫn dự đoán đủ 2 giây nhưng ít chi tiết chuyển động hơn).`}
               </p>
             )}
           </section>

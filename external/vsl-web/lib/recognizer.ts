@@ -76,17 +76,17 @@ export interface SpeedPreset {
 export const SPEED_PRESETS: Record<Speed, SpeedPreset> = {
   accurate: {
     label: "Chuẩn (~1.5 giây)",
-    hint: "Chính xác nhất: chờ đủ 2 giây (cả ký hiệu) mới dự đoán.",
+    hint: "Chính xác nhất: chờ đủ 2 giây mới dự đoán.",
     predictFrames: 30, minFrames: 30, strideFrames: 5, minHandFrames: 12,
   },
   fast: {
     label: "Nhanh (~1 giây)",
-    hint: "Dự đoán trên 1.3 giây gần nhất, bắt đầu sau 0.8 giây. Đôi khi nhầm lúc chuyển ký hiệu.",
+    hint: "Dự đoán sau 0.8 giây trên 1.3 giây gần nhất. Đôi khi nhầm lúc chuyển ký hiệu.",
     predictFrames: 20, minFrames: 12, strideFrames: 3, minHandFrames: 8,
   },
   fastest: {
     label: "Rất nhanh (~0.8 giây)",
-    hint: "Dự đoán trên 1 giây gần nhất, bắt đầu sau 0.5 giây. Nhanh nhất nhưng dễ nhầm nhất, nên ký dứt khoát.",
+    hint: "Dự đoán sau 0.5 giây trên 1 giây gần nhất. Nhanh nhất, dễ nhầm nhất: nên ký dứt khoát.",
     predictFrames: 15, minFrames: 8, strideFrames: 2, minHandFrames: 6,
   },
 };

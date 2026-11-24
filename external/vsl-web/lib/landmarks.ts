@@ -5,15 +5,29 @@
 // Isolator trả toạ độ chuẩn hoá theo video (đã lật nếu mirrorData); ở đây đổi tiếp sang toạ độ canvas
 // FRAME_SIZE x FRAME_SIZE giống hệt src/features/frame.py:frame_padding (scale đều cho cạnh dài = 1280, đặt giữa,
 // nền đen) nên x/y/z cùng tỉ lệ như lúc trích đặc trưng train.
-// Model là đúng file của Python (scripts/copy-mediapipe.mjs chép vào public/mediapipe/), thêm blaze_face_short_range.
+// Model là đúng file của Python (scripts/copy-mediapipe.mjs chép vào public/mediapipe/, mặc định tải bản giống hệt
+// từ CDN, xem CDN_ASSETS), thêm blaze_face_short_range.
 //
 // Kết quả mỗi frame đúng định dạng src/features/landmarks.py: { pose, hands, hands_world }.
 
-import { type Delegate, MainSubjectIsolator, type Point } from "./subject";
+import { type AssetUrls, type Delegate, MainSubjectIsolator, type Point } from "./subject";
 
 export type { Delegate };
 export const FRAME_SIZE = 1280;
-const ASSETS = "/mediapipe";
+const LOCAL_ASSETS = "/mediapipe";
+// Mặc định tải wasm + model từ CDN (byte-for-byte giống file trong public/mediapipe/, đã so sha1): khi web chạy
+// sau tunnel chậm (Tailscale Funnel ~160 KB/s) ~31 MB tải lần đầu mất vài phút trước khi camera mở. CDN lỗi thì
+// quay về public/mediapipe/. NEXT_PUBLIC_MEDIAPIPE_CDN=0 để luôn dùng bản local.
+// Phiên bản phải khớp @mediapipe/tasks-vision trong package.json.
+const TASKS_VISION_VERSION = "1.1.1";
+const MODELS = "https://storage.googleapis.com/mediapipe-models";
+const CDN_ASSETS: AssetUrls = {
+  wasm: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${TASKS_VISION_VERSION}/wasm`,
+  face: `${MODELS}/face_detector/blaze_face_short_range/float16/latest/blaze_face_short_range.tflite`,
+  pose: `${MODELS}/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task`,
+  hand: `${MODELS}/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task`,
+};
+const USE_CDN = process.env.NEXT_PUBLIC_MEDIAPIPE_CDN !== "0";
 /** Giống LandmarkerLoader (Python): detection / presence / tracking confidence. */
 const CONFIDENCE = 0.5;
 
@@ -41,7 +55,15 @@ export class LandmarkDetector {
 
   /** Tải WASM + 3 model (lần đầu ~17 MB). GPU lỗi (không có WebGL2…) thì tự chuyển CPU. */
   static async create(delegate: Delegate = "GPU", numPoses = 1): Promise<LandmarkDetector> {
-    return new LandmarkDetector(await MainSubjectIsolator.create({ assets: ASSETS, delegate, numPoses, confidence: CONFIDENCE }));
+    const create = (assets: string | AssetUrls) =>
+      MainSubjectIsolator.create({ assets, delegate, numPoses, confidence: CONFIDENCE });
+    if (!USE_CDN) return new LandmarkDetector(await create(LOCAL_ASSETS));
+    try {
+      return new LandmarkDetector(await create(CDN_ASSETS));
+    } catch (err) {
+      console.warn("Không tải được MediaPipe từ CDN, dùng bản local:", err);
+      return new LandmarkDetector(await create(LOCAL_ASSETS));
+    }
   }
 
   /** Overlay vẽ khung crop (debug); null = tắt. */

@@ -60,7 +60,12 @@ Nếu điện thoại không vào được, kiểm tra tường lửa macOS có 
   21 điểm + world landmark, ~2.7 KB JSON/frame) được gửi lên API, không gửi ảnh; server chỉ chạy `extract` và
   model. Mặc định dùng GPU (WebGL, ~34 ms/frame trên máy dev; CPU/WASM ~57 ms), GPU lỗi thì tự chuyển CPU.
 - WASM và model được `scripts/copy-mediapipe.mjs` chép vào `public/mediapipe/` (không commit) tự động trước
-  `npm run dev` / `npm run build`; chạy tay bằng `npm run mediapipe`. Lần mở camera đầu tiên tải ~17 MB model.
+  `npm run dev` / `npm run build`; chạy tay bằng `npm run mediapipe`. Lần mở camera đầu tiên tải ~31 MB (wasm +
+  model). Mặc định trình duyệt lấy chúng từ CDN (jsDelivr cho wasm `@mediapipe/tasks-vision@1.1.1`, Google
+  `storage.googleapis.com/mediapipe-models` cho model; giống hệt từng byte bản local) để không phải kéo qua tunnel
+  chậm như Tailscale Funnel; CDN lỗi thì tự dùng `public/mediapipe/`. Đặt `NEXT_PUBLIC_MEDIAPIPE_CDN=0` lúc build
+  để luôn dùng bản local (ví dụ mạng LAN không có Internet). Đổi phiên bản `@mediapipe/tasks-vision` thì sửa cả
+  `TASKS_VISION_VERSION` trong `lib/landmarks.ts`.
 - **Giao diện điện thoại** (`pointer: coarse`): khi bắt đầu phiên dịch, camera phủ toàn màn hình (né tai thỏ bằng
   `env(safe-area-inset-*)`); trạng thái và fps ở hai góc trên, phụ đề (các từ vừa ký, từ đang chờ chốt lấp dần theo
   phiếu, câu đã ghép; chưa ký thì hiện câu vừa xong) ở góc dưới trái, nút đổi camera trước/sau, xoá từ cuối, kết

@@ -57,9 +57,27 @@ export interface IsolatedFrame {
   faceLocked: boolean;
 }
 
+/** URL riêng cho thư mục wasm và từng model (khi chúng không nằm chung một thư mục, ví dụ lấy từ CDN). */
+export interface AssetUrls {
+  wasm: string;
+  face: string;
+  pose: string;
+  hand: string;
+}
+
+/** Thư mục chứa wasm/ và các model như public/mediapipe/ → URL từng file. */
+export function assetDir(dir: string): AssetUrls {
+  return {
+    wasm: `${dir}/wasm`,
+    face: `${dir}/blaze_face_short_range.tflite`,
+    pose: `${dir}/pose_landmarker_full.task`,
+    hand: `${dir}/hand_landmarker.task`,
+  };
+}
+
 export interface IsolatorOptions {
-  /** Thư mục chứa wasm/ và các model (.task, .tflite). */
-  assets?: string;
+  /** Thư mục chứa wasm/ và các model (.task, .tflite), hoặc URL riêng từng file. */
+  assets?: string | AssetUrls;
   delegate?: Delegate;
   /** numPoses của PoseLandmarker. 1 = tracking ổn định như lúc thu dữ liệu; 2 = loại được người đi ngang trong crop. */
   numPoses?: number;
@@ -143,19 +161,20 @@ export class MainSubjectIsolator {
       assets = "/mediapipe", delegate = "GPU", numPoses = 1, numHands = 4,
       faceEvery = 4, faceHold = 3, confidence = 0.5,
     } = options;
+    const urls = typeof assets === "string" ? assetDir(assets) : assets;
     const vision = await import("@mediapipe/tasks-vision");
-    const fileset = await vision.FilesetResolver.forVisionTasks(`${assets}/wasm`);
+    const fileset = await vision.FilesetResolver.forVisionTasks(urls.wasm);
     const build = async (d: Delegate) => {
       const opened: { close(): void }[] = [];
       try {
         const face = await vision.FaceDetector.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: `${assets}/blaze_face_short_range.tflite`, delegate: d },
+          baseOptions: { modelAssetPath: urls.face, delegate: d },
           runningMode: "VIDEO",
           minDetectionConfidence: confidence,
         });
         opened.push(face);
         const pose = await vision.PoseLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: `${assets}/pose_landmarker_full.task`, delegate: d },
+          baseOptions: { modelAssetPath: urls.pose, delegate: d },
           runningMode: "VIDEO",
           numPoses,
           minPoseDetectionConfidence: confidence,
@@ -164,7 +183,7 @@ export class MainSubjectIsolator {
         });
         opened.push(pose);
         const hand = await vision.HandLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: `${assets}/hand_landmarker.task`, delegate: d },
+          baseOptions: { modelAssetPath: urls.hand, delegate: d },
           runningMode: "VIDEO",
           numHands,
           minHandDetectionConfidence: confidence,

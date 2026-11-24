@@ -6,9 +6,12 @@ import {
   type CommittedWindow,
   Recognizer,
   SPEED_PRESETS,
+  TURBO_LEVELS,
+  TURBO_PRESETS,
   type Phase,
   type RecognizerState,
   type Speed,
+  type TurboLevel,
 } from "@/lib/recognizer";
 import {
   addSample,
@@ -38,6 +41,9 @@ interface Settings {
   mirrorData: boolean;
   debugCrop: boolean;
   speed: Speed;
+  /** Siêu tốc (TURBO_PRESETS): bật thì thay cho `speed`. */
+  turbo: boolean;
+  turboLevel: TurboLevel;
   minConsecutive: number;
   sentenceGapSeconds: number;
   /** Dùng mẫu cá nhân khi nhận diện. */
@@ -61,6 +67,8 @@ const DEFAULT_SETTINGS: Settings = {
   mirrorData: DEFAULT_OPTIONS.mirrorData,
   debugCrop: false,
   speed: "accurate",
+  turbo: false,
+  turboLevel: 4,
   minConsecutive: DEFAULT_OPTIONS.minConsecutive,
   sentenceGapSeconds: DEFAULT_OPTIONS.sentenceGapMs / 1000,
   personalize: true,
@@ -101,7 +109,11 @@ function loadSettings(): Settings {
     const groqKey = localStorage.getItem(GROQ_KEY) || "";
     const speed = saved.speed in SPEED_PRESETS ? saved.speed : DEFAULT_SETTINGS.speed;
     const learnMode = saved.learnMode === "sentence" ? "sentence" : DEFAULT_SETTINGS.learnMode;
-    return { ...DEFAULT_SETTINGS, ...saved, speed, learnMode, groqKey, rememberKey: Boolean(groqKey) };
+    const turbo = saved.turbo === true;
+    const turboLevel = TURBO_LEVELS.includes(saved.turboLevel) ? saved.turboLevel : DEFAULT_SETTINGS.turboLevel;
+    return {
+      ...DEFAULT_SETTINGS, ...saved, speed, turbo, turboLevel, learnMode, groqKey, rememberKey: Boolean(groqKey),
+    };
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -337,7 +349,8 @@ export default function Home() {
   useEffect(() => {
     if (!loaded) return;
     saveSettings(settings);
-    const { predictFrames, minFrames, strideFrames, minHandFrames } = SPEED_PRESETS[settings.speed];
+    const preset = settings.turbo ? TURBO_PRESETS[settings.turboLevel] : SPEED_PRESETS[settings.speed];
+    const { predictFrames, minFrames, strideFrames, minHandFrames } = preset;
     recognizerRef.current?.setOptions({
       apiUrl: settings.apiUrl,
       predictFrames,
@@ -1014,7 +1027,7 @@ export default function Home() {
             <fieldset className="segmented">
               <legend>Tốc độ</legend>
               <div
-                className="segmented-track"
+                className={`segmented-track${settings.turbo ? " inactive" : ""}`}
                 style={{
                   "--i": (Object.keys(SPEED_PRESETS) as Speed[]).indexOf(settings.speed),
                   "--n": Object.keys(SPEED_PRESETS).length,
@@ -1022,18 +1035,49 @@ export default function Home() {
               >
                 <span className="segmented-thumb" aria-hidden="true" />
                 {(Object.keys(SPEED_PRESETS) as Speed[]).map((key) => (
-                  <label key={key} className={settings.speed === key ? "selected" : ""}>
+                  <label key={key} className={settings.speed === key && !settings.turbo ? "selected" : ""}>
                     <input
                       type="radio" name="speed" value={key}
                       checked={settings.speed === key}
-                      onChange={() => update("speed", key)}
+                      onChange={() => setSettings((prev) => ({ ...prev, speed: key, turbo: false }))}
+                      onClick={() => update("turbo", false)}
                     />
                     {SPEED_PRESETS[key].label.replace(/\s*\(.*\)/, "")}
                   </label>
                 ))}
               </div>
-              <Swap value={settings.speed} className="help">{SPEED_PRESETS[settings.speed].hint}</Swap>
+              {!settings.turbo && (
+                <Swap value={settings.speed} className="help">{SPEED_PRESETS[settings.speed].hint}</Swap>
+              )}
             </fieldset>
+            <div className={`turbo${settings.turbo ? " on" : ""}`}>
+              <label className="check">
+                <input type="checkbox" checked={settings.turbo} onChange={(e) => update("turbo", e.target.checked)} />
+                <span>Siêu tốc (nhanh hơn Rất nhanh)</span>
+              </label>
+              <label className="field">
+                <span>Mức tăng tốc: {TURBO_PRESETS[settings.turboLevel].label}</span>
+                <input
+                  type="range" min={0} max={TURBO_LEVELS.length - 1} step={1}
+                  value={TURBO_LEVELS.indexOf(settings.turboLevel)}
+                  disabled={!settings.turbo}
+                  aria-valuetext={TURBO_PRESETS[settings.turboLevel].label}
+                  onChange={(e) => update("turboLevel", TURBO_LEVELS[Number(e.target.value)])}
+                />
+              </label>
+              <div className="turbo-ticks" aria-hidden="true">
+                {TURBO_LEVELS.map((level) => (
+                  <span key={level} className={settings.turboLevel === level ? "selected" : ""}>
+                    {TURBO_PRESETS[level].label}
+                  </span>
+                ))}
+              </div>
+              {settings.turbo && (
+                <Swap value={`turbo-${settings.turboLevel}`} className="help">
+                  {TURBO_PRESETS[settings.turboLevel].hint}
+                </Swap>
+              )}
+            </div>
             <div className="grid2">
               <label className="field">
                 <span>Số phiếu để chốt từ</span>

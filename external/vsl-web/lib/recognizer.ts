@@ -91,6 +91,30 @@ export const SPEED_PRESETS: Record<Speed, SpeedPreset> = {
   },
 };
 
+// Siêu tốc: nhanh hơn cả "Rất nhanh". xN = chờ ít hơn N lần so với "Chuẩn" (30 frame = 2 giây), tức minFrames
+// ≈ 30 / N; cửa sổ dự đoán = 2 × minFrames. minHandFrames phải > idleHandFrames (3), nếu không mọi cửa sổ đều
+// bị coi là nghỉ tay. Model chỉ thấy một phần ký hiệu nên dễ nhầm hơn hẳn: hợp với ký hiệu tĩnh, ký dứt khoát.
+export type TurboLevel = 4 | 6 | 8;
+export const TURBO_LEVELS: TurboLevel[] = [4, 6, 8];
+
+export const TURBO_PRESETS: Record<TurboLevel, SpeedPreset> = {
+  4: {
+    label: "x4",
+    hint: "Dự đoán sau 0.5 giây trên 0.8 giây gần nhất. Dễ nhầm hơn Rất nhanh, nhất là ký hiệu có chuyển động.",
+    predictFrames: 12, minFrames: 7, strideFrames: 2, minHandFrames: 5,
+  },
+  6: {
+    label: "x6",
+    hint: "Dự đoán sau 0.33 giây trên 0.67 giây gần nhất, mỗi frame một lần. Chỉ nên dùng khi ký dứt khoát.",
+    predictFrames: 10, minFrames: 5, strideFrames: 1, minHandFrames: 4,
+  },
+  8: {
+    label: "x8",
+    hint: "Dự đoán sau 0.27 giây trên 0.53 giây gần nhất, mỗi frame một lần. Nhanh nhất và dễ nhầm nhất.",
+    predictFrames: 8, minFrames: 4, strideFrames: 1, minHandFrames: 4,
+  },
+};
+
 export interface RecognizerOptions {
   apiUrl: string;
   captureFps: number;

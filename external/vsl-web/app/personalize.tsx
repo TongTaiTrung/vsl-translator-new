@@ -6,6 +6,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { CommittedWindow } from "@/lib/recognizer";
 import { MAX_AUTO_PER_LABEL, MAX_PER_LABEL, type Sample, sourceOf } from "@/lib/memory";
+import { Slider } from "./slider";
+import { Switch } from "./switch";
 
 interface Props {
   open: boolean;
@@ -93,22 +95,17 @@ export function PersonalizeSheet(props: Props) {
               Ký vài từ theo cách của bạn để mô hình nhận ra bạn tốt hơn, không cần train lại. Mẫu (chỉ landmark,
               không có hình) lưu trên trình duyệt này và chỉ gửi lên server khi nhận diện.
             </p>
-            <label className="check">
-              <input type="checkbox" checked={enabled} onChange={(e) => props.onEnabled(e.target.checked)} />
-              <span>Dùng mẫu của tôi khi nhận diện</span>
-            </label>
+            <Switch label="Dùng mẫu của tôi khi nhận diện" checked={enabled} onChange={props.onEnabled} />
             <label className="field">
               <span>Mức ảnh hưởng: {Math.round(strength * 100)}%</span>
-              <input
-                type="range" min={0.1} max={1} step={0.05} value={strength} disabled={!enabled}
-                onChange={(e) => props.onStrength(Number(e.target.value))}
+              <Slider
+                min={0.1} max={1} step={0.05} value={strength} disabled={!enabled}
+                valueText={`${Math.round(strength * 100)}%`} onChange={props.onStrength}
               />
             </label>
-            <label className="check">
-              <input type="checkbox" checked={autoLearn} disabled={!enabled}
-                onChange={(e) => props.onAutoLearn(e.target.checked)} />
-              <span>Tự học từ các câu tôi ký</span>
-            </label>
+            <Switch
+              label="Tự học từ các câu tôi ký" checked={autoLearn} disabled={!enabled} onChange={props.onAutoLearn}
+            />
             <div className="memory-mode" role="radiogroup" aria-label="Khi nào tự học">
               <label className="check">
                 <input type="radio" name="learn-mode" checked={learnMode === "realtime"} disabled={!enabled || !autoLearn}

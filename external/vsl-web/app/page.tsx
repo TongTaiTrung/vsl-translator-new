@@ -28,6 +28,8 @@ import {
 import type { FrameLandmarks } from "@/lib/landmarks";
 import { DEFAULT_MODEL, naiveSentence } from "@/lib/sentence";
 import { PersonalizeSheet } from "./personalize";
+import { Slider } from "./slider";
+import { Switch } from "./switch";
 import { ThemeToggle } from "./theme-toggle";
 
 // ------------------------------------------------------------------ cài đặt (lưu trên trình duyệt)
@@ -1009,10 +1011,10 @@ export default function Home() {
                 onChange={(e) => update("groqKey", e.target.value)}
               />
             </label>
-            <label className="check">
-              <input type="checkbox" checked={settings.rememberKey} onChange={(e) => update("rememberKey", e.target.checked)} />
-              <span>Ghi nhớ key trên trình duyệt này</span>
-            </label>
+            <Switch
+              label="Ghi nhớ key trên trình duyệt này"
+              checked={settings.rememberKey} onChange={(value) => update("rememberKey", value)}
+            />
             <p className="help">
               Key chỉ gửi kèm yêu cầu ghép câu tới Groq, server không lưu. Không có key thì ghép thô.
             </p>
@@ -1046,37 +1048,42 @@ export default function Home() {
                   </label>
                 ))}
               </div>
-              {!settings.turbo && (
-                <Swap value={settings.speed} className="help">{SPEED_PRESETS[settings.speed].hint}</Swap>
-              )}
+              <Swap value={settings.speed} className={`help${settings.turbo ? " dimmed" : ""}`}>
+                {SPEED_PRESETS[settings.speed].hint}
+              </Swap>
             </fieldset>
             <div className={`turbo${settings.turbo ? " on" : ""}`}>
-              <label className="check">
-                <input type="checkbox" checked={settings.turbo} onChange={(e) => update("turbo", e.target.checked)} />
-                <span>Siêu tốc (nhanh hơn Rất nhanh)</span>
-              </label>
-              <label className="field">
-                <span>Mức tăng tốc: {TURBO_PRESETS[settings.turboLevel].label}</span>
-                <input
-                  type="range" min={0} max={TURBO_LEVELS.length - 1} step={1}
-                  value={TURBO_LEVELS.indexOf(settings.turboLevel)}
-                  disabled={!settings.turbo}
-                  aria-valuetext={TURBO_PRESETS[settings.turboLevel].label}
-                  onChange={(e) => update("turboLevel", TURBO_LEVELS[Number(e.target.value)])}
-                />
-              </label>
-              <div className="turbo-ticks" aria-hidden="true">
-                {TURBO_LEVELS.map((level) => (
-                  <span key={level} className={settings.turboLevel === level ? "selected" : ""}>
-                    {TURBO_PRESETS[level].label}
-                  </span>
-                ))}
+              <Switch
+                label="Siêu tốc" hint="Nhanh hơn cả Rất nhanh, đổi lại dễ nhầm hơn."
+                checked={settings.turbo} onChange={(value) => update("turbo", value)}
+              />
+              <div className="turbo-panel" inert={!settings.turbo}>
+                <div className="turbo-panel-inner">
+                  <div className="turbo-panel-content">
+                    <Slider
+                      stops min={0} max={TURBO_LEVELS.length - 1} step={1}
+                      value={TURBO_LEVELS.indexOf(settings.turboLevel)}
+                      ariaLabel="Mức tăng tốc" valueText={TURBO_PRESETS[settings.turboLevel].label}
+                      onChange={(i) => update("turboLevel", TURBO_LEVELS[i])}
+                    />
+                    <div className="slider-labels" aria-hidden="true">
+                      {TURBO_LEVELS.map((level, i) => (
+                        <button
+                          key={level} type="button" tabIndex={-1}
+                          className={settings.turboLevel === level ? "selected" : ""}
+                          style={{ "--s": i / (TURBO_LEVELS.length - 1) } as React.CSSProperties}
+                          onClick={() => update("turboLevel", level)}
+                        >
+                          {TURBO_PRESETS[level].label}
+                        </button>
+                      ))}
+                    </div>
+                    <Swap value={`turbo-${settings.turboLevel}`} className="help">
+                      {TURBO_PRESETS[settings.turboLevel].hint}
+                    </Swap>
+                  </div>
+                </div>
               </div>
-              {settings.turbo && (
-                <Swap value={`turbo-${settings.turboLevel}`} className="help">
-                  {TURBO_PRESETS[settings.turboLevel].hint}
-                </Swap>
-              )}
             </div>
             <div className="grid2">
               <label className="field">
@@ -1101,18 +1108,9 @@ export default function Home() {
 
           <section className="group">
             <h3>Camera và kết nối</h3>
-            <label className="check">
-              <input type="checkbox" checked={settings.mirrorPreview} onChange={(e) => update("mirrorPreview", e.target.checked)} />
-              <span>Lật gương hình xem trước</span>
-            </label>
-            <label className="check">
-              <input type="checkbox" checked={settings.mirrorData} onChange={(e) => update("mirrorData", e.target.checked)} />
-              <span>Lật ảnh khi nhận diện (khớp lúc thu dữ liệu)</span>
-            </label>
-            <label className="check">
-              <input type="checkbox" checked={settings.debugCrop} onChange={(e) => update("debugCrop", e.target.checked)} />
-              <span>Hiện khung crop người ký (debug)</span>
-            </label>
+            <Switch label="Lật gương hình xem trước" checked={settings.mirrorPreview} onChange={(value) => update("mirrorPreview", value)} />
+            <Switch label="Lật ảnh khi nhận diện (khớp lúc thu dữ liệu)" checked={settings.mirrorData} onChange={(value) => update("mirrorData", value)} />
+            <Switch label="Hiện khung crop người ký (debug)" checked={settings.debugCrop} onChange={(value) => update("debugCrop", value)} />
             <label className="field">
               <span>Địa chỉ API nhận diện</span>
               <input value={settings.apiUrl} spellCheck={false} onChange={(e) => update("apiUrl", e.target.value)} />

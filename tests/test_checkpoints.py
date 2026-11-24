@@ -20,36 +20,42 @@ class CheckpointRotationTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_publish_points_best_at_new_run_and_keeps_five_newest(self):
-        for day in range(10, 17):                                   # 7 run cũ, xen kẽ train / fine-tune
-            make_run(self.root, f"vsl_{'ft_' if day % 2 else ''}202611{day}_120000")
+    def test_publish_makes_best_a_real_dir_and_keeps_five_newest(self):
+        for day in range(10, 17):
+            make_run(self.root, f"202611{day}_120000")
         experiment = make_run(self.root / "experiments", "bench")
-        new = make_run(self.root, "vsl_20261123_090000")
+        new = make_run(self.root, "20261123_090000")
 
-        removed = publish_run(new, runs_dir=self.root, keep=5)
+        best = publish_run(new, runs_dir=self.root, keep=5)
 
-        self.assertEqual(len(removed), 3)
+        best_dir = self.root / BEST_NAME
+        self.assertEqual(best, best_dir)
+        self.assertTrue(best_dir.is_dir() and not best_dir.is_symlink())
+        self.assertFalse(new.exists())                              # đã đổi tên thành best
         self.assertEqual([p.name for p in list_runs(self.root)],
-                         ["vsl_20261123_090000", "vsl_20261116_120000", "vsl_ft_20261115_120000",
-                          "vsl_20261114_120000", "vsl_ft_20261113_120000"])
-        best = self.root / BEST_NAME
-        self.assertTrue(best.is_symlink())
-        self.assertEqual(best.resolve(), new)
-        self.assertEqual(latest_checkpoint(self.root).resolve(), new / "ensemble.pt")
+                         ["20261116_120000", "20261115_120000", "20261114_120000", "20261113_120000"])
+        self.assertEqual(latest_checkpoint(self.root), best_dir / "ensemble.pt")
         self.assertTrue((experiment / "ensemble.pt").is_file())
 
-    def test_republishing_moves_best_and_never_deletes_the_new_run(self):
-        first = make_run(self.root, "vsl_20261123_090000")
-        publish_run(first, runs_dir=self.root, keep=1)
-        older_name = make_run(self.root, "vsl_20261101_000000")    # tên cũ hơn nhưng là run vừa lưu
-        removed = publish_run(older_name, runs_dir=self.root, keep=1)
-        self.assertEqual(removed, [first])
-        self.assertEqual((self.root / BEST_NAME).resolve(), older_name)
+    def test_republishing_archives_old_best_under_its_own_name(self):
+        publish_run(make_run(self.root, "20261123_090000"), runs_dir=self.root, keep=5)
+        publish_run(make_run(self.root, "20261124_090000"), runs_dir=self.root, keep=5)
+        self.assertEqual([p.name for p in list_runs(self.root)], ["20261123_090000"])
+        self.assertEqual((self.root / BEST_NAME / ".run_name").read_text(), "20261124_090000")
+        publish_run(make_run(self.root, "20261125_090000"), runs_dir=self.root, keep=1)
+        self.assertEqual(list_runs(self.root), [])                  # keep=1: chỉ còn best
+
+    def test_legacy_symlink_best_is_replaced(self):
+        old = make_run(self.root, "vsl_20261123_090000")
+        (self.root / BEST_NAME).symlink_to(old.name, target_is_directory=True)
+        publish_run(make_run(self.root, "20261124_090000"), runs_dir=self.root, keep=5)
+        self.assertFalse((self.root / BEST_NAME).is_symlink())
+        self.assertTrue(old.is_dir())
 
     def test_run_outside_runs_dir_is_ignored(self):
         old = make_run(self.root, "vsl_20261101_000000")
         outside = make_run(self.root / "experiments", "vsl_20261123_090000")
-        self.assertEqual(publish_run(outside, runs_dir=self.root, keep=1), [])
+        self.assertIsNone(publish_run(outside, runs_dir=self.root, keep=1))
         self.assertFalse((self.root / BEST_NAME).exists())
         self.assertTrue(old.is_dir())
 

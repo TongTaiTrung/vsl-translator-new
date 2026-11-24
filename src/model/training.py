@@ -1192,7 +1192,7 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
     """
     Huấn luyện trên MỌI lớp trong (X, y, classes): k-fold -> hiệu chỉnh -> (tuỳ chọn) model toàn bộ
     dữ liệu -> lưu ensemble.pt / classes.json / metrics.json / vsl_classifier.onnx.
-    publish: nếu out_dir nằm trực tiếp trong runs/ thì đặt nó làm runs/best và chỉ giữ 5 run gần nhất
+    publish: nếu out_dir nằm trực tiếp trong runs/ thì nó được đổi tên thành runs/best (out_dir trả về là đường dẫn mới) và chỉ giữ 5 run gần nhất
     (``checkpoints.publish_run``).
     Trả về dict kết quả (CV, lịch sử từng fold, OOF logits, đường dẫn).
     """
@@ -1362,7 +1362,7 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
 
     if publish:
         from src.model.checkpoints import publish_run
-        publish_run(out_dir)
+        out_dir = publish_run(out_dir) or out_dir          # thư mục run đã được đổi thành runs/best
 
     return {**metrics, "out_dir": str(out_dir), "onnx_path": str(onnx_path) if onnx_path else None,
             "fold_histories": [i["history"] for i in infos], "oof_logits": oof, "oof_mask": oof_mask,

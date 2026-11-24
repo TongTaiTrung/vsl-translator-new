@@ -1,7 +1,8 @@
-"""Quản lý các run trong ``runs/``: ``runs/best`` trỏ tới run mới nhất, chỉ giữ ``KEEP_RUNS`` run gần nhất.
+"""Quản lý các run trong ``runs/``: ``runs/best`` là run mới nhất, chỉ giữ ``KEEP_RUNS`` run gần nhất.
 
-Một "run" là thư mục con trực tiếp của ``runs/`` có ``ensemble.pt`` (``train.ipynb`` tạo ``vsl_<thời gian>``,
-``vsl_model_finetuner.ipynb`` tạo ``vsl_ft_<thời gian>``). ``runs/experiments/`` và các thư mục sâu hơn
+Một "run" là thư mục con trực tiếp của ``runs/`` có ``ensemble.pt`` (``train.ipynb`` và
+``vsl_model_finetuner.ipynb`` lưu vào thư mục tạm ``<thời gian>`` rồi ``publish_run`` đổi nó thành ``runs/best``;
+best cũ được đổi tên thành thời điểm của nó). ``runs/experiments/`` và các thư mục sâu hơn
 không bao giờ bị đụng tới.
 """
 
@@ -16,6 +17,7 @@ RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
 BEST_NAME = "best"
 KEEP_RUNS = 5
 PROTECTED = {BEST_NAME, "experiments"}
+RUN_NAME_FILE = ".run_name"
 _STAMP = re.compile(r"(\d{8}_\d{6})")
 
 
@@ -52,29 +54,47 @@ def latest_checkpoint(runs_dir: Path = RUNS_DIR) -> Path:
     return runs[0] / "ensemble.pt"
 
 
-def publish_run(run_dir: str | Path, runs_dir: Path = RUNS_DIR, keep: int = KEEP_RUNS) -> list[Path]:
-    """Đặt run vừa lưu làm ``runs/best`` rồi xoá các run cũ, chỉ giữ ``keep`` run gần nhất.
+def _archive_name(best: Path) -> str:
+    """Tên lưu trữ của best cũ: ``.run_name`` (tên lúc train) nếu có; không thì mtime của ensemble.pt."""
+    marker = best / RUN_NAME_FILE
+    if marker.is_file() and marker.read_text(encoding="utf-8").strip():
+        return marker.read_text(encoding="utf-8").strip()
+    return datetime.fromtimestamp((best / "ensemble.pt").stat().st_mtime).strftime("%Y%m%d_%H%M%S")
 
-    Chỉ áp dụng cho run nằm trực tiếp trong runs_dir; run ở nơi khác (vd. ``runs/experiments/...``, thư mục tạm
-    của test) được bỏ qua. Run vừa lưu luôn được giữ. Trả về danh sách thư mục đã xoá.
+
+def publish_run(run_dir: str | Path, runs_dir: Path = RUNS_DIR, keep: int = KEEP_RUNS) -> Path | None:
+    """Biến run vừa lưu thành ``runs/best`` (thư mục thật, không phải symlink) rồi xoá run cũ.
+
+    ``runs/best`` cũ được đổi tên thành thời điểm của nó (``20261124_143705``) và nằm cạnh các run lưu trữ; chỉ giữ
+    ``keep`` run gần nhất tính cả best. Chỉ áp dụng cho run nằm trực tiếp trong runs_dir; run ở nơi khác
+    (vd. ``runs/experiments/...``, thư mục tạm của test) được bỏ qua và trả về None. Trả về đường dẫn ``runs/best``
+    mới: thư mục run đã được di chuyển nên đường dẫn cũ không còn dùng được.
     """
     if keep < 1:
         raise ValueError("keep phải >= 1")
     run_dir, runs_dir = Path(run_dir).resolve(), Path(runs_dir).resolve()
-    if run_dir.parent != runs_dir or run_dir.name in PROTECTED or not (run_dir / "ensemble.pt").is_file():
-        return []
-
     best = runs_dir / BEST_NAME
-    if best.is_symlink() or best.is_file():
-        best.unlink()
-    elif best.exists():
-        raise FileExistsError(f"{best} là thư mục thật, không phải symlink; hãy đổi tên nó rồi chạy lại")
-    best.symlink_to(run_dir.name, target_is_directory=True)   # đường dẫn tương đối: chuyển cả runs/ vẫn đúng
+    if run_dir == best.resolve() and best.is_dir() and not best.is_symlink():
+        return best                                          # đã là runs/best
+    if run_dir.parent != runs_dir or run_dir.name in PROTECTED or not (run_dir / "ensemble.pt").is_file():
+        return None
 
-    others = [p for p in list_runs(runs_dir) if p != run_dir]
-    removed = others[keep - 1:]
+    if best.is_symlink() or best.is_file():                  # kiểu cũ: symlink -> run thật, run thật vẫn ở lại làm lưu trữ
+        best.unlink()
+    elif best.is_dir():
+        archive = runs_dir / _archive_name(best)
+        n = 1
+        while archive.exists():
+            archive = runs_dir / f"{_archive_name(best)}_{n}"
+            n += 1
+        best.rename(archive)
+    (run_dir / RUN_NAME_FILE).write_text(run_dir.name, encoding="utf-8")
+    name = run_dir.name
+    run_dir.rename(best)
+
+    removed = list_runs(runs_dir)[keep - 1:]
     for path in removed:
         shutil.rmtree(path)
-    print(f"runs/{BEST_NAME} -> {run_dir.name}" + (f" | đã xoá {len(removed)} run cũ: "
-                                                   + ", ".join(p.name for p in removed) if removed else ""))
-    return removed
+    print(f"Model mới nhất: runs/{BEST_NAME} (train lúc {name})" + (f" | đã xoá {len(removed)} run cũ: "
+                                                                   + ", ".join(p.name for p in removed) if removed else ""))
+    return best

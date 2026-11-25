@@ -67,7 +67,14 @@ export interface SpeedPreset {
   minFrames: number;
   strideFrames: number;
   minHandFrames: number;
+  /** Mặc định DEFAULT_OPTIONS.idleHandFrames (3); cửa sổ 1–3 frame cần 0 (chỉ "không có tay" mới là nghỉ). */
+  idleHandFrames?: number;
+  /** Cửa sổ ít hơn 30 frame được làm đầy thế nào trên server; mặc định "interp". */
+  fill?: FillMode;
 }
+
+/** "interp": server nội suy cửa sổ về 30 frame; "repeat": chép lặp từng frame thật cho đủ 30 (giữ yên tư thế). */
+export type FillMode = "interp" | "repeat";
 
 // Thời gian từ lúc bắt đầu ký tới lúc chốt từ, đo trên trình duyệt (video clip thu dữ liệu làm camera,
 // 2 phiếu): chuẩn ~1.5 s, nhanh ~1.0 s, rất nhanh ~0.8 s. Phát lại offline các clip holdout không thấy giảm
@@ -94,8 +101,16 @@ export const SPEED_PRESETS: Record<Speed, SpeedPreset> = {
 // Siêu tốc: nhanh hơn cả "Rất nhanh". xN = chờ ít hơn N lần so với "Chuẩn" (30 frame = 2 giây), tức minFrames
 // ≈ 30 / N; cửa sổ dự đoán = 2 × minFrames. minHandFrames phải > idleHandFrames (3), nếu không mọi cửa sổ đều
 // bị coi là nghỉ tay. Model chỉ thấy một phần ký hiệu nên dễ nhầm hơn hẳn: hợp với ký hiệu tĩnh, ký dứt khoát.
-export type TurboLevel = 4 | 6 | 8;
-export const TURBO_LEVELS: TurboLevel[] = [4, 6, 8];
+//
+// x20/x30/x40: không chờ nữa. Vừa có 1–2 frame là dự đoán, server chép lặp các frame đó cho đủ cửa sổ 30 frame
+// (fill "repeat") nên model thấy một tư thế đứng yên. Camera thu 15 fps nên không chờ ít hơn 1 frame được:
+// x30 và x40 cùng dự đoán từ frame đầu tiên, x40 chỉ nhìn đúng 1 frame mới nhất, x30 nhìn 2. Cửa sổ quá ngắn
+// để đếm "frame có tay" theo ngưỡng 3 nên nghỉ tay = không có tay (idleHandFrames 0).
+// Đo offline trên 326 clip đã thu (cửa sổ cắt giữa clip, model đã thấy các clip này lúc train nên con số lạc
+// quan): 1 frame đúng 93%, 2 frame 94%, so với 100% khi đủ 30 frame. Sai gần như chỉ ở từ có chuyển động
+// (age, cảm ơn, dấu nặng, địa chỉ); lặp frame và nội suy cho kết quả gần như bằng nhau.
+export type TurboLevel = 4 | 6 | 8 | 20 | 30 | 40;
+export const TURBO_LEVELS: TurboLevel[] = [4, 6, 8, 20, 30, 40];
 
 export const TURBO_PRESETS: Record<TurboLevel, SpeedPreset> = {
   4: {
@@ -112,6 +127,21 @@ export const TURBO_PRESETS: Record<TurboLevel, SpeedPreset> = {
     label: "x8",
     hint: "Dự đoán sau 0.27 giây trên 0.53 giây gần nhất, mỗi frame một lần. Nhanh nhất và dễ nhầm nhất.",
     predictFrames: 8, minFrames: 4, strideFrames: 1, minHandFrames: 4,
+  },
+  20: {
+    label: "x20",
+    hint: "Dự đoán ngay khi có 2 frame (0.13 giây), lặp 3 frame gần nhất cho đủ cửa sổ. Chỉ hợp với ký hiệu tĩnh như chữ cái; từ có chuyển động dễ sai.",
+    predictFrames: 3, minFrames: 2, strideFrames: 1, minHandFrames: 2, idleHandFrames: 0, fill: "repeat",
+  },
+  30: {
+    label: "x30",
+    hint: "Dự đoán từ frame đầu tiên, lặp 2 frame gần nhất cho đủ cửa sổ. Gần như chỉ nhìn tư thế tay: từ có chuyển động thường bị bỏ qua hoặc sai.",
+    predictFrames: 2, minFrames: 1, strideFrames: 1, minHandFrames: 1, idleHandFrames: 0, fill: "repeat",
+  },
+  40: {
+    label: "x40",
+    hint: "Mỗi frame dự đoán riêng: chỉ 1 frame mới nhất, lặp cho đủ cửa sổ. Nhanh nhất có thể ở 15 fps, dễ nhầm nhất, nhất là lúc chuyển ký hiệu.",
+    predictFrames: 1, minFrames: 1, strideFrames: 1, minHandFrames: 1, idleHandFrames: 0, fill: "repeat",
   },
 };
 
@@ -137,6 +167,8 @@ export interface RecognizerOptions {
   minHandFrames: number;
   /** Nghỉ tay bao lâu (ms) thì kết thúc câu; 0 = tắt. */
   sentenceGapMs: number;
+  /** Cách server làm đầy cửa sổ ngắn (FillMode). */
+  fill: FillMode;
 }
 
 export const DEFAULT_OPTIONS: RecognizerOptions = {
@@ -152,6 +184,7 @@ export const DEFAULT_OPTIONS: RecognizerOptions = {
   idleHandFrames: 3,
   minHandFrames: SPEED_PRESETS.accurate.minHandFrames,
   sentenceGapMs: 3000,
+  fill: "interp",
 };
 
 /** Tối đa số frame một request /api/stream (giống MAX_STREAM_FRAMES của server). */
@@ -731,6 +764,7 @@ export class Recognizer {
       predict,
       window: this.options.predictFrames,
       min_frames: Math.min(this.options.minFrames, this.options.predictFrames),
+      fill: this.options.fill,
       fps: this.options.captureFps,
       top_k: 3,
     };

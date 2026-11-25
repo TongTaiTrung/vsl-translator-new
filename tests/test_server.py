@@ -4,11 +4,12 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import cv2
 import numpy as np
 
-from src.app.server import create_app
+from src.app.server import create_app, repeat_frames
 from src.features.extract import _PALM_Y, FEATURE_DIM, REST_Y, SEQ_FEATURE_DIM, active_presence, extract
 from src.features.landmarks import dict_to_results, results_to_dict
 from src.model.predict import VSLPredictor
@@ -250,6 +251,36 @@ class StreamTests(unittest.TestCase):
         body = self.send(sid, [self.empty] * 2).get_json()              # mặc định: cả cửa sổ 30 frame
         self.assertEqual((body["ready"], body["frames"], body["hand_frames"], body["window"]), (True, 30, 21, 30))
 
+    def test_fill_repeat_copies_short_window_to_full_length(self):
+        sid = self.open()
+        seen = []
+        original = self.predictor.predict_raw
+
+        def spy(features, **kwargs):
+            seen.append(np.array(features))
+            return original(features, **kwargs)
+
+        with mock.patch.object(self.predictor, "predict_raw", side_effect=spy):
+            body = self.send(sid, [self.hand], window=1, min_frames=1, fill="repeat").get_json()
+            self.assertEqual((body["ready"], body["frames"], body["hand_frames"]), (True, 1, 1))
+            self.send(sid, [self.empty], window=2, min_frames=1, fill="repeat")
+            self.send(sid, [self.hand], window=2, min_frames=1)                  # mặc định: nội suy
+        one, two, interp = seen
+        same = lambda rows, ref: all(np.array_equal(r, ref, equal_nan=True) for r in rows)   # frame trống có NaN
+        self.assertEqual(one.shape[0], 30)
+        self.assertTrue(same(one, one[0]))
+        # 2 frame thật → 15 bản của frame trước rồi 15 bản của frame sau (không có frame nội suy ở giữa).
+        self.assertEqual(two.shape[0], 30)
+        self.assertTrue(same(two[:15], two[0]) and same(two[15:], two[-1]))
+        self.assertFalse(np.array_equal(two[0], two[-1], equal_nan=True))
+        self.assertEqual(interp.shape[0], 2)
+
+    def test_repeat_frames_keeps_long_windows(self):
+        features = np.arange(12, dtype=np.float32).reshape(3, 4)
+        self.assertEqual(repeat_frames(features, 30)[:, 0].tolist(), [0.0] * 10 + [4.0] * 10 + [8.0] * 10)
+        long = np.zeros((40, 4), dtype=np.float32)
+        self.assertIs(repeat_frames(long, 30), long)
+
     def test_predict_false_only_extracts(self):
         sid = self.open()
         body = self.send(sid, [self.hand] * 30, predict=False).get_json()
@@ -370,6 +401,7 @@ class StreamTests(unittest.TestCase):
             {"frames": [self.empty], "window": 10.5},
             {"frames": [self.empty], "window": 10, "min_frames": 11},
             {"frames": [self.empty], "min_frames": True},
+            {"frames": [self.empty], "fill": "nearest"},
         ]
         for body in cases:
             with self.subTest(body={k: (v if k != "frames" else len(v)) for k, v in body.items()}):

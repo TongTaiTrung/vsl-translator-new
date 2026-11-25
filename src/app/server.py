@@ -37,6 +37,7 @@ Luồng liên tục (nhanh hơn nhiều): mỗi client mở một phiên giữ l
         "predict": true,              # tuỳ chọn; false = chỉ trích feature các frame mới, không chạy model
         "window": 30,                 # tuỳ chọn; dự đoán trên N nhịp (frame ở ``fps``) gần nhất (1–cửa sổ phiên)
         "min_frames": 30,             # tuỳ chọn; dự đoán khi đã có >= N nhịp (1–window), mặc định = window
+        "fill": "interp",             # tuỳ chọn; cửa sổ ít hơn 30 frame: "interp" (nội suy) | "repeat" (lặp frame)
         "fps": 15, "mirror_data": false, "top_k": 3
       }
 
@@ -51,7 +52,8 @@ Luồng liên tục (nhanh hơn nhiều): mỗi client mở một phiên giữ l
   bật ``predict`` mỗi vài frame: request dự đoán khi đó chỉ còn phải trích 1 frame rồi chạy model.
 
   ``window``/``min_frames`` nhỏ hơn cho kết quả sớm hơn (model thấy ít ký hiệu hơn nên kém chính xác hơn);
-  ``predict_raw`` tự nội suy số frame đó về 30.
+  ``predict_raw`` tự nội suy số frame đó về 30. ``fill: "repeat"`` thay vào đó chép lặp từng frame thật cho
+  đủ 30 (``repeat_frames``): cửa sổ 1–3 frame (siêu tốc x20–x40 trên web) thành một tư thế giữ yên, vận tốc ≈ 0.
 
   Cửa sổ tính theo THỜI GIAN (timestamp của client, thiếu thì suy từ ``fps``): ``window`` = 30 ở ``fps`` 15 là
   2 giây gần nhất, dù client thu 7 fps (điện thoại, ~15 frame) hay 30 fps (~60 frame). Cửa sổ theo số frame
@@ -362,6 +364,20 @@ def parse_memory(body) -> tuple[list[Exemplar], float] | None:
     return exemplars, float(strength)
 
 
+FILL_MODES = ("interp", "repeat")
+
+
+def repeat_frames(features: np.ndarray, target_len: int) -> np.ndarray:
+    """Chép lặp đều từng frame cho đủ ``target_len`` (giữ thứ tự, không tạo giá trị mới như nội suy).
+
+    Chỉ dùng khi cửa sổ ngắn hơn ``target_len``; dài hơn thì giữ nguyên để ``process_sequence`` co lại.
+    """
+    n = len(features)
+    if n == 0 or n >= target_len:
+        return features
+    return features[(np.arange(target_len) * n) // target_len]
+
+
 def _int_option(body: dict, key: str, default: int, low: int, high: int) -> int:
     value = body.get(key, default)
     if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
@@ -584,6 +600,9 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
             raise BadRequest("reset/predict phải là true/false")
         window_size = _int_option(body, "window", streams.window, 1, streams.window)
         min_frames = _int_option(body, "min_frames", window_size, 1, window_size)
+        fill = body.get("fill", "interp")
+        if fill not in FILL_MODES:
+            raise BadRequest(f"fill phải là một trong {list(FILL_MODES)}")
 
         session = streams.get(sid)
         if session is None:
@@ -601,7 +620,8 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
 
         ready = buffered >= min_frames
         predicted = ready and predict_now
-        result = run_model(recent, top_k, session.memory) if predicted else {}
+        model_input = repeat_frames(recent, expected_frames) if fill == "repeat" else recent
+        result = run_model(model_input, top_k, session.memory) if predicted else {}
         # buffered / hand_frames tính theo đơn vị frame ở nhịp ``fps`` (như lúc train) dù client thu nhanh hay chậm;
         # frames là số frame thật đem dự đoán, capture_fps là nhịp thu thật của client.
         hand_frames = round(count_hand_frames(recent) * covered / len(recent))

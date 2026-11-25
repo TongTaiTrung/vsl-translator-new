@@ -359,6 +359,8 @@ export default function Home() {
       minFrames,
       strideFrames,
       minHandFrames,
+      idleHandFrames: preset.idleHandFrames ?? DEFAULT_OPTIONS.idleHandFrames,
+      fill: preset.fill ?? DEFAULT_OPTIONS.fill,
       mirrorData: settings.mirrorData,
       minConsecutive: settings.minConsecutive,
       sentenceGapMs: settings.sentenceGapSeconds * 1000,

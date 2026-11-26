@@ -59,9 +59,9 @@ class Config:
     head: str = "linear"            # "linear" | "cosine"
     base_dropout: float = 0.2
     # tối ưu
-    max_epochs: int = 200
-    min_epochs: int = 30
-    patience: int = 30              # early stopping (epoch)
+    max_epochs: int = 60            # val (mẫu gốc) bão hoà ~epoch 5-10; 200 chỉ làm cosine không bao giờ hạ LR
+    min_epochs: int = 15
+    patience: int = 10              # early stopping (epoch): sau best ~10 epoch val không đổi thì dừng
     lr: float = 2e-3
     min_lr: float = 1e-5
     weight_decay: float = 0.05
@@ -305,15 +305,15 @@ def add_distractor_hand_features(
     if layout is None:
         return x
     shared = torch.as_tensor(layout[2], device=x.device)
-    out = x.clone()
     if isinstance(side, int):
         side = torch.full((x.shape[0],), side, dtype=torch.long, device=x.device)
-    for batch_index, selected in enumerate(side.tolist()):
-        cols = torch.as_tensor(layout[selected], device=x.device)
-        out[batch_index, :, cols] = donor[batch_index, :, cols]
-        if norm_stats is None:
-            out[batch_index, :, shared] = 0.0
+    side = torch.as_tensor(side, device=x.device)
+    col = torch.zeros(2, x.shape[-1], dtype=torch.bool, device=x.device)   # vector hoá: không lặp từng mẫu
+    for k in (0, 1):
+        col[k, torch.as_tensor(layout[k], device=x.device)] = True
+    out = torch.where(col[side][:, None, :], donor, x)
     if norm_stats is None:
+        out[..., shared] = 0.0
         return out
     mean, std, presence_aware = norm_stats
     if x.shape[-1] != SEQ_FEATURE_DIM:
@@ -660,15 +660,20 @@ class EMA:
         self.module = copy.deepcopy(model).eval()
         for p in self.module.parameters():
             p.requires_grad_(False)
+        pairs = list(zip(self.module.state_dict().values(), model.state_dict().values()))
+        self._float = ([e for e, m in pairs if e.dtype.is_floating_point],
+                       [m for e, m in pairs if e.dtype.is_floating_point])
+        self._other = [(e, m) for e, m in pairs if not e.dtype.is_floating_point]
 
     @torch.no_grad()
     def update(self, model: nn.Module, step: int):
+        # model phải là model đã truyền vào __init__ (giữ tham chiếu tensor, cập nhật gộp bằng _foreach)
         d = min(self.decay, (1 + step) / (10 + step))
-        for e, m in zip(self.module.state_dict().values(), model.state_dict().values()):
-            if e.dtype.is_floating_point:
-                e.mul_(d).add_(m.detach(), alpha=1 - d)
-            else:
-                e.copy_(m)
+        e, m = self._float
+        torch._foreach_mul_(e, d)
+        torch._foreach_add_(e, m, alpha=1 - d)
+        for e, m in self._other:
+            e.copy_(m)
 
 
 class AdaptiveController:
@@ -798,7 +803,8 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
     decay = [p for p in model.parameters() if p.ndim >= 2]
     no_decay = [p for p in model.parameters() if p.ndim < 2]
     opt = torch.optim.AdamW([{"params": decay, "weight_decay": cfg.weight_decay},
-                             {"params": no_decay, "weight_decay": 0.0}], lr=cfg.lr)
+                             {"params": no_decay, "weight_decay": 0.0}], lr=cfg.lr,
+                            fused=device.type in ("cuda", "mps"))   # gộp kernel: ít overhead mỗi bước
 
     n = len(Xtr)
     bs = cfg.batch_size or int(np.clip(n // 20, 16, 64))
@@ -809,6 +815,7 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
         raise ValueError("sampler trả về tập rỗng")
     bs = min(bs, n_epoch)
     steps_per_epoch = max(1, n_epoch // bs)
+    extra_slots = max(1, math.ceil(cfg.extra_hand_probability * bs))   # chỗ cố định cho clip chèn tay phụ
     total_epochs = fixed_epochs or cfg.max_epochs
     total_steps = total_epochs * steps_per_epoch
     warm_steps = cfg.warmup_epochs * steps_per_epoch
@@ -878,12 +885,23 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
             for g in opt.param_groups:
                 g["lr"] = lr
 
+            # Một lượt forward cho batch sạch + CHỈ các clip được chèn tay phụ (clip không đổi thì bản
+            # "tay phụ" chính là out -> cùng loss, KL = 0), thay vì forward cả batch hai lần. Số slot cố định
+            # (thừa -> đệm bằng clip sạch, bỏ output): MPS biên dịch lại GRU mỗi khi batch đổi kích thước.
+            changed = None
+            if x_extra_hand is not None:
+                changed = torch.where((x_extra_hand != x).flatten(1).any(1))[0]
+                changed = changed[torch.randperm(len(changed), device=device)[:extra_slots]]
+                pad = torch.randint(len(x), (extra_slots - len(changed),), device=device)
+                inp = torch.cat([x, x_extra_hand[changed], x[pad]])
+            else:
+                inp = x
             with torch.autocast(device_type=device.type, enabled=use_amp):
-                out = model(x)
-                extra_out = model(x_extra_hand) if x_extra_hand is not None else None
-            out = out.float()
-            if extra_out is not None:
-                extra_out = extra_out.float()
+                both = model(inp).float()
+            out = both[:len(x)]
+            extra_out = None
+            if changed is not None:
+                extra_out = out.index_copy(0, changed, both[len(x):len(x) + len(changed)]) if len(changed) else out
             with torch.no_grad():                    # đo acc theo nhãn trội (mixup: lam>=0.5 -> y, ngược lại y2)
                 tgt = y if (y2 is None or lam >= 0.5) else y2
                 run_correct = run_correct + (out.argmax(1) == tgt).sum()
@@ -1227,6 +1245,16 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
     if per_class.min() < folds:
         print(f"[cảnh báo] có lớp chỉ {per_class.min()} mẫu < {folds} fold: lớp đó sẽ vắng trong tập train của một số fold.")
 
+    # Bản tăng cường mất cả hai tay ở MỌI frame (phép xoay/dời khung đẩy tay ra ngoài hoặc xuống dưới REST_Y)
+    # không còn gì của ký hiệu -> chỉ là nhãn nhiễu ("không có tay" = b, e, g...). Không train trên chúng;
+    # mẫu gốc luôn được giữ (chúng là tập validation). Giữ nguyên chỉ số N để oof/groups vẫn khớp.
+    trainable = np.ones(N, dtype=bool)
+    if hand_feature_columns(D) is not None:
+        no_hand = hand_validity(torch.from_numpy(X)).sum(dim=(1, 2)).numpy() == 0
+        trainable = validation_mask | ~no_hand
+        if (~trainable).any():
+            print(f"Bỏ {int((~trainable).sum())} bản tăng cường không còn tay nào khỏi tập train")
+
     yt = torch.from_numpy(y).to(device)
 
     def to_dev(norm: Normalizer, idx):
@@ -1261,7 +1289,7 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
     models, norms, infos = [], [], []
     for f in run_folds:
         va = np.where((fold_of == f) & validation_mask)[0]
-        tr = np.where(fold_of != f)[0]
+        tr = np.where((fold_of != f) & trainable)[0]
         if len(va) == 0:
             raise ValueError(f"Fold {f + 1} has no original validation samples")
         if len(np.unique(y[va])) != C or len(np.unique(y[tr])) != C:
@@ -1319,10 +1347,11 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
         ep_full = full_model_epochs([i["best_epoch"] for i in infos], cfg)
         s_full = float(np.mean([i["strength"] for i in infos]))
         print(f"\n=== Model toàn bộ dữ liệu: {ep_full} epoch, s={s_full:.2f} ===")
-        norm_all = Normalizer(X, cfg.presence_norm)    # model cuối: không có val nên không có gì để rò rỉ
-        full, full_info = train_one(to_dev(norm_all, np.arange(N)), yt, None, None, C, layout, cfg, device,
+        all_idx = np.where(trainable)[0]
+        norm_all = Normalizer(X[all_idx], cfg.presence_norm)   # model cuối: không có val nên không có gì để rò rỉ
+        full, full_info = train_one(to_dev(norm_all, all_idx), yt[all_idx], None, None, C, layout, cfg, device,
                                     fixed_epochs=ep_full, init_strength=s_full, freeze_strength=True,
-                                    tag="[full]", hand_presence=presence_of(np.arange(N)),
+                                    tag="[full]", hand_presence=presence_of(all_idx),
                                     norm_stats=stats_of(norm_all))
         models.append(full)
         norms.append(norm_all)

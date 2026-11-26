@@ -34,9 +34,9 @@ chưa có ký hiệu riêng (ví dụ T-R-U-N-G → "Trung").
 Dấu thanh được ký NGAY SAU các chữ cái của âm tiết nó thuộc về: đặt dấu đó lên âm tiết đứng liền trước, đúng vị trí \
 theo chính tả tiếng Việt (B-I-(dấu nặng) → "bị", T-O-A-N-(dấu sắc) → "toán"). Dấu thanh cũng là dấu hiệu kết thúc \
 một âm tiết.
-- Trong mục đánh vần còn có DẤU CHỮ dạng "(dấu â,ô,ê)" (dấu mũ) và "(dấu ơ,ư)" (dấu móc). Dấu chữ biến nguyên âm \
-đứng gần nhất phía trước nó thành chữ có dấu: "(dấu â,ô,ê)" đổi a→â, o→ô, e→ê; "(dấu ơ,ư)" đổi o→ơ, u→ư \
-(T-H-O-(dấu ơ,ư) → "Thơ", C-O-(dấu â,ô,ê)-N-G → "công", H-O-(dấu ơ,ư)-N → "hơn"). Dấu chữ là một phần của chữ cái, \
+- Trong mục đánh vần còn có DẤU CHỮ dạng "(dấu â,ô,ê)" (dấu mũ), "(dấu ă)" (dấu trăng) và "(dấu ơ,ư)" (dấu móc). Dấu chữ biến nguyên âm \
+đứng gần nhất phía trước nó thành chữ có dấu: "(dấu â,ô,ê)" đổi a→â, o→ô, e→ê; "(dấu ă)" đổi a→ă; "(dấu ơ,ư)" đổi o→ơ, u→ư \
+(T-H-O-(dấu ơ,ư) → "Thơ", C-O-(dấu â,ô,ê)-N-G → "công", H-O-(dấu ơ,ư)-N → "hơn", A-(dấu ă)-(dấu hỏi) → "ẳ"). Dấu chữ là một phần của chữ cái, \
 KHÔNG phải một từ và KHÔNG kết thúc âm tiết.
 - MỘT mục đánh vần có thể chứa NHIỀU âm tiết/từ viết liền, không có ký hiệu ngăn cách. Hãy tách chuỗi chữ cái thành \
 các âm tiết tiếng Việt hợp lệ sao cho ghép lại có nghĩa nhất (ví dụ M-I-N-H-B-I-(dấu nặng)-N-G-U → "Minh bị ngu"). \
@@ -44,7 +44,7 @@ Viết hoa chữ đầu của tên riêng; các từ thường viết thường.
 - BẮT BUỘC giữ mọi dấu thanh đã được ký, kể cả khi bỏ dấu cũng ra một tên/từ có thật (H-O-A-(dấu huyền) là "Hòa", \
 không phải "Hoa"). Âm tiết không có dấu thanh đi kèm thì giữ thanh ngang, trừ khi chắc chắn đó là tên/từ tiếng Việt \
 phổ biến bị thiếu dấu.
-- TUYỆT ĐỐI không viết nguyên văn tên dấu ("dấu ơ,ư", "dấu â,ô,ê", "dấu nặng"...) vào kết quả, kể cả khi nhãn dấu \
+- TUYỆT ĐỐI không viết nguyên văn tên dấu ("dấu ơ,ư", "dấu â,ô,ê", "dấu ă", "dấu hỏi", "dấu nặng"...) hay chữ cái gốc kèm tên dấu (KHÔNG BAO GIỜ ra "A dấu ă dấu hỏi") vào kết quả, kể cả khi nhãn dấu \
 đứng riêng ngoài mục đánh vần: luôn đặt dấu đó lên chữ cái liền trước.
 - Ngữ pháp ký hiệu khác tiếng Việt nói: thường lược hư từ, trợ từ và từ "là", có thể đưa chủ đề lên trước, \
 từ để hỏi thường đứng cuối.
@@ -72,6 +72,10 @@ Nhãn: [đánh vần: M-I-N-H-B-I-(dấu nặng)-N-G-U]
 Kết quả: Minh bị ngu.
 Nhãn: xin chào | toi | ten_la | [đánh vần: T-H-O-(dấu ơ,ư)]
 Kết quả: Xin chào, tôi tên là Thơ.
+Nhãn: [đánh vần: A-(dấu ă)-(dấu hỏi)]
+Kết quả: Ẳ.
+Nhãn: [đánh vần: M-A-(dấu ă)-N-G-(dấu sắc)]
+Kết quả: Mắng.
 """
 
 _THINK_RE = re.compile(r"<think>.*?(</think>|$)", re.DOTALL | re.IGNORECASE)
@@ -87,9 +91,10 @@ TONE_MARKS: dict[str, str] = {
 }
 _VOWELS = set("aăâeêioôơuưy")
 
-# Nhãn dấu chữ (mũ, móc) → nguyên âm gốc được đổi thành chữ có dấu.
+# Nhãn dấu chữ (mũ, trăng, móc) → nguyên âm gốc được đổi thành chữ có dấu.
 VOWEL_MARKS: dict[str, dict[str, str]] = {
     "dấu â,ô,ê": {"a": "â", "o": "ô", "e": "ê"},
+    "dấu ă": {"a": "ă"},
     "dấu ơ,ư": {"o": "ơ", "u": "ư"},
 }
 _UO_RE = re.compile("u\u031bo(?!\u031b)")  # "ưo" (dạng NFD) → "ươ"

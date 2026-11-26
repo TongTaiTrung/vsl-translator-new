@@ -179,6 +179,26 @@ class ValidationMaskTests(unittest.TestCase):
                                       [True, False, True, False])
 
 
+class DistractorTrainingTests(unittest.TestCase):
+    def test_distractor_batches_train_in_one_fixed_size_forward(self):
+        X, y = tiny_data()
+        presence = torch.zeros(len(X), 30, 2)
+        presence[::2, :, 1] = 1.0                        # nửa số clip chỉ có tay phải
+        presence[1::2] = 1.0
+        shapes = []
+        cfg = tiny_config(max_epochs=6, extra_hand_probability=1.0)
+        torch.manual_seed(0)
+        model = training.build_model(X.shape[-1], 3, default_groups(X.shape[-1]), cfg)
+        hook = model.register_forward_pre_hook(lambda m, inp: shapes.append(inp[0].shape[0]) if m.training else None)
+        with mock.patch.object(training, "build_model", return_value=model), \
+                contextlib.redirect_stdout(io.StringIO()):
+            _, info = train_one(X, y, X[:6], y[:6], 3, default_groups(X.shape[-1]), cfg, torch.device("cpu"),
+                                hand_presence=presence, log_every=0)
+        hook.remove()
+        self.assertTrue(np.isfinite(info["val_loss"]))
+        self.assertEqual(set(shapes), {8 + 8})           # batch 8 + 8 slot tay phụ, không đổi giữa các bước
+
+
 class EvaluationHookTests(unittest.TestCase):
     def _run(self, directory):
         rng = np.random.default_rng(0)
@@ -214,6 +234,30 @@ class EvaluationHookTests(unittest.TestCase):
         self.assertEqual(folds["k"], 3)
         self.assertEqual(sorted(folds["fold_by_group"]), sorted(str(i) for i in range(18)))
         self.assertEqual(set(folds["fold_by_group"].values()), {0, 1, 2})
+
+    def test_augmented_clips_without_hands_are_not_trained_on(self):
+        from src.features.extract import FEATURE_SLICES
+        rng = np.random.default_rng(0)
+        y = np.r_[np.arange(18) % 3, np.arange(6) % 3]
+        X = rng.normal(size=(24, 30, SEQ_FEATURE_DIM)).astype(np.float32) + y[:, None, None]
+        X[[18, 19, 20], :, FEATURE_SLICES["hand_pos"]] = 0.0     # bản tăng cường mất cả hai tay
+        groups = np.r_[np.arange(18), np.arange(6)]
+        mask = np.r_[np.ones(18, bool), np.zeros(6, bool)]
+        sizes, real = [], training.train_one
+
+        def spy(Xtr, ytr, *args, **kwargs):
+            sizes.append(len(Xtr))
+            return real(Xtr, ytr, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()) as out, \
+                mock.patch.dict(sys.modules, {"src.model.evaluation": None}), \
+                mock.patch.object(training, "train_one", side_effect=spy):
+            training.run_training(X, y, ["a", "b", "c"], groups, out_dir=directory,
+                                  cfg=tiny_config(max_epochs=6), folds=3, add_full=True,
+                                  export_onnx_model=False, device=torch.device("cpu"), validation_mask=mask)
+        self.assertIn("Bỏ 3 bản tăng cường", out.getvalue())
+        self.assertEqual(sizes[-1], 21)                  # model toàn bộ dữ liệu: 24 - 3 clip không tay
+        self.assertEqual(sum(sizes[:-1]), 2 * 21)        # mỗi mẫu train ở đúng k-1 = 2 fold
 
     def test_training_runs_without_evaluation_module(self):
         with tempfile.TemporaryDirectory() as directory, \

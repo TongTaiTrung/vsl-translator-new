@@ -1,27 +1,32 @@
 {
- "cv_acc_mean": 0.9969696998596191,
- "cv_acc_std": 0.006060600280761719,
+ "cv_acc_mean": 0.9950000047683716,
+ "cv_acc_std": 0.006123718516919305,
  "fold_acc": [
   1.0,
+  0.987500011920929,
   1.0,
-  1.0,
-  0.9848484992980957,
+  0.987500011920929,
   1.0
  ],
  "best_epochs": [
+  12,
+  12,
   10,
-  10,
-  10,
-  11,
+  12,
   10
  ],
- "temperature": 1.0000001192092896,
+ "temperature": 1.000000238418579,
  "temperature_status": "at_bound",
  "reject_threshold": 0.2,
  "n_models": 6,
- "n_samples": 3480,
- "n_classes": 27,
+ "n_samples": 1350,
+ "n_classes": 30,
  "confusion_pairs": [
+  {
+   "actual": "c",
+   "predicted": "a",
+   "count": 1
+  },
   {
    "actual": "cảm ơn",
    "predicted": "xin chào",
@@ -32,163 +37,181 @@
   {
    "actual": "cảm ơn",
    "rival": "xin chào",
-   "mean_rival_probability": 0.04144521802663803,
+   "mean_rival_probability": 0.05909987911581993,
    "samples": 15
   },
   {
+   "actual": "c",
+   "rival": "a",
+   "mean_rival_probability": 0.026084626093506813,
+   "samples": 20
+  },
+  {
+   "actual": "dấu ă",
+   "rival": "dấu hỏi",
+   "mean_rival_probability": 0.015421517193317413,
+   "samples": 20
+  },
+  {
    "actual": "toi",
-   "rival": "y",
-   "mean_rival_probability": 0.010443611070513725,
+   "rival": "c",
+   "mean_rival_probability": 0.012114102020859718,
    "samples": 5
   },
   {
    "actual": "n",
    "rival": "m",
-   "mean_rival_probability": 0.007611104287207127,
+   "mean_rival_probability": 0.009713108651340008,
    "samples": 15
+  },
+  {
+   "actual": "dấu hỏi",
+   "rival": "dấu ă",
+   "mean_rival_probability": 0.00924629531800747,
+   "samples": 20
   },
   {
    "actual": "o",
-   "rival": "cảm ơn",
-   "mean_rival_probability": 0.0056457724422216415,
-   "samples": 5
-  },
-  {
-   "actual": "g",
-   "rival": "dấu huyền",
-   "mean_rival_probability": 0.004257460590451956,
-   "samples": 15
-  },
-  {
-   "actual": "h",
-   "rival": "k",
-   "mean_rival_probability": 0.0039923968724906445,
-   "samples": 30
-  },
-  {
-   "actual": "t",
-   "rival": "dấu sắc",
-   "mean_rival_probability": 0.003983825910836458,
-   "samples": 15
-  },
-  {
-   "actual": "l",
-   "rival": "a",
-   "mean_rival_probability": 0.003953395877033472,
-   "samples": 5
-  },
-  {
-   "actual": "dấu nặng",
-   "rival": "ten_la",
-   "mean_rival_probability": 0.003910206723958254,
-   "samples": 15
-  },
-  {
-   "actual": "y",
-   "rival": "b",
-   "mean_rival_probability": 0.003905433462932706,
-   "samples": 16
-  },
-  {
-   "actual": "v",
    "rival": "dấu ơ,ư",
-   "mean_rival_probability": 0.0038507641293108463,
-   "samples": 5
-  },
-  {
-   "actual": "u",
-   "rival": "dấu sắc",
-   "mean_rival_probability": 0.00384827284142375,
-   "samples": 15
-  },
-  {
-   "actual": "dấu ơ,ư",
-   "rival": "y",
-   "mean_rival_probability": 0.0037867403589189053,
-   "samples": 5
-  },
-  {
-   "actual": "e",
-   "rival": "dấu ơ,ư",
-   "mean_rival_probability": 0.0037833149544894695,
+   "mean_rival_probability": 0.006380441598594189,
    "samples": 5
   },
   {
    "actual": "xin chào",
-   "rival": "dấu ơ,ư",
-   "mean_rival_probability": 0.0037776115350425243,
+   "rival": "cảm ơn",
+   "mean_rival_probability": 0.0042045568116009235,
    "samples": 15
+  },
+  {
+   "actual": "l",
+   "rival": "u",
+   "mean_rival_probability": 0.00401547783985734,
+   "samples": 5
   },
   {
    "actual": "k",
-   "rival": "o",
-   "mean_rival_probability": 0.0036519041750580072,
+   "rival": "l",
+   "mean_rival_probability": 0.003920321818441153,
    "samples": 15
   },
   {
-   "actual": "m",
-   "rival": "a",
-   "mean_rival_probability": 0.003640104318037629,
+   "actual": "h",
+   "rival": "dấu ă",
+   "mean_rival_probability": 0.0034580088686197996,
    "samples": 30
   },
   {
-   "actual": "r",
-   "rival": "a",
-   "mean_rival_probability": 0.003624062519520521,
-   "samples": 15
-  },
-  {
-   "actual": "địa chỉ",
-   "rival": "dấu huyền",
-   "mean_rival_probability": 0.003612763714045286,
-   "samples": 15
-  },
-  {
    "actual": "dấu â,ô,ê",
-   "rival": "xin chào",
-   "mean_rival_probability": 0.003607687307521701,
+   "rival": "v",
+   "mean_rival_probability": 0.0034136802423745394,
    "samples": 5
   },
   {
-   "actual": "b",
-   "rival": "dấu ơ,ư",
-   "mean_rival_probability": 0.0035855546593666077,
-   "samples": 5
-  },
-  {
-   "actual": "a",
-   "rival": "dấu ơ,ư",
-   "mean_rival_probability": 0.0035853288136422634,
-   "samples": 5
-  },
-  {
-   "actual": "i",
-   "rival": "dấu huyền",
-   "mean_rival_probability": 0.0035468426067382097,
+   "actual": "t",
+   "rival": "ten_la",
+   "mean_rival_probability": 0.003304013516753912,
    "samples": 15
+  },
+  {
+   "actual": "v",
+   "rival": "u",
+   "mean_rival_probability": 0.0031910918187350035,
+   "samples": 5
   },
   {
    "actual": "dấu sắc",
-   "rival": "ten_la",
-   "mean_rival_probability": 0.003496288089081645,
+   "rival": "dấu huyền",
+   "mean_rival_probability": 0.003139898646622896,
    "samples": 5
   },
   {
    "actual": "ten_la",
-   "rival": "a",
-   "mean_rival_probability": 0.003459153464064002,
+   "rival": "m",
+   "mean_rival_probability": 0.0030053569935262203,
+   "samples": 15
+  },
+  {
+   "actual": "r",
+   "rival": "m",
+   "mean_rival_probability": 0.0029896011110395193,
+   "samples": 15
+  },
+  {
+   "actual": "y",
+   "rival": "m",
+   "mean_rival_probability": 0.0029649503994733095,
+   "samples": 16
+  },
+  {
+   "actual": "dấu nặng",
+   "rival": "dấu sắc",
+   "mean_rival_probability": 0.0029108552262187004,
+   "samples": 15
+  },
+  {
+   "actual": "i",
+   "rival": "cảm ơn",
+   "mean_rival_probability": 0.0029069127049297094,
+   "samples": 15
+  },
+  {
+   "actual": "b",
+   "rival": "u",
+   "mean_rival_probability": 0.0028958539478480816,
+   "samples": 5
+  },
+  {
+   "actual": "địa chỉ",
+   "rival": "dấu ơ,ư",
+   "mean_rival_probability": 0.0028835677076131105,
+   "samples": 15
+  },
+  {
+   "actual": "dấu ơ,ư",
+   "rival": "dấu huyền",
+   "mean_rival_probability": 0.0028625803533941507,
+   "samples": 5
+  },
+  {
+   "actual": "g",
+   "rival": "h",
+   "mean_rival_probability": 0.0028602269012480974,
    "samples": 15
   },
   {
    "actual": "dấu huyền",
-   "rival": "toi",
-   "mean_rival_probability": 0.0032780468463897705,
+   "rival": "r",
+   "mean_rival_probability": 0.0028549223206937313,
+   "samples": 5
+  },
+  {
+   "actual": "m",
+   "rival": "v",
+   "mean_rival_probability": 0.0028459904715418816,
+   "samples": 30
+  },
+  {
+   "actual": "a",
+   "rival": "g",
+   "mean_rival_probability": 0.002838750835508108,
+   "samples": 20
+  },
+  {
+   "actual": "e",
+   "rival": "dấu â,ô,ê",
+   "mean_rival_probability": 0.0027309744618833065,
    "samples": 5
   },
   {
    "actual": "age",
-   "rival": "a",
-   "mean_rival_probability": 0.0030112206004559994,
+   "rival": "dấu nặng",
+   "mean_rival_probability": 0.002728161169216037,
+   "samples": 15
+  },
+  {
+   "actual": "u",
+   "rival": "o",
+   "mean_rival_probability": 0.002709996420890093,
    "samples": 15
   }
  ],
@@ -205,9 +228,9 @@
   "n_blocks": 2,
   "head": "linear",
   "base_dropout": 0.2,
-  "max_epochs": 200,
-  "min_epochs": 30,
-  "patience": 30,
+  "max_epochs": 60,
+  "min_epochs": 15,
+  "patience": 10,
   "lr": 0.002,
   "min_lr": 1e-05,
   "weight_decay": 0.05,
@@ -231,18 +254,18 @@
  },
  "full_model": {
   "epochs": 25,
-  "final_lr": 1.000420964054116e-05
+  "final_lr": 1.0030688143434285e-05
  },
  "evaluation": {
-  "accuracy": 0.9969325153374233,
-  "macro_f1": 0.9975281176615993,
+  "accuracy": 0.9950124688279302,
+  "macro_f1": 0.9961075969106573,
   "per_class": [
    {
     "class": "a",
-    "precision": 1.0,
+    "precision": 0.9523809523809523,
     "recall": 1.0,
-    "f1": 1.0,
-    "support": 5
+    "f1": 0.975609756097561,
+    "support": 20
    },
    {
     "class": "age",
@@ -259,6 +282,13 @@
     "support": 5
    },
    {
+    "class": "c",
+    "precision": 1.0,
+    "recall": 0.95,
+    "f1": 0.9743589743589743,
+    "support": 20
+   },
+   {
     "class": "cảm ơn",
     "precision": 1.0,
     "recall": 0.9333333333333333,
@@ -271,6 +301,13 @@
     "recall": 1.0,
     "f1": 1.0,
     "support": 5
+   },
+   {
+    "class": "dấu hỏi",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 20
    },
    {
     "class": "dấu nặng",
@@ -292,6 +329,13 @@
     "recall": 1.0,
     "f1": 1.0,
     "support": 5
+   },
+   {
+    "class": "dấu ă",
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "support": 20
    },
    {
     "class": "dấu ơ,ư",
@@ -429,7 +473,10 @@
   ],
   "confusion_matrix": [
    [
-    5,
+    20,
+    0,
+    0,
+    0,
     0,
     0,
     0,
@@ -484,6 +531,9 @@
     0,
     0,
     0,
+    0,
+    0,
+    0,
     0
    ],
    [
@@ -513,13 +563,51 @@
     0,
     0,
     0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    1,
+    0,
+    0,
+    19,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
     0
    ],
    [
     0,
     0,
     0,
+    0,
     14,
+    0,
+    0,
     0,
     0,
     0,
@@ -549,7 +637,10 @@
     0,
     0,
     0,
+    0,
     5,
+    0,
+    0,
     0,
     0,
     0,
@@ -574,6 +665,40 @@
     0
    ],
    [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    20,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
     0,
     0,
     0,
@@ -600,63 +725,6 @@
     0,
     0,
     0,
-    0
-   ],
-   [
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    5,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0
-   ],
-   [
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    5,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
     0,
     0
    ],
@@ -670,6 +738,9 @@
     0,
     0,
     5,
+    0,
+    0,
+    0,
     0,
     0,
     0,
@@ -716,9 +787,111 @@
     0,
     0,
     0,
+    0,
+    0,
+    0,
     0
    ],
    [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    20,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    5,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    5,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    0,
     0,
     0,
     0,
@@ -748,6 +921,9 @@
     0
    ],
    [
+    0,
+    0,
+    0,
     0,
     0,
     0,
@@ -789,6 +965,9 @@
     0,
     0,
     0,
+    0,
+    0,
+    0,
     15,
     0,
     0,
@@ -819,6 +998,9 @@
     0,
     0,
     0,
+    0,
+    0,
+    0,
     15,
     0,
     0,
@@ -835,6 +1017,9 @@
     0
    ],
    [
+    0,
+    0,
+    0,
     0,
     0,
     0,
@@ -864,6 +1049,9 @@
     0
    ],
    [
+    0,
+    0,
+    0,
     0,
     0,
     0,
@@ -909,6 +1097,9 @@
     0,
     0,
     0,
+    0,
+    0,
+    0,
     15,
     0,
     0,
@@ -922,6 +1113,9 @@
     0
    ],
    [
+    0,
+    0,
+    0,
     0,
     0,
     0,
@@ -969,6 +1163,9 @@
     0,
     0,
     0,
+    0,
+    0,
+    0,
     15,
     0,
     0,
@@ -999,6 +1196,9 @@
     0,
     0,
     0,
+    0,
+    0,
+    0,
     15,
     0,
     0,
@@ -1029,6 +1229,9 @@
     0,
     0,
     0,
+    0,
+    0,
+    0,
     15,
     0,
     0,
@@ -1038,6 +1241,9 @@
     0
    ],
    [
+    0,
+    0,
+    0,
     0,
     0,
     0,
@@ -1089,6 +1295,9 @@
     0,
     0,
     0,
+    0,
+    0,
+    0,
     15,
     0,
     0,
@@ -1096,6 +1305,9 @@
     0
    ],
    [
+    0,
+    0,
+    0,
     0,
     0,
     0,
@@ -1149,11 +1361,17 @@
     0,
     0,
     0,
+    0,
+    0,
+    0,
     15,
     0,
     0
    ],
    [
+    0,
+    0,
+    0,
     0,
     0,
     0,
@@ -1209,6 +1427,9 @@
     0,
     0,
     0,
+    0,
+    0,
+    0,
     15
    ]
   ],
@@ -1216,11 +1437,14 @@
    "a",
    "age",
    "b",
+   "c",
    "cảm ơn",
    "dấu huyền",
+   "dấu hỏi",
    "dấu nặng",
    "dấu sắc",
    "dấu â,ô,ê",
+   "dấu ă",
    "dấu ơ,ư",
    "e",
    "g",
@@ -1242,54 +1466,54 @@
    "địa chỉ"
   ],
   "top_k": {
-   "1": 0.9969325153374233,
-   "3": 1.0,
-   "5": 1.0
+   "1": 0.9950124688279302,
+   "3": 0.9975062344139651,
+   "5": 0.9975062344139651
   },
   "hard_pairs": [
    {
     "class_a": "cảm ơn",
     "class_b": "xin chào",
-    "mean_rival_probability": 0.04144523539831731,
+    "mean_rival_probability": 0.059099887249987895,
     "pairwise_accuracy": 0.9666666666666667,
     "n_samples": 30
    },
    {
-    "class_a": "toi",
-    "class_b": "y",
-    "mean_rival_probability": 0.010443607552257001,
+    "class_a": "a",
+    "class_b": "c",
+    "mean_rival_probability": 0.02608463456161783,
+    "pairwise_accuracy": 0.975,
+    "n_samples": 40
+   },
+   {
+    "class_a": "dấu hỏi",
+    "class_b": "dấu ă",
+    "mean_rival_probability": 0.015421509960022728,
     "pairwise_accuracy": 1.0,
-    "n_samples": 21
+    "n_samples": 40
+   },
+   {
+    "class_a": "c",
+    "class_b": "toi",
+    "mean_rival_probability": 0.01211409669528636,
+    "pairwise_accuracy": 0.96,
+    "n_samples": 25
    },
    {
     "class_a": "n",
     "class_b": "toi",
-    "mean_rival_probability": 0.009970112821737317,
-    "pairwise_accuracy": 1.0,
-    "n_samples": 20
-   },
-   {
-    "class_a": "g",
-    "class_b": "toi",
-    "mean_rival_probability": 0.008514559043637305,
-    "pairwise_accuracy": 1.0,
-    "n_samples": 20
-   },
-   {
-    "class_a": "toi",
-    "class_b": "xin chào",
-    "mean_rival_probability": 0.007787018467496845,
+    "mean_rival_probability": 0.010827942644914152,
     "pairwise_accuracy": 1.0,
     "n_samples": 20
    }
   ],
   "bootstrap_ci_95": {
    "accuracy": [
-    0.99079754601227,
+    0.9875311720698254,
     1.0
    ],
    "macro_f1": [
-    0.9597259051768856,
+    0.9617216117216116,
     1.0
    ]
   }

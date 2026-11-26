@@ -104,6 +104,14 @@ class SentenceTests(unittest.TestCase):
         self.assertEqual(naive_sentence(["t", "h", "o", "dấu sắc", "dấu ơ,ư"]), "Thớ")
         self.assertEqual(naive_sentence(["n", "g", "u", "dấu ơ,ư", "o", "i", "dấu huyền"]), "Người")
 
+    def test_breve_mark_joins_spelling_group(self):
+        words = ["a", "dấu ă", "dấu hỏi"]
+        self.assertEqual(format_labels(words), "[đánh vần: A-(dấu ă)-(dấu hỏi)]")
+        self.assertEqual(naive_sentence(words), "Ẳ")
+        self.assertEqual(naive_sentence(["a", "dấu hỏi", "dấu ă"]), "Ẳ")
+        self.assertEqual(naive_sentence(["m", "a", "dấu ă", "n", "g", "dấu sắc"]), "Mắng")
+        self.assertIn("Kết quả: Ẳ.", build_system_prompt())
+
     def test_misspelled_sac_label_is_a_tone(self):
         words = ["t", "r", "o", "n", "g", "dấu nặng", "t", "u", "a", "dấu â,ô,ê", "t", "dấu sắt"]
         self.assertEqual(format_labels(words), "[đánh vần: T-R-O-N-G-(dấu nặng)-T-U-A-(dấu â,ô,ê)-T-(dấu sắc)]")

@@ -79,7 +79,7 @@ class MemoryTests(unittest.TestCase):
     def test_matching_exemplar_pulls_prediction_to_its_class(self):
         query = clip(1)
         base = self.probs(query)
-        target = int(np.argmin(base))                       # lớp mô hình gốc ít tin nhất
+        target = int(np.argmin(base))
         memory = self.predictor.build_memory([Exemplar(CLASSES[target], query)], strength=1.0)
         boosted = self.probs(query, memory)
         self.assertEqual(int(np.argmax(boosted)), target)
@@ -186,7 +186,7 @@ class MemoryServerTests(unittest.TestCase):
         self.assertEqual(updated.status_code, 200, updated.get_json())
         self.assertEqual(updated.get_json()["memory"]["classes"], {"toi": 1})
         body = self.client.post(f"/api/stream/{sid}", json={"landmarks": frames[20:]}).get_json()
-        self.assertEqual(body["buffered"], 30)                      # cửa sổ không bị xoá
+        self.assertEqual(body["buffered"], 30)
         self.assertEqual(body["memory"]["label"], "toi")
 
         off = self.client.post(f"/api/stream/{sid}/memory", json={"memory": None})

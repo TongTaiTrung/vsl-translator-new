@@ -7,7 +7,7 @@ from src.data.data_reader import DataHandler
 from src.features.extract import process_sequence
 
 handler = DataHandler(
-    processor=process_sequence,   # (T, 131) -> (30, 170)
+    processor=process_sequence,   # (T, 383) -> (30, 434)
     min_samples_per_class=1,      # số mẫu GỐC tối thiểu để lớp có nhãn
     strict=False,                 # True: mẫu hỏng -> raise
 )
@@ -21,21 +21,21 @@ print(handler.incomplete)           # mẫu dở dang bị bỏ qua
 print(handler.excluded_classes)     # lớp chưa đủ mẫu
 
 sequence, label = handler[0]
-print(sequence.shape, label)        # (30, 170), int
+print(sequence.shape, label)        # (30, 434), int
 ```
 
 Đọc raw không qua processor:
 
 ```python
 raw = handler.load_raw(0)
-print(raw.shape)  # (T, 131), có thể chứa NaN
+print(raw.shape)  # (T, 383), có thể chứa NaN
 ```
 
 Không có processor thì chỉ đọc được mẫu đúng 30 frame:
 
 ```python
 handler = DataHandler()  # processor=None
-seq, label = handler[0]  # (30, 131)
+seq, label = handler[0]  # (30, 383)
 ```
 
 Kiểm tra chất lượng:
@@ -69,7 +69,7 @@ for frame in frames_bgr:
 
 sample_id = handler.write_sample(
     class_name="xin chào",
-    features=raw_features,     # list các vector (131,)
+    features=raw_features,     # list các vector (383,)
     frames=frames,             # optional, lưu video gốc
     fps=30.0,
     session="session-2026-11-17",
@@ -79,7 +79,7 @@ sample_id = handler.write_sample(
 print(sample_id)
 ```
 
-- `features` phải có tối thiểu 8 frame, dtype `float32`, shape `(131,)`.
+- `features` phải có tối thiểu 8 frame, dtype `float32`, shape `(383,)`.
 - Nếu toàn bộ frame thiếu pose hoặc thiếu tay → `ValueError`.
 - Ghi atomic: lỗi giữa chừng không để lại mẫu dở dang.
 - Video được lưu vào `data/raw/<class>/<id>.mp4`; feature vào `data/processed/<class>/<id>/`.
@@ -106,7 +106,7 @@ from src.features.extract import process_sequence
 handler = DataHandler(processor=process_sequence)
 
 data = handler.export_arrays(group_by="sample")
-print(data["X"].shape)        # (N, 30, 170)
+print(data["X"].shape)        # (N, 30, 434)
 print(data["y"].shape)        # (N,)
 print(data["classes"])        # list tên lớp theo thứ tự nhãn
 print(data["groups"][:3])     # "class/origin_sample_id"
@@ -141,7 +141,7 @@ Kết quả:
 
 ```text
 root_project/raw/xin_chao/<id>.mp4
-root_project/extracted/xin_chao/0/<id>.npz   # key "X", shape (30, 170)
+root_project/extracted/xin_chao/0/<id>.npz   # key "X", shape (30, 434)
 ```
 
 Bố cục này khác `data/processed` của `DataHandler`; nếu muốn dùng cho training qua `DataHandler`, cần chuyển đổi hoặc dùng trực tiếp file `.npz` theo định dạng training.
@@ -179,7 +179,7 @@ Chỉ trích xuất feature, không ghi đĩa:
 from src.data.reextract import extract_video_features
 
 raw_features, fps = extract_video_features("data/raw/xin_chao/0.mp4")
-print(raw_features.shape, fps)  # (T, 131)
+print(raw_features.shape, fps)  # (T, 383)
 ```
 
 ## 6. Tăng cường dữ liệu
@@ -244,7 +244,7 @@ assert noisy.shape == raw_features.shape
 
 | Lỗi | Cách xử lý |
 |---|---|
-| `ValueError: Invalid feature shape ... expected (131,)` | Extractor/schema đã đổi; cập nhật `FRAME_FEATURE_DIM` hoặc trích xuất lại |
+| `ValueError: Invalid feature shape ... expected (383,)` | Extractor/schema đã đổi; cập nhật `FRAME_FEATURE_DIM` hoặc trích xuất lại |
 | `ValueError: Inf detected` | Dữ liệu hỏng; loại bỏ frame/file |
 | `ValueError: Sample must contain at least 8 frames` | Ghi clip dài hơn |
 | `ValueError: Không detect được tay...` | Kiểm tra ánh sáng/khung hình hoặc `require_hand=False` nếu chấp nhận |

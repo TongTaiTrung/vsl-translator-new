@@ -3,7 +3,6 @@ import { Be_Vietnam_Pro } from "next/font/google";
 import { THEME_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
-// Be Vietnam Pro: thiết kế cho tiếng Việt, dấu thanh rõ ở cỡ lớn (phụ đề) lẫn cỡ nhỏ.
 const sans = Be_Vietnam_Pro({
   subsets: ["vietnamese", "latin"],
   weight: ["400", "500", "600", "700"],
@@ -19,7 +18,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  // Camera toàn màn hình trên điện thoại phủ cả vùng tai thỏ; nội dung tự né bằng env(safe-area-inset-*).
   viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#eef2f0" },
@@ -28,7 +26,6 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // suppressHydrationWarning: script trong <head> đặt data-theme trước khi React hydrate.
   return (
     <html lang="vi" className={sans.variable} suppressHydrationWarning>
       <head>

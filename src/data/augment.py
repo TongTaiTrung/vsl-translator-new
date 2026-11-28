@@ -108,10 +108,11 @@ def add_feature_noise(features: np.ndarray, rng: np.random.Generator, strength: 
         raise ValueError(f"Expected (frames, {DataHandler.FEATURE_DIM}), got {source.shape}")
     out = source.copy()
     S = FEATURE_SLICES
-    position = slice(0, S["body_contact"].start)                         # hand_pos + inter_hand_vec
-    contact = slice(S["body_contact"].start, S["face_vec"].start)        # body_contact + hand_contact
+    position = slice(0, S["body_contact"].start)
+    contact = slice(S["body_contact"].start, S["face_vec"].start)
     scales = ((position, 0.015), (contact, 0.01), (S["face_vec"], 0.015), (S["hand_scale"], 0.01),
-              (S["handshape"], 0.012), (S["hand_local"], 0.012), (S["finger_curl"], 0.012), (S["orientation"], 0.01))
+              (S["handshape"], 0.012), (S["hand_local"], 0.012), (S["finger_curl"], 0.012),
+              (S["hand_closure"], 0.012), (S["orientation"], 0.01))
     for cols, sigma in scales:
         block = out[:, cols]
         perturbation = rng.normal(0, sigma * strength, size=block.shape).astype(np.float32)

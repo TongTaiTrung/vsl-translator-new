@@ -3,12 +3,10 @@
 import { useLayoutEffect, useState } from "react";
 import { type Theme, applyStoredTheme, currentTheme, setTheme, watchSystemTheme } from "@/lib/theme";
 
-/** Nút đổi sáng/tối. Icon chọn bằng CSS (theo data-theme / hệ thống) nên đúng ngay từ lần vẽ đầu. */
 export function ThemeToggle() {
   const [theme, setThemeState] = useState<Theme | null>(null);
 
   useLayoutEffect(() => {
-    // Dev (Strict Mode) remount xoá thuộc tính script đã đặt trên <html>: đặt lại trước khi vẽ. Production: không đổi gì.
     applyStoredTheme();
     setThemeState(currentTheme());
     return watchSystemTheme(() => setThemeState(currentTheme()));

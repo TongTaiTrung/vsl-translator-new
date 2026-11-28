@@ -1,8 +1,5 @@
 "use client";
 
-// Sheet "Cá nhân hoá": ghi mẫu ký cho từng từ, sửa từ vừa nhận sai thành mẫu, bật/tắt, mức ảnh hưởng, xoá mẫu.
-// Việc ghi (đếm ngược + thu frame) do page.tsx làm vì lớp phủ nằm trên khung camera.
-
 import { useEffect, useRef, useState } from "react";
 import type { CommittedWindow } from "@/lib/recognizer";
 import { MAX_AUTO_PER_LABEL, MAX_PER_LABEL, type Sample, sourceOf } from "@/lib/memory";
@@ -14,7 +11,6 @@ interface Props {
   onClose: () => void;
   classes: string[];
   samples: Sample[];
-  /** Mẫu không dùng được với checkpoint hiện tại (khác số cột feature). */
   staleCount: number;
   enabled: boolean;
   strength: number;
@@ -48,7 +44,6 @@ export function PersonalizeSheet(props: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  // Từ chốt mới → gợi ý chọn lại chính nó (người dùng đổi sang từ đúng).
   useEffect(() => setCorrection(committed?.word ?? ""), [committed]);
 
   const counts = new Map<string, { manual: number; auto: number }>();

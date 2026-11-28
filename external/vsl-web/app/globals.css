@@ -1,7 +1,3 @@
-/* VSL Translator — giao diện tối giản cho doanh nghiệp.
- * Bảng màu: Mist (nền), Ink (chữ), Jade (chính), Celadon (nhấn nhẹ), Amber (chỉ cho pha "đang vào"),
- * Slate (chữ phụ). Phụ đề là điểm nhấn duy nhất; mọi thứ khác giữ yên tĩnh.
- * Chuyển động: một chuỗi xuất hiện lúc tải trang + phản hồi hành động; tắt hết khi giảm chuyển động. */
 
 :root {
   --bg: #eef2f0;
@@ -20,7 +16,6 @@
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  /* Lò xo nhẹ: vượt ~10% rồi lắng. */
   --spring: linear(0, 0.009, 0.035 2.1%, 0.141 4.4%, 0.281 6.7%, 0.723 12.9%, 0.938 16.7%, 1.017 19.4%,
     1.067, 1.099 24.3%, 1.108 26%, 1.103 27.8%, 1.082 30.7%, 1.012 38.4%, 0.993 42.5%, 0.983 47.5%,
     0.989 54%, 1.001 63.8%, 1.004 74.2%, 1);
@@ -31,8 +26,6 @@
   color-scheme: light;
 }
 
-/* Chế độ tối: theo hệ thống, trừ khi người dùng đã chọn (data-theme trên <html>, đặt bởi script trong
- * layout.tsx trước khi vẽ để không nháy màu). Hai khối giống nhau: một cho hệ thống, một cho lựa chọn. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0d1512;
@@ -119,7 +112,6 @@ p {
   flex: none;
 }
 
-/* Đổi nội dung → chạy lại hoạt ảnh (key mới). */
 .swap {
   display: inline-block;
   animation: swap-in 420ms var(--ease-out) both;
@@ -132,8 +124,6 @@ p {
     transform: translateY(0.25em);
   }
 }
-
-/* ------------------------------------------------------------------ khung trang */
 
 .shell {
   min-height: 100dvh;
@@ -240,7 +230,6 @@ p {
   height: 16px;
 }
 
-/* Nút sáng/tối: giao diện sáng hiện mặt trăng (bấm để tối), giao diện tối hiện mặt trời. */
 .theme-toggle .theme-sun {
   display: none;
 }
@@ -263,8 +252,6 @@ p {
   }
 }
 
-/* ------------------------------------------------------------------ bố cục chính */
-
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
@@ -278,8 +265,6 @@ p {
     grid-template-columns: 1fr;
   }
 }
-
-/* ------------------------------------------------------------------ camera */
 
 .stage {
   display: grid;
@@ -316,7 +301,6 @@ p {
   transform: scaleX(-1);
 }
 
-/* Khung crop người chính (lib/subject.ts) khi bật debug: liền = smoothBox, đứt = vùng thực đưa vào model, xanh dương = mặt. */
 .debug-overlay {
   position: absolute;
   inset: 0;
@@ -334,7 +318,6 @@ p {
   display: none;
 }
 
-/* Bốn góc ngắm: thở khi chờ, siết lại khi đang ký. */
 .corner {
   --inset: 14px;
   --size: 26px;
@@ -487,7 +470,6 @@ p {
   font-size: 13px;
 }
 
-/* HUD trên khung hình: nền mờ để đọc được trên mọi hình. */
 .hud-phase,
 .hud-latency,
 .hud-candidate {
@@ -520,7 +502,6 @@ p {
   font-variant-numeric: tabular-nums;
 }
 
-/* Thu < 12 fps: máy không kịp chạy MediaPipe mỗi nhịp. */
 .hud-latency.slow {
   color: var(--amber);
 }
@@ -536,7 +517,6 @@ p {
   font-weight: 600;
 }
 
-/* Chốt từ mới: viền khung loé jade, một gợn sóng lan từ tâm, con dấu kính hiện chữ từng ký tự. */
 .frame-flash {
   position: absolute;
   inset: 0;
@@ -622,7 +602,6 @@ p {
     stamp-out 520ms 1350ms cubic-bezier(0.4, 0, 0.7, 0.2) forwards;
 }
 
-/* Vệt sáng quét ngang một lần. */
 .hud-stamp::before {
   content: "";
   position: absolute;
@@ -654,7 +633,6 @@ p {
   }
 }
 
-/* Dấu tick tự vẽ: vòng tròn trước, nét tick sau. */
 .stamp-check {
   width: 1.05em;
   height: 1.05em;
@@ -706,7 +684,6 @@ p {
   }
 }
 
-/* Vòng tiến độ: --p từ 0 đến 1. */
 .ring {
   --p: 0;
   position: relative;
@@ -776,8 +753,6 @@ p {
   background: var(--jade);
   transform: scaleY(1.5);
 }
-
-/* ------------------------------------------------------------------ điều khiển */
 
 .controls {
   display: flex;
@@ -884,8 +859,6 @@ p {
   animation: rise 400ms var(--ease-out) both;
 }
 
-/* ------------------------------------------------------------------ mô hình đang thấy */
-
 .insight {
   padding: 18px 4px 0;
   border-top: 1px solid var(--line);
@@ -968,8 +941,6 @@ p {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-
-/* ------------------------------------------------------------------ phụ đề (điểm nhấn) */
 
 .caption {
   display: flex;
@@ -1082,7 +1053,6 @@ p {
   }
 }
 
-/* Từ vừa chốt: nảy lò xo, nhuộm jade rồi nhạt dần, kèm một vòng sóng. */
 .token:not(.ghost) {
   animation:
     token-pop 720ms var(--spring) both,
@@ -1126,7 +1096,6 @@ p {
   }
 }
 
-/* Từ ứng viên: lấp đầy dần theo số phiếu. */
 .token.ghost {
   --fill: 0;
   overflow: hidden;
@@ -1152,8 +1121,6 @@ p {
   color: var(--faint);
   font-size: 13px;
 }
-
-/* ------------------------------------------------------------------ hội thoại */
 
 .transcript {
   margin-top: clamp(32px, 5vw, 56px);
@@ -1270,8 +1237,6 @@ p {
   }
 }
 
-/* ------------------------------------------------------------------ sheet cài đặt */
-
 .sheet-backdrop {
   position: fixed;
   inset: 0;
@@ -1330,7 +1295,6 @@ p {
   padding: 0 26px 26px;
 }
 
-/* Các nhóm trượt vào lần lượt khi mở. */
 .sheet .group {
   display: grid;
   gap: 12px;
@@ -1486,7 +1450,6 @@ p {
   outline-offset: 2px;
 }
 
-/* Siêu tốc bật: bỏ chọn ba mức thường (thumb mờ đi, chữ về màu phụ). */
 .segmented-track .segmented-thumb {
   transition: transform 450ms var(--ease-out), opacity 250ms;
 }
@@ -1494,8 +1457,6 @@ p {
 .segmented-track.inactive .segmented-thumb {
   opacity: 0;
 }
-
-/* ------------------------------------------------------------------ siêu tốc: công tắc + thanh trượt bậc */
 
 .turbo {
   display: grid;
@@ -1547,7 +1508,6 @@ p {
   height: 20px;
   border-radius: 999px;
   background: var(--frame-ink);
-  /* Thumb sáng trên cả hai giao diện: bóng đen rất nhẹ, không dùng viền tối. */
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
   transition: transform 450ms var(--spring);
 }
@@ -1565,7 +1525,6 @@ p {
   outline-offset: 2px;
 }
 
-/* Bảng mức tăng tốc mở ra khi bật công tắc. */
 .turbo-panel {
   display: grid;
   grid-template-rows: 0fr;
@@ -1583,7 +1542,6 @@ p {
   overflow: hidden;
 }
 
-/* Khoảng cách nằm trong phần bị thu gọn (padding đặt lên phần tử co về 0fr thì không co được). */
 .turbo-panel-content {
   display: grid;
   gap: 6px;
@@ -1598,8 +1556,6 @@ p {
   opacity: 0.45;
 }
 
-/* Thanh trượt (app/slider.tsx): input range trong suốt phủ lên ray + nút kéo tự vẽ. Nút kéo của input có cùng
- * cỡ --thumb để vị trí con trỏ khớp đúng giá trị. Chỉ thanh bậc mới có chuyển động (kéo liên tục thì không trễ). */
 .slider {
   --p: 0;
   --thumb: 22px;
@@ -1733,8 +1689,6 @@ p {
   color: var(--ink);
 }
 
-/* ------------------------------------------------------------------ chuyển động chung */
-
 @keyframes rise {
   from {
     opacity: 0;
@@ -1768,7 +1722,6 @@ p {
     gap: 4px;
   }
 
-  /* Hẹp: chỉ còn chấm trạng thái, chữ vẫn có cho trình đọc màn hình và tooltip. */
   .health {
     padding: 0 10px;
   }
@@ -1809,16 +1762,12 @@ p {
   }
 }
 
-/* ------------------------------------------------------------------ điện thoại: camera toàn màn hình */
-
-/* Đang chạy trên thiết bị cảm ứng: khung camera phủ cả màn hình, HUD / phụ đề / nút đè lên hình ở các góc. */
 html.immersive,
 html.immersive body {
   overflow: hidden;
   overscroll-behavior: none;
 }
 
-/* Animation transform của .stage biến nó thành khối chứa của position: fixed: tắt để khung phủ đúng màn hình. */
 html.immersive .stage {
   animation: none;
 }
@@ -1886,7 +1835,6 @@ html.immersive .stage {
   animation: token-in 520ms var(--ease-out) both;
 }
 
-/* Từ đang chờ đủ phiếu: nền xanh lấp dần theo số phiếu. */
 .live-token.ghost {
   background:
     linear-gradient(90deg, var(--jade) calc(var(--fill, 0) * 100%), transparent 0)
@@ -1978,8 +1926,6 @@ html.immersive .stage {
   background: var(--danger);
   color: #fff;
 }
-
-/* ------------------------------------------------------------------ cá nhân hoá (app/personalize.tsx) */
 
 .icon-button.is-on {
   color: var(--jade);

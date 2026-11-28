@@ -24,25 +24,22 @@ import numpy as np
 from src.features.extract import FEATURE_DIM, PITCH_AUG_DEG, POSE_Z_GAIN, extract
 from src.features.landmarks import arrays_to_results
 
-FOCAL = 0.8                  # tiêu cự webcam ~64° FOV ngang, theo bề rộng canvas
-DEPTH_LIMITS = (-1.2, 0.5)   # (đơn vị vai) kẹp độ sâu cổ tay so với vai: z pose của tay nhiễu, lệch tới 1-2 vai
+FOCAL = 0.8
+DEPTH_LIMITS = (-1.2, 0.5)
 _L_SH, _R_SH = 11, 12
 _POSE_WRISTS = (15, 16)
-_POSE_HAND_PTS = {15: (17, 19, 21), 16: (18, 20, 22)}   # ngón út/trỏ/cái của pose đi theo cổ tay
+_POSE_HAND_PTS = {15: (17, 19, 21), 16: (18, 20, 22)}
 
 
 @dataclass(frozen=True)
 class ViewParams:
-    yaw: float = 0.0          # độ: camera lệch trái/phải quanh người ký
-    pitch: float = 0.0        # độ: camera cao/thấp hơn
-    roll: float = 0.0         # độ: camera nghiêng
-    distance: float = 1.0     # r: tỉ lệ khoảng cách camera (gộp cả khác FOV)
-    hand_size: float = 1.0    # cỡ bàn tay so với vai (khác người)
-    shift_x: float = 0.0      # (đơn vị vai) dịch vị trí ký của cả hai tay, hằng số trên clip
+    yaw: float = 0.0
+    pitch: float = 0.0
+    roll: float = 0.0
+    distance: float = 1.0
+    hand_size: float = 1.0
+    shift_x: float = 0.0
     shift_y: float = 0.0
-    # Độ gập lệch thêm (độ) của 15 khớp ngón (thứ tự extract._JOINTS) cho tay trái rồi tay phải (30 số),
-    # hằng số trên clip: MediaPipe ước lượng góc khớp lệch có hệ thống theo bối cảnh (đo trên lớp m: 10-20°
-    # giữa hai bối cảnh), còn xoay camera cứng thì không đổi được thủ hình. () = không đổi.
     finger_offsets: tuple[float, ...] = ()
 
     def to_dict(self) -> dict:
@@ -147,7 +144,6 @@ def simulate_view(pose: np.ndarray, hands: np.ndarray, world: np.ndarray, view: 
     else:
         fingers = (None, None)
 
-    # Cổ tay pose ghép với từng tay + độ sâu đã làm mượt (theo vai, đơn vị canvas)
     match = np.full((T, 2), -1, dtype=int)
     wrist_d = np.full((T, 2), np.nan)
     for t in np.flatnonzero(has_pose):
@@ -179,7 +175,6 @@ def simulate_view(pose: np.ndarray, hands: np.ndarray, world: np.ndarray, view: 
             proj = f / (f * r + z)
             return P[:, :2] * proj[:, None], z - d, f / (f + d), proj
 
-        # Pose: dịch cổ tay (và điểm ngón của pose) cùng tay của nó
         pts = pose[t, :, :3].copy()
         for k in range(2):
             w = match[t, k]
@@ -187,27 +182,25 @@ def simulate_view(pose: np.ndarray, hands: np.ndarray, world: np.ndarray, view: 
                 pts[[w, *_POSE_HAND_PTS[w]], :2] += shift
         u, dz, _, _ = transform(pts[:, :2] - [px, py], (pts[:, 2] - pz) / POSE_Z_GAIN)
         pose[t, :, :2] = u + [px, py]
-        # z pose cùng thang ảnh với x: người xa hơn r lần thì z tương đối cũng nhỏ đi r lần
         pose[t, :, 2] = pz + (pts[:, 2] - pz + dz * POSE_Z_GAIN) / r
 
         for k in range(2):
             if match[t, k] < 0:
                 continue
             src = hands[t, k]
-            h = src[0] + (src - src[0]) * view.hand_size          # cỡ tay quanh cổ tay (z tương đối cũng co giãn)
+            h = src[0] + (src - src[0]) * view.hand_size
             is_left = match[t, k] == _POSE_WRISTS[0]
             offsets = fingers[0 if is_left else 1]
             if offsets is not None:
                 h = bend_fingers(h, offsets, is_left)
             h[:, :2] += shift
-            # z của tay là độ sâu tương đối cổ tay theo thang ảnh của tay -> đổi về độ sâu thật / chiếu lại
             proj_old = f / (f + max(wrist_d[t, k], -0.8 * f))
             d = wrist_d[t, k] + (h[:, 2] - h[0, 2]) / proj_old
             u, dz, _, proj = transform(h[:, :2] - [px, py], d)
             new = np.empty_like(h)
             new[:, :2] = u + [px, py]
             z_true = d + dz
-            new[:, 2] = src[0, 2] + (z_true - z_true[0]) * proj[0]   # MediaPipe: z cổ tay ~ 0, giữ nguyên
+            new[:, 2] = src[0, 2] + (z_true - z_true[0]) * proj[0]
             inside = lambda a: ((a[:, :2] >= -0.02) & (a[:, :2] <= 1.02)).all()
             if inside(src) and not inside(new):
                 hands[t, k] = np.nan

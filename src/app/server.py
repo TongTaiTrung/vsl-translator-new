@@ -113,7 +113,7 @@ from src.model.predict import VSLPredictor
 DEFAULT_FPS = 15.0
 MAX_TOP_K = 10
 MAX_STREAM_FRAMES = 60
-MIN_SAMPLE_HAND_FRAMES = 8      # mẫu cá nhân: tay phải xuất hiện ít nhất chừng này frame (và >= nửa clip)
+MIN_SAMPLE_HAND_FRAMES = 8
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
@@ -195,15 +195,12 @@ class StreamSession:
         self._factory = factory
         self._extractor = None
         self.window = window
-        # Cửa sổ giữ theo THỜI GIAN (``window`` frame ở nhịp ``fps`` lúc train = 2 giây), không theo số frame:
-        # thiết bị chậm (điện thoại ~7 fps) hay nhanh (30 fps) đều cho model đúng 2 giây cử chỉ như lúc train.
-        # maxlen chỉ để chặn bộ nhớ (client gửi tối đa ~60 fps).
         self.features: deque[np.ndarray] = deque(maxlen=4 * window)
         self.times: deque[int] = deque(maxlen=4 * window)
         self.last_timestamp = -1
-        self.lock = threading.Lock()          # mỗi phiên xử lý tuần tự (tracking phụ thuộc thứ tự frame)
+        self.lock = threading.Lock()
         self.touched = time.monotonic()
-        self.memory = None                    # memory.MemoryEnsemble của người dùng phiên này
+        self.memory = None
 
     @property
     def extractor(self):
@@ -219,7 +216,7 @@ class StreamSession:
     def next_timestamps(self, timestamps, count: int, fps: float) -> list[int]:
         """Timestamp ms tăng ngặt cho ``count`` frame mới (VIDEO mode bắt buộc)."""
         if timestamps is None:
-            step = 1000 / fps                     # frame đầu tiên ở 0 ms, giống reextract (i * 1000 / fps)
+            step = 1000 / fps
             start = 0.0 if self.last_timestamp < 0 else self.last_timestamp + step
             raw = [start + step * i for i in range(count)]
         else:
@@ -397,9 +394,9 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
     stream_extractor_factory: ``() -> obj`` có ``extract(frame, timestamp_ms=, mirror_data=)`` và ``close()``.
     """
     app = Flask(__name__, static_folder=None)
-    app.json.ensure_ascii = False          # trả nhãn tiếng Việt nguyên dạng
+    app.json.ensure_ascii = False
     app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
-    model_lock = threading.Lock()          # torch model dùng chung; MediaPipe chạy song song theo request
+    model_lock = threading.Lock()
     streams = StreamStore(stream_extractor_factory, window=expected_frames or EXPECTED_FRAMES,
                           max_sessions=max_streams, idle_s=stream_idle_s)
 
@@ -407,7 +404,7 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
         try:
             with model_lock, torch.inference_mode():
                 return predictor.predict_raw(features, top_k=top_k, ensemble=memory)
-        except ValueError as exc:          # vd. feature chứa vô cực
+        except ValueError as exc:
             raise BadRequest(str(exc)) from None
 
     def build_memory(parsed):
@@ -465,7 +462,7 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
-        response.headers["Access-Control-Max-Age"] = "86400"    # trình duyệt nhớ preflight, không hỏi lại mỗi request
+        response.headers["Access-Control-Max-Age"] = "86400"
         return response
 
     @app.errorhandler(BadRequest)
@@ -531,8 +528,6 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
         sid = streams.open(memory)
         if sid is None:
             return jsonify(error=f"Server đã đủ {streams.max_sessions} phiên, thử lại sau"), 503
-        # binary: server nhận multipart + cờ predict; landmarks: nhận landmark thay ảnh (client cũ bỏ qua).
-        # memory: server hỗ trợ bộ nhớ mẫu cá nhân (null khi phiên không dùng).
         return jsonify(session_id=sid, window=streams.window, binary=True, landmarks=True,
                        memory=memory.summary() if memory is not None else None), 201
 
@@ -586,7 +581,7 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
             streams.close(sid)
             return "", 204
         started = time.perf_counter()
-        body, decoded, given = stream_body()              # lỗi ảnh/landmark → 400 trước khi đụng vào phiên
+        body, decoded, given = stream_body()
         count = len(decoded) if decoded is not None else len(given)
         fps, mirror_data, top_k = _parse_options(body, default_mirror_data)
         timestamps = body.get("timestamps")
@@ -614,7 +609,7 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
             if given is None:
                 given = [session.extractor.extract(frame, timestamp_ms=ts, mirror_data=mirror_data)
                          for frame, ts in zip(decoded, times)]
-            session.append(given, times, fps)              # landmark: MediaPipe đã chạy ở client
+            session.append(given, times, fps)
             session.touched = time.monotonic()
             recent, covered, buffered = session.recent(window_size, fps)
 
@@ -622,8 +617,6 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
         predicted = ready and predict_now
         model_input = repeat_frames(recent, expected_frames) if fill == "repeat" else recent
         result = run_model(model_input, top_k, session.memory) if predicted else {}
-        # buffered / hand_frames tính theo đơn vị frame ở nhịp ``fps`` (như lúc train) dù client thu nhanh hay chậm;
-        # frames là số frame thật đem dự đoán, capture_fps là nhịp thu thật của client.
         hand_frames = round(count_hand_frames(recent) * covered / len(recent))
         capture_fps = round(1000 / session._interval(1000 / fps), 1)
         result.update(ready=ready, predicted=predicted, buffered=buffered, window=window_size,
@@ -644,8 +637,6 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--min-confidence", type=float, default=0.65)
     parser.add_argument("--min-gap", type=float, default=0.08)
     parser.add_argument("--max-streams", type=int, default=8, help="số phiên /api/stream mở cùng lúc")
-    # Model ensemble rất nhỏ: trên CPU 1 luồng ~13 ms/lần dự đoán, nhanh hơn MPS (~35–70 ms vì đồng bộ GPU)
-    # và CPU nhiều luồng (~60 ms vì chia việc quá nhỏ, lại tranh lõi với MediaPipe).
     parser.add_argument("--device", default="cpu", help="thiết bị chạy model (cpu, mps, cuda); mặc định cpu")
     parser.add_argument("--torch-threads", type=int, default=1, help="số luồng torch cho model; mặc định 1")
     return parser.parse_args(argv)
@@ -661,7 +652,7 @@ def main(argv=None) -> None:
           f"{len(predictor.classes)} lớp: {', '.join(predictor.classes)}")
     app = create_app(predictor, expected_frames=args.frames or None, default_mirror_data=args.mirror_data,
                      max_streams=args.max_streams)
-    WSGIRequestHandler.protocol_version = "HTTP/1.1"   # giữ kết nối giữa các request (mặc định HTTP/1.0 mở TCP mới mỗi lần)
+    WSGIRequestHandler.protocol_version = "HTTP/1.1"
     app.run(host=args.host, port=args.port, threaded=True)
 
 

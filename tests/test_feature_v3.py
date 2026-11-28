@@ -38,9 +38,9 @@ class HandshapeTests(unittest.TestCase):
         hs_r, ori_r, loc_r = fx._hand_shape_and_orientation(right, False, forearm)
         hs_l, ori_l, loc_l = fx._hand_shape_and_orientation(right * flip, True, forearm * flip)
         np.testing.assert_allclose(hs_l, hs_r, atol=1e-5)
-        np.testing.assert_allclose(loc_l, loc_r, atol=1e-5)       # hand_local tự đối xứng gương
+        np.testing.assert_allclose(loc_l, loc_r, atol=1e-5)
         expected = ori_r.copy()
-        expected[[0, 3, 8]] *= -1                     # palm_dir.x, palm_normal.x, góc cổ tay ngang
+        expected[[0, 3, 8]] *= -1
         np.testing.assert_allclose(ori_l, expected, atol=1e-5)
 
 
@@ -155,7 +155,7 @@ class HandPairModelTests(unittest.TestCase):
         self.assertEqual(tuple(model(torch.zeros(2, 30, D)).shape), (2, 4))
         self.assertTrue(hasattr(model, "head"))
         with self.assertRaises(ValueError):
-            tr.Config(arch="handpair")                   # handpair cần presence_norm
+            tr.Config(arch="handpair")
 
         old_cfg = tr.Config()
         old = tr.build_model(D, 2, tr.default_groups(D), old_cfg).eval()
@@ -232,7 +232,7 @@ class FeatureV6Tests(unittest.TestCase):
 
     def test_frame_does_not_depend_on_hip_visibility(self):
         pose, image, world = _scene()
-        pose[23, 2] = pose[24, 2] = -0.5            # hông nghiêng sâu: v5 sẽ đổi pitch của hệ trục khi hông "thấy được"
+        pose[23, 2] = pose[24, 2] = -0.5
         seen = fx.extract(*_results(pose, image, world, hip_vis=0.9))
         hidden = fx.extract(*_results(pose, image, world, hip_vis=0.1))
         np.testing.assert_array_equal(seen, hidden)
@@ -247,7 +247,7 @@ class FeatureV6Tests(unittest.TestCase):
             predicted = fx.rotate_view_pitch(base, degrees)
             cols = np.r_[S["hand_pos"], S["face_vec"], o:o + 6, o + 9:o + 15]
             live = cols[np.isfinite(base[cols])]
-            self.assertGreater(np.abs(moved[live] - base[live]).max(), 0.05)       # góc nhìn thật sự làm lệch
+            self.assertGreater(np.abs(moved[live] - base[live]).max(), 0.05)
             np.testing.assert_allclose(predicted[live], moved[live], atol=2e-3)
 
     def test_rotate_view_pitch_geometry_and_invariants(self):
@@ -262,11 +262,10 @@ class FeatureV6Tests(unittest.TestCase):
         for name in ("body_contact", "hand_contact", "hand_scale", "handshape", "hand_local", "presence"):
             np.testing.assert_array_equal(y[:, S[name]], x[:, S[name]])
         o = S["orientation"].start
-        np.testing.assert_array_equal(y[:, o + 6:o + 9], x[:, o + 6:o + 9])     # góc cổ tay
-        for k in (0, 3, 9, 12):                                                  # palm_dir/normal giữ độ dài
+        np.testing.assert_array_equal(y[:, o + 6:o + 9], x[:, o + 6:o + 9])
+        for k in (0, 3, 9, 12):
             np.testing.assert_allclose(np.linalg.norm(y[:, o + k:o + k + 3], axis=1),
                                        np.linalg.norm(x[:, o + k:o + k + 3], axis=1), rtol=1e-5)
-        # Camera thấp hơn: tay ở trước thân (z < 0) hiện cao hơn (y nhỏ hơn); x không đổi.
         point = np.zeros(fx.FEATURE_DIM, dtype=np.float32)
         point[S["hand_pos"].start + 9: S["hand_pos"].start + 12] = (0.1, 0.4, -1.0)
         lifted = fx.rotate_view_pitch(point, 10.0)[S["hand_pos"].start + 9: S["hand_pos"].start + 12]
@@ -298,7 +297,7 @@ class SignFormerTests(unittest.TestCase):
         torch.manual_seed(0)
         model = self._model()
         x = torch.randn(2, 30, fx.SEQ_FEATURE_DIM)
-        x[..., fx.PRESENCE_SLICE.start] = 0.0             # tay trái vắng
+        x[..., fx.PRESENCE_SLICE.start] = 0.0
         x[..., fx.PRESENCE_SLICE.start + 1] = 1.0
         y = x.clone()
         y[..., torch.as_tensor(fx.SIDE_COLUMNS["left"][fx.SIDE_COLUMNS["left"] != fx.PRESENCE_SLICE.start])] += 5.0
@@ -327,7 +326,6 @@ class FeatureV5Tests(unittest.TestCase):
         return fx._body_anchors(np.zeros((33, 3), dtype=np.float32))
 
     def test_palm_on_chest_registers_contact_despite_depth_offset(self):
-        # "tôi": nắm tay đặt trên ngực, z pose lệch ~-0.95 vai dù tay chạm thân.
         palm = np.array([-0.09, 0.34, -0.95])
         pts = palm + np.array([[0, 0, 0], [0.05, -0.05, 0], [0.0, -0.1, 0], [0, -0.08, 0],
                                [-0.03, -0.06, 0], [-0.06, -0.04, 0]])
@@ -335,7 +333,6 @@ class FeatureV5Tests(unittest.TestCase):
         self.assertGreater(chest, 0.5)
 
     def test_hand_near_shoulder_away_from_chest_has_no_chest_contact(self):
-        # "m": tay ở ngang vai phải, xa ngực.
         palm = np.array([-0.62, -0.12, -2.0])
         pts = palm + np.array([[0, 0, 0], [0.05, 0.1, 0], [0.1, 0.4, 0], [0.05, 0.42, 0],
                                [0, 0.4, 0], [-0.05, 0.3, 0]])
@@ -359,7 +356,6 @@ class FeatureV5Tests(unittest.TestCase):
         perm, sign = fx.LEFT_MIRROR
         left = fx.SIDE_COLUMNS["left"][perm]
         self.assertEqual(sign[int(np.flatnonzero(left == sl.start)[0])], 1.0)
-        # Nằm trong nhóm vị trí của GroupStem (trước thủ hình).
         self.assertLess(sl.stop, fx.FEATURE_SLICES["handshape"].start + 1)
 
 
@@ -372,8 +368,8 @@ class StrokeTests(unittest.TestCase):
         raw[:, fx.FEATURE_SLICES["presence"]] = 0.0
         hp = fx.FEATURE_SLICES["hand_pos"].start + 9 * side
         x = 0.3 if side else -0.3
-        y = 0.2 + dy * np.clip((np.arange(T) - start) / 4.0, 0.0, 1.0)      # vẩy trong 4 frame
-        for k, off in enumerate((0.0, 0.1, -0.2)):                         # lòng bàn tay, ngón cái, đầu trỏ
+        y = 0.2 + dy * np.clip((np.arange(T) - start) / 4.0, 0.0, 1.0)
+        for k, off in enumerate((0.0, 0.1, -0.2)):
             raw[:, hp + 3 * k], raw[:, hp + 3 * k + 1], raw[:, hp + 3 * k + 2] = x, y + off, 0.0
         raw[:, fx.PRESENCE_SLICE.start + side] = 1.0
         raw[:absent_until, fx._side_raw_cols(side)] = np.nan
@@ -385,9 +381,9 @@ class StrokeTests(unittest.TestCase):
         for seq in (early, late):
             self.assertTrue(np.allclose(seq[:, fx.STROKE_SLICE], seq[:1, fx.STROKE_SLICE]))
         np.testing.assert_allclose(early[0, fx.STROKE_SLICE], late[0, fx.STROKE_SLICE], atol=1e-5)
-        self.assertLess(early[0, right + 1], -0.5)                  # đầu trỏ đi lên (y giảm)
-        self.assertLess(early[0, right + 4], -0.5)                  # lòng bàn tay cũng vậy
-        self.assertTrue(np.all(early[0, fx.STROKE_SLICE.start:right] == 0))   # tay trái vắng -> 0
+        self.assertLess(early[0, right + 1], -0.5)
+        self.assertLess(early[0, right + 4], -0.5)
+        self.assertTrue(np.all(early[0, fx.STROKE_SLICE.start:right] == 0))
 
     def test_up_and_down_strokes_have_opposite_signs_and_static_hand_is_zero(self):
         y = fx.STROKE_SLICE.start + 7
@@ -411,14 +407,13 @@ class StrokeTests(unittest.TestCase):
         self.assertIn((fx.STROKE_SLICE.start, fx.SEQ_FEATURE_DIM), tr.default_groups(fx.SEQ_FEATURE_DIM))
 
 
-
 def _bend(hand: np.ndarray, finger: int, degrees: float) -> np.ndarray:
     """Gập PIP và DIP của ngón `finger` (1 = trỏ ... 4 = út) mỗi khớp `degrees` độ, quanh trục ngang lòng bàn tay."""
     from src.features.view import _rotate_about
     out = hand.copy()
     chain = fx._FINGER_CHAINS[finger]
     axis = out[17] - out[5]
-    for j in (2, 3):                                 # PIP, DIP
+    for j in (2, 3):
         out[chain[j + 1:]] = _rotate_about(out[chain[j + 1:]], out[chain[j]], axis, degrees)
     return out
 
@@ -427,27 +422,27 @@ class FingerCurlTests(unittest.TestCase):
     """v7: độ cong từng ngón (góc rad, tổng gập, PIP+DIP, độ thẳng) đo trên cả landmark ảnh lẫn hand_world."""
 
     def test_version_and_layout(self):
-        self.assertEqual(fx.FEATURE_VERSION, 7)
+        self.assertGreaterEqual(fx.FEATURE_VERSION, 7)
         sl = fx.FEATURE_SLICES["finger_curl"]
         self.assertEqual(sl.stop - sl.start, 2 * fx.CURL_DIM)
         for side in ("left", "right"):
             half = fx.CURL_DIM
             start = sl.start + (0 if side == "left" else half)
             self.assertTrue(np.isin(np.arange(start, start + half), fx.SIDE_COLUMNS[side]).all())
-        self.assertIn((sl.start, sl.stop), tr.default_groups(fx.SEQ_FEATURE_DIM))   # nhóm stem riêng
+        self.assertIn((sl.start, sl.stop), tr.default_groups(fx.SEQ_FEATURE_DIM))
 
     def test_straight_finger_has_zero_angles_and_unit_straightness(self):
         ang, total, hook, straight = fx._curl_stats(_hand(0.5))
-        np.testing.assert_allclose(ang.reshape(5, 3)[1:, 1:], 0.0, atol=1e-6)   # PIP, DIP ngón 2-5 duỗi
+        np.testing.assert_allclose(ang.reshape(5, 3)[1:, 1:], 0.0, atol=1e-6)
         np.testing.assert_allclose(hook[1:], 0.0, atol=1e-6)
         np.testing.assert_allclose(straight[1:], 1.0, atol=1e-6)
 
     def test_hooking_a_finger_shows_up_only_in_that_finger(self):
         flat = fx._curl_stats(_hand(0.5))
-        hooked = fx._curl_stats(_bend(_hand(0.5), 1, 40.0))   # móc ngón trỏ như dấu mũ
+        hooked = fx._curl_stats(_bend(_hand(0.5), 1, 40.0))
         self.assertAlmostEqual(hooked[2][1], np.radians(80.0), places=4)
         self.assertLess(hooked[3][1], 0.9)
-        np.testing.assert_allclose(hooked[2][2:], flat[2][2:], atol=1e-6)        # ngón khác không đổi
+        np.testing.assert_allclose(hooked[2][2:], flat[2][2:], atol=1e-6)
 
     def test_invariant_to_rotation_scale_translation_and_mirror(self):
         hand = _bend(_hand(0.3), 4, 25.0)
@@ -461,7 +456,7 @@ class FingerCurlTests(unittest.TestCase):
         hand = _hand(0.5)
         base = fx._finger_curl(hand, hand)
         world_hooked = fx._finger_curl(hand, _bend(hand, 1, 30.0))
-        np.testing.assert_allclose(world_hooked[:30], base[:30], atol=1e-6)   # phần ảnh giữ nguyên
+        np.testing.assert_allclose(world_hooked[:30], base[:30], atol=1e-6)
         self.assertGreater(np.abs(world_hooked[30:] - base[30:]).max(), 0.5)
 
     def test_extract_fills_detected_side_and_nans_missing_side(self):
@@ -478,5 +473,82 @@ class FingerCurlTests(unittest.TestCase):
         cols = fx.SIDE_COLUMNS["left"]
         sl = fx.FEATURE_SLICES["finger_curl"]
         pos = np.isin(cols, np.arange(sl.start, sl.stop))
+        self.assertTrue((sign[pos] == 1.0).all())
+        self.assertTrue((perm[pos] == np.flatnonzero(pos)).all())
+
+
+def _ring(gap_degrees: float) -> np.ndarray:
+    """Bàn tay phải (21,3) có ngón cái + trỏ uốn thành cung tròn tâm (0.5,-1.6), hở một cung gap_degrees ở đỉnh
+    (0 = "o" khép kín, ~90 = "c"). Ngón giữa/nhẫn/út duỗi như _hand nhưng lùi ra sau mặt phẳng vòng."""
+    pts = _hand(0.5)
+    pts[10:13, 2] += 1.0
+    center, r = np.array([0.5, -1.6, 0.0]), 0.6
+    start = np.radians(270.0 + gap_degrees / 2)
+    span = np.radians(360.0 - gap_degrees)
+    chain = [8, 7, 6, 5, 2, 3, 4]
+    for k, j in enumerate(chain):
+        a = start + span * k / (len(chain) - 1)
+        pts[j] = center + r * np.array([np.cos(a), np.sin(a), 0.0])
+    pts[1] = 0.5 * (pts[0] + pts[2])
+    return pts
+
+
+class HandClosureTests(unittest.TestCase):
+    """v8: độ khép vòng ngón cái - trỏ/giữa, tách "o" (khép kín) với "c" (hở)."""
+
+    def test_version_and_layout(self):
+        self.assertEqual(fx.FEATURE_VERSION, 8)
+        sl = fx.FEATURE_SLICES["hand_closure"]
+        self.assertEqual(sl.stop - sl.start, 2 * fx.CLOSURE_DIM)
+        for k, side in enumerate(("left", "right")):
+            start = sl.start + k * fx.CLOSURE_DIM
+            self.assertTrue(np.isin(np.arange(start, start + fx.CLOSURE_DIM), fx.SIDE_COLUMNS[side]).all())
+        self.assertIn((sl.start, sl.stop), tr.default_groups(fx.SEQ_FEATURE_DIM))
+        self.assertEqual(fx.FEATURE_DIM, 383)
+        self.assertEqual(fx.SEQ_FEATURE_DIM, 434)
+
+    def test_gap_grows_monotonically_from_closed_o_to_open_c(self):
+        stats = np.array([fx._closure_stats(_ring(g)) for g in (0.0, 30.0, 60.0, 90.0)])
+        self.assertLess(stats[0, 0], 1e-6)
+        self.assertLess(stats[0, 3], 1e-6)
+        for col in (0, 2, 3):
+            self.assertTrue(np.all(np.diff(stats[:, col]) > 0), stats[:, col])
+
+    def test_thumb_on_side_of_index_counts_as_closed(self):
+        hand = _hand(0.5)
+        hand[4] = 0.5 * (hand[6] + hand[7]) + np.array([0.0, 0.0, 0.01])
+        gap_i, _, seg, _ = fx._closure_stats(hand)
+        self.assertLess(seg, 0.05)
+        self.assertGreater(gap_i, 0.2)
+
+    def test_invariant_to_rotation_scale_translation_and_mirror(self):
+        hand = _ring(50.0)
+        a = np.radians(41.0)
+        rot = np.array([[1, 0, 0], [0, np.cos(a), -np.sin(a)], [0, np.sin(a), np.cos(a)]])
+        base = fx._hand_closure(hand, hand * 0.01)
+        moved = fx._hand_closure(1.7 * hand @ rot.T - 2.0, hand * np.array([-0.01, 0.01, 0.01]))
+        np.testing.assert_allclose(moved, base, atol=1e-5)
+
+    def test_image_and_world_sources_are_both_used(self):
+        closed, opened = _ring(0.0), _ring(90.0)
+        out = fx._hand_closure(closed, opened)
+        np.testing.assert_allclose(out[:4], fx._closure_stats(closed), atol=1e-6)
+        np.testing.assert_allclose(out[4:], fx._closure_stats(opened), atol=1e-6)
+
+    def test_extract_fills_detected_side_and_nans_missing_side(self):
+        pose, image, world = _scene()
+        out = fx.extract(*_results(pose, image, world))
+        sl = fx.FEATURE_SLICES["hand_closure"]
+        left, right = out[sl.start:sl.start + fx.CLOSURE_DIM], out[sl.start + fx.CLOSURE_DIM:sl.stop]
+        self.assertTrue(np.isnan(left).all())
+        self.assertTrue(np.isfinite(right).all())
+        np.testing.assert_allclose(right, fx._hand_closure(image, world), atol=1e-5)
+
+    def test_left_mirror_keeps_closure_unsigned(self):
+        perm, sign = fx.LEFT_MIRROR
+        cols = fx.SIDE_COLUMNS["left"]
+        sl = fx.FEATURE_SLICES["hand_closure"]
+        pos = np.isin(cols, np.arange(sl.start, sl.stop))
+        self.assertEqual(int(pos.sum()), fx.CLOSURE_DIM)
         self.assertTrue((sign[pos] == 1.0).all())
         self.assertTrue((perm[pos] == np.flatnonzero(pos)).all())

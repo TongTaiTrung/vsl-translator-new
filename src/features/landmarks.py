@@ -79,9 +79,6 @@ def results_to_dict(pose_res, hand_res) -> dict:
     return out
 
 
-# =============================================================================
-# LANDMARK THÔ DẠNG MẢNG (lưu cạnh feature của mỗi mẫu: data/processed/<lớp>/<id>/landmarks.npz)
-# =============================================================================
 LANDMARKS_FILE = "landmarks.npz"
 
 

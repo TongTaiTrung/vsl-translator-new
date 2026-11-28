@@ -32,8 +32,6 @@ import { Slider } from "./slider";
 import { Switch } from "./switch";
 import { ThemeToggle } from "./theme-toggle";
 
-// ------------------------------------------------------------------ cài đặt (lưu trên trình duyệt)
-
 interface Settings {
   apiUrl: string;
   groqKey: string;
@@ -43,18 +41,13 @@ interface Settings {
   mirrorData: boolean;
   debugCrop: boolean;
   speed: Speed;
-  /** Siêu tốc (TURBO_PRESETS): bật thì thay cho `speed`. */
   turbo: boolean;
   turboLevel: TurboLevel;
   minConsecutive: number;
   sentenceGapSeconds: number;
-  /** Dùng mẫu cá nhân khi nhận diện. */
   personalize: boolean;
-  /** Mức ảnh hưởng của mẫu cá nhân (0–1). */
   memoryStrength: number;
-  /** Tự lưu mẫu từ các từ người dùng giữ lại (không xoá/undo). */
   autoLearn: boolean;
-  /** "realtime": học mỗi từ ngay sau khi chốt (hoàn tác thì xoá mẫu); "sentence": học khi kết thúc câu. */
   learnMode: LearnMode;
 }
 
@@ -79,15 +72,11 @@ const DEFAULT_SETTINGS: Settings = {
   learnMode: "realtime",
 };
 
-/** Học thời gian thực: chờ chừng này ms sau khi chốt từ (hoàn tác trong lúc này thì không học). */
 const REALTIME_GRACE_MS = 2500;
 
-/** Tự học: chỉ lấy từ mô hình đã khá chắc (giảm rủi ro học nhầm) … */
 const AUTO_MIN_CONFIDENCE = 0.8;
-/** … và bỏ qua cửa sổ đã gần như trùng một mẫu sẵn có của chính từ đó (không thêm thông tin). */
 const AUTO_SKIP_SIMILARITY = 0.97;
 
-/** Ghi mẫu: đếm ngược bao nhiêu giây, thu bao nhiêu frame (30 frame = 2 giây ở 15 fps, đúng độ dài mẫu train). */
 const COUNTDOWN_SECONDS = 3;
 const SAMPLE_FRAMES = 30;
 
@@ -128,8 +117,6 @@ function saveSettings(settings: Settings): void {
   else localStorage.removeItem(GROQ_KEY);
 }
 
-// ------------------------------------------------------------------ câu
-
 type SentenceStatus = "idle" | "pending" | "ok" | "fallback" | "error";
 
 interface Sentence {
@@ -162,8 +149,6 @@ async function composeSentence(words: string[], settings: Settings): Promise<Sen
     return { text: fallback, status: "error", note: (err as Error).message };
   }
 }
-
-// ------------------------------------------------------------------ hiển thị
 
 const PHASE_TEXT: Record<Phase, string> = {
   stopped: "Camera đang tắt",
@@ -199,7 +184,6 @@ const percent = (value: number) => `${Math.round(value * 100)}%`;
 
 function Icon({ name }: { name: "settings" | "close" | "copy" | "check" | "speaker" | "undo" | "trash" | "stop" | "play" | "flag" | "user" | "flip" }) {
   const paths: Record<string, React.ReactNode> = {
-    // Máy ảnh với hai mũi tên xoay: đổi camera trước / sau.
     flip: (
       <>
         <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z" />
@@ -247,7 +231,6 @@ function Icon({ name }: { name: "settings" | "close" | "copy" | "check" | "speak
   );
 }
 
-/** Tách chữ theo grapheme để dấu tiếng Việt không bị tách khỏi chữ cái. */
 function graphemes(text: string): string[] {
   if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
     return Array.from(new Intl.Segmenter("vi", { granularity: "grapheme" }).segment(text), (s) => s.segment);
@@ -255,7 +238,6 @@ function graphemes(text: string): string[] {
   return Array.from(text.normalize("NFC"));
 }
 
-/** Thay đổi `value` → render lại con với key mới để chạy hoạt ảnh vào. */
 function Swap({ value, className, children }: { value: string; className?: string; children: React.ReactNode }) {
   return <span key={value} className={`swap ${className ?? ""}`}>{children}</span>;
 }
@@ -280,7 +262,6 @@ export default function Home() {
   const [samples, setSamples] = useState<Sample[]>([]);
   const [recording, setRecording] = useState<Recording | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
-  // Thiết bị cảm ứng (điện thoại / máy tính bảng): bố cục camera toàn màn hình khi đang chạy.
   const [touch, setTouch] = useState(false);
   useEffect(() => {
     const query = matchMedia("(pointer: coarse)");
@@ -291,11 +272,8 @@ export default function Home() {
   }, []);
 
   settingsRef.current = settings;
-  /** Cửa sổ đã được tự học → id mẫu, để xoá mẫu đó nếu người dùng sửa nhãn cửa sổ này sau. */
   const autoSaved = useRef(new WeakMap<CommittedWindow, string>());
-  /** Cửa sổ người dùng đã hoàn tác/xoá: không học nữa. */
   const discarded = useRef(new WeakSet<CommittedWindow>());
-  /** Lượt học thời gian thực đang chờ hết REALTIME_GRACE_MS. */
   const pendingLearn = useRef(new Map<CommittedWindow, ReturnType<typeof setTimeout>>());
   const learnRef = useRef<{
     committed: (w: CommittedWindow) => void;
@@ -325,7 +303,6 @@ export default function Home() {
     setHistory((prev) => prev.map((item) => (item.id === id ? { ...item, ...result } : item)));
   }, []);
 
-  // Tạo recognizer một lần, gắn với thẻ <video>.
   useEffect(() => {
     if (!videoRef.current) return;
     const recognizer = new Recognizer(videoRef.current, {
@@ -340,14 +317,12 @@ export default function Home() {
     return () => recognizer.dispose();
   }, [updateCurrent, finishSentence]);
 
-  // Nạp cài đặt đã lưu (chỉ chạy trên trình duyệt).
   useEffect(() => {
     const saved = loadSettings();
     setSettings(saved);
     setLoaded(true);
   }, []);
 
-  // Lưu cài đặt và đẩy tham số xuống recognizer.
   useEffect(() => {
     if (!loaded) return;
     saveSettings(settings);
@@ -368,7 +343,6 @@ export default function Home() {
     recognizerRef.current?.setDebugCanvas(settings.debugCrop ? overlayRef.current : null);
   }, [settings, loaded]);
 
-  // Kiểm tra API dự đoán mỗi khi đổi địa chỉ.
   useEffect(() => {
     if (!loaded) return;
     const controller = new AbortController();
@@ -393,8 +367,6 @@ export default function Home() {
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
 
-  // ---------------------------------------------------------------- cá nhân hoá (lib/memory.ts)
-
   const reloadSamples = useCallback(async () => {
     try {
       setSamples(await listSamples());
@@ -407,7 +379,6 @@ export default function Home() {
     void reloadSamples();
   }, [reloadSamples]);
 
-  // Đẩy bộ mẫu xuống recognizer (mở lại phiên server); chờ một nhịp để kéo thanh mức ảnh hưởng không mở phiên liên tục.
   const featureDim = health?.featureDim;
   useEffect(() => {
     if (!loaded) return;
@@ -424,7 +395,6 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  /** Gửi landmark lên server để kiểm tra + trích feature; trả mẫu sẵn sàng lưu, hoặc lý do không lưu. */
   const prepareSample = async (label: string, frames: FrameLandmarks[], source: SampleSource) => {
     const result = await submitSample(settings.apiUrl, label, frames);
     const sample: Sample | null = result.ok ? {
@@ -435,7 +405,6 @@ export default function Home() {
     return { result, sample };
   };
 
-  /** Ghi mẫu thủ công (nút Ghi mẫu / Lưu làm mẫu). */
   const storeSample = async (label: string, frames: FrameLandmarks[]) => {
     const { result, sample } = await prepareSample(label, frames, "manual");
     if (!sample) {
@@ -477,7 +446,6 @@ export default function Home() {
     return current.personalize && current.autoLearn && Boolean(healthRef.current?.ok);
   };
 
-  /** Tự học: lưu cửa sổ của các từ người dùng giữ lại (chạy nền, tuần tự). */
   const learnWindows = (windows: CommittedWindow[], realtime: boolean) => {
     const picked = windows.filter((w) => !discarded.current.has(w) && !autoSaved.current.has(w) &&
       w.confidence >= AUTO_MIN_CONFIDENCE && w.frames.length >= 8 &&
@@ -488,16 +456,14 @@ export default function Home() {
       for (const w of picked) {
         try {
           const { result, sample } = await prepareSample(w.word, w.frames, "auto");
-          // Mô hình gốc rất chắc là từ khác → có thể chính phiên này đã nhận nhầm: không học.
           if (!sample || result.warning === "model_disagrees" || discarded.current.has(w)) continue;
           if (await addSample(sample)) {
             autoSaved.current.set(w, sample.id);
             learned.push(w.word);
-            // Người dùng hoàn tác đúng lúc đang lưu: bỏ mẫu vừa lưu.
             if (discarded.current.has(w)) await forget([w]);
           }
         } catch {
-          return;          // server không hỗ trợ / mất kết nối: bỏ qua lần tự học này
+          return;
         }
       }
       if (learned.length > 0) {
@@ -510,7 +476,6 @@ export default function Home() {
     })();
   };
 
-  /** Bỏ các cửa sổ người dùng đã hoàn tác/xoá: huỷ lượt học đang chờ, xoá mẫu đã học từ chúng. */
   const forget = async (windows: CommittedWindow[]) => {
     let removed = 0;
     for (const w of windows) {
@@ -531,7 +496,6 @@ export default function Home() {
   learnRef.current = {
     committed: (w) => {
       if (settingsRef.current.learnMode !== "realtime" || !canLearn()) return;
-      // Chờ một nhịp: từ bị hoàn tác ngay sau khi chốt thì không học (và không phải xoá lại).
       pendingLearn.current.set(w, setTimeout(() => {
         pendingLearn.current.delete(w);
         if (canLearn()) learnWindows([w], true);
@@ -548,7 +512,6 @@ export default function Home() {
     if (!committed || recording) return;
     setRecording({ label, stage: "saving", count: 0 });
     try {
-      // Cửa sổ này đã (hoặc sắp) được tự học với nhãn sai → bỏ mẫu đó trước.
       await forget([committed]);
       await storeSample(label, committed.frames);
     } catch (err) {
@@ -573,17 +536,14 @@ export default function Home() {
 
   const phase: Phase = state?.phase ?? "stopped";
   const running = phase !== "stopped";
-  // Điện thoại đang chạy: camera phủ gần hết màn hình, phụ đề và nút nằm đè ở góc (như app camera).
   const immersive = touch && running;
   const front = (state?.facing ?? "user") === "user";
-  // Chỉ lật gương hình xem trước của camera trước; camera sau hiện đúng như mắt người cầm máy thấy.
   const mirrorView = settings.mirrorPreview && front;
   const words = state?.words ?? [];
   const prediction = state?.prediction ?? null;
   const showCandidate = running && phase === "signing" && state?.candidate && state.count > 0;
   const bufferProgress = state && state.windowFrames > 0 ? Math.min(1, state.buffered / state.windowFrames) : 0;
 
-  // Mỗi lần chốt thêm một từ → tăng id để chạy lại hoạt ảnh nhấn mạnh (xoá/undo thì không).
   const [commit, setCommit] = useState<{ id: number; word: string } | null>(null);
   const prevCount = useRef(0);
   const commitId = useRef(0);
@@ -591,7 +551,7 @@ export default function Home() {
   const lastWord = words[wordCount - 1];
   useEffect(() => {
     if (wordCount > prevCount.current && lastWord) setCommit({ id: ++commitId.current, word: lastWord });
-    else if (wordCount === 0) setCommit(null); // tránh phát lại khi bật camera lại
+    else if (wordCount === 0) setCommit(null);
     prevCount.current = wordCount;
   }, [wordCount, lastWord]);
 
@@ -627,13 +587,11 @@ export default function Home() {
     window.speechSynthesis.speak(utterance);
   };
 
-  // Khoá cuộn trang phía sau khung camera toàn màn hình.
   useEffect(() => {
     document.documentElement.classList.toggle("immersive", immersive);
     return () => document.documentElement.classList.remove("immersive");
   }, [immersive]);
 
-  // Sheet cài đặt: Esc để đóng, đưa focus vào sheet khi mở.
   const sheetRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!settingsOpen) return;
@@ -770,7 +728,6 @@ export default function Home() {
 
             {immersive && (
               <>
-                {/* Phụ đề ở góc dưới trái: các từ vừa ký (từ đang chờ chốt mờ dần), bên dưới là câu đã ghép. */}
                 <div className="live-caption" aria-live="polite">
                   {words.length > 0 || showCandidate ? (
                     <>
@@ -802,7 +759,6 @@ export default function Home() {
 
                 {state?.error && <p className="live-error" role="alert">{state.error}</p>}
 
-                {/* Nút dọc mép phải, trong tầm ngón cái. */}
                 <div className="live-actions">
                   {(state?.cameraCount ?? 0) > 1 && (
                     <button

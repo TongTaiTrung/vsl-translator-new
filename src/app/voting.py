@@ -8,9 +8,9 @@ from typing import Callable
 
 @dataclass(frozen=True)
 class VoteConfig:
-    min_consecutive: int = 5      # số frame dự đoán liên tiếp cùng một nhãn để chốt từ
-    max_words: int = 64           # giới hạn độ dài chuỗi (bỏ từ cũ nhất khi vượt)
-    early_votes: int | None = None   # chốt sớm khi cả chuỗi đều là phiếu "mạnh"; None = tắt
+    min_consecutive: int = 5
+    max_words: int = 64
+    early_votes: int | None = None
 
     def __post_init__(self) -> None:
         if self.min_consecutive < 1 or self.max_words < 1:
@@ -40,7 +40,7 @@ class WordVoter:
         self.candidate: str | None = None
         self.count = 0
         self.blocked: str | None = None
-        self.strong = False       # mọi phiếu trong chuỗi hiện tại đều mạnh
+        self.strong = False
 
     def vote(self, label: str | None, *, strong: bool = False,
              confirm: Callable[[str, bool], bool] | None = None) -> str | None:

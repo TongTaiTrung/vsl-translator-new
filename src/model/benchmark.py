@@ -35,8 +35,8 @@ class Clip:
     cls: str
     session: str
     sample_id: str
-    features: np.ndarray            # (T, FEATURE_DIM) thô
-    landmarks: tuple | None         # (pose, hands, world) hoặc None nếu chưa re-extract
+    features: np.ndarray
+    landmarks: tuple | None
 
 
 def parse_holdout(specs: list[str] | None) -> list[tuple[str | None, str]]:
@@ -72,9 +72,6 @@ def load_originals(processed_root: Path | None = None, with_landmarks: bool = Tr
     return clips
 
 
-# =============================================================================
-# 1. ĐO BẤT BIẾN BỐI CẢNH (không train)
-# =============================================================================
 def _pool(sequence: np.ndarray) -> np.ndarray:
     return np.concatenate([sequence.mean(0), sequence.std(0)])
 
@@ -114,9 +111,6 @@ def session_invariance(clips: list[Clip], day_chars: int = 8) -> dict:
     return report
 
 
-# =============================================================================
-# 2. DỰNG DATASET TRAIN (bỏ holdout, augment trong bộ nhớ)
-# =============================================================================
 def build_dataset(clips: list[Clip], holdout: list[tuple[str | None, str]], mode: str, per_class: int,
                   rng: np.random.Generator, strength: float = 1.0, pitch_degrees: float = PITCH_AUG_DEG) -> dict:
     """Mẫu gốc ngoài holdout + bản augment cho tới ``per_class`` mẫu/lớp (chia đều các mẫu gốc).
@@ -157,9 +151,6 @@ def build_dataset(clips: list[Clip], holdout: list[tuple[str | None, str]], mode
             "groups": np.asarray(groups), "sessions": np.asarray(sessions), "augmented": np.asarray(augmented)}
 
 
-# =============================================================================
-# 3. CHẤM CHECKPOINT TRÊN HOLDOUT
-# =============================================================================
 def evaluate_holdout(predictor, clips: list[Clip], holdout: list[tuple[str | None, str]]) -> dict:
     """Top-1 (bỏ qua từ chối), tỉ lệ được chấp nhận và đúng, và nhãn dự đoán theo từng lớp."""
     test = [c for c in clips if is_held_out(c, holdout)]

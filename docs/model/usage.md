@@ -44,7 +44,7 @@ python -m src.model.training --data dataset.npz --out runs/cv_only --no-full
 import numpy as np
 from src.model.training import Config, run_training
 
-X = ...          # (N, 30, 170) float32
+X = ...          # (N, 30, 434) float32
 y = ...          # (N,) int
 classes = [...]  # list[str]
 groups = [...]   # (N,) video/người/lần ghi
@@ -102,7 +102,7 @@ Nếu tự tạo `.npz`:
 ```python
 np.savez_compressed(
     "dataset.npz",
-    X=X.astype("float32"),           # (N, 30, 170)
+    X=X.astype("float32"),           # (N, 30, 434)
     y=y.astype("int64"),             # (N,)
     classes=np.asarray(classes),     # (C,)
     groups=np.asarray(groups),       # (N,)
@@ -126,13 +126,13 @@ result = predictor.predict_frames(
 print(result)
 ```
 
-### Từ raw features `(T, 131)`
+### Từ raw features `(T, 383)`
 
 ```python
 result = predictor.predict_raw(raw_features, top_k=3)
 ```
 
-### Từ processed features `(30, 170)`
+### Từ processed features `(30, 434)`
 
 ```python
 result = predictor.predict_processed(sequence, top_k=3)
@@ -258,8 +258,8 @@ Quy tắc:
 | `load_ensemble(path, device)` | checkpoint | `(VSLEnsemble, checkpoint)` |
 | `predict_topk(ens, X, classes, k, thr)` | `(B,T,D)` | list top-k |
 | `VSLPredictor(path, device, min_confidence)` | checkpoint | predictor |
-| `predict_processed(seq, top_k)` | `(30, 170)` | dict JSON |
-| `predict_raw(raw, top_k)` | `(T, 131)` | dict JSON |
+| `predict_processed(seq, top_k)` | `(30, 434)` | dict JSON |
+| `predict_raw(raw, top_k)` | `(T, 383)` | dict JSON |
 | `predict_frames(frames, mirror_data, top_k)` | iterable BGR | dict JSON |
 | `open_stream(config)` | `StreamConfig` | `VSLStreamSession` |
 | `StreamConfig(...)` | cấu hình cửa sổ | dataclass đã validate |
@@ -271,8 +271,8 @@ Quy tắc:
 |---|---|
 | `FileNotFoundError: No ensemble.pt found under runs/` | Chưa train hoặc sai thư mục; truyền đường dẫn checkpoint |
 | `ValueError: Checkpoint expects D features...` | Extractor hiện tại khác checkpoint; train lại |
-| `ValueError: Expected processed features (30, 170)` | Truyền nhầm raw `(T,131)`; dùng `predict_raw` |
-| `ValueError: Expected nonempty raw features (frames, 131)` | Clip rỗng hoặc sai chiều |
+| `ValueError: Expected processed features (30, 434)` | Truyền nhầm raw `(T,383)`; dùng `predict_raw` |
+| `ValueError: Expected nonempty raw features (frames, 383)` | Clip rỗng hoặc sai chiều |
 | `ValueError: Features cannot contain infinity` | Dữ liệu hỏng |
 | `IndexError` khi dự đoán bị từ chối với `top_k=1` | `predict_processed` bỏ mục `"unknown"` khỏi danh sách; dùng `top_k >= 2` |
 | `ValueError: Group ... has no original validation sample` | `validation_mask` loại hết mẫu gốc của một group |

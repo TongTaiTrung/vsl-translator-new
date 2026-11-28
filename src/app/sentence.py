@@ -15,7 +15,6 @@ GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "qwen/qwen3.8-27b"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-# Nghĩa của các nhãn thô không tự đọc được. Nhãn khác: "_" được đổi thành khoảng trắng.
 DEFAULT_GLOSSARY: dict[str, str] = {
     "toi": "tôi",
     "ten_la": "tên là",
@@ -81,7 +80,6 @@ Kết quả: Mắng.
 _THINK_RE = re.compile(r"<think>.*?(</think>|$)", re.DOTALL | re.IGNORECASE)
 
 
-# Nhãn dấu thanh ký trong lúc đánh vần → dấu kết hợp Unicode tương ứng.
 TONE_MARKS: dict[str, str] = {
     "dấu sắc": "\u0301",
     "dấu huyền": "\u0300",
@@ -91,16 +89,14 @@ TONE_MARKS: dict[str, str] = {
 }
 _VOWELS = set("aăâeêioôơuưy")
 
-# Nhãn dấu chữ (mũ, trăng, móc) → nguyên âm gốc được đổi thành chữ có dấu.
 VOWEL_MARKS: dict[str, dict[str, str]] = {
     "dấu â,ô,ê": {"a": "â", "o": "ô", "e": "ê"},
     "dấu ă": {"a": "ă"},
     "dấu ơ,ư": {"o": "ơ", "u": "ư"},
 }
-_UO_RE = re.compile("u\u031bo(?!\u031b)")  # "ưo" (dạng NFD) → "ươ"
+_UO_RE = re.compile("u\u031bo(?!\u031b)")
 
 
-# Tên lớp trong dữ liệu khác tên chuẩn của dấu (lớp "dấu sắt" được thu với tên gõ sai).
 MARK_ALIASES: dict[str, str] = {
     "dấu sắt": "dấu sắc",
 }
@@ -148,10 +144,9 @@ def _spell_token(label: str) -> str:
     return label.upper()
 
 
-# Âm tiết tiếng Việt (chưa dấu thanh): phụ âm đầu + 1–3 nguyên âm + phụ âm cuối. Dùng để tách chữ đánh vần liền nhau.
 _SYLLABLE_RE = re.compile(
     r"^(ngh|ng|gh|gi|kh|nh|ph|th|tr|ch|qu|[bcdđghklmnprstvx])?([aăâeêioôơuưy]{1,3})(ng|nh|ch|[cmnpt])?$")
-_MAX_SYLLABLE = 7  # "nghiêng"
+_MAX_SYLLABLE = 7
 
 
 def _split_syllables(run: str) -> list[str]:
@@ -192,7 +187,7 @@ def _spelled_text(items: Sequence[str]) -> str:
         if _is_vowel_mark(item):
             if run:
                 run = _apply_vowel_mark(run, item)
-            elif words:   # dấu chữ ký sau dấu thanh: sửa âm tiết vừa chốt
+            elif words:
                 words[-1] = _apply_vowel_mark(words[-1], item)
             continue
         if not _is_tone(item):
@@ -254,7 +249,6 @@ def clean_completion(text: str) -> str:
     text = re.sub(r"^(kết quả|câu)\s*:\s*", "", text, flags=re.IGNORECASE)
     line = next((part.strip() for part in text.splitlines() if part.strip()), "")
     line = line.strip('"“”\'')
-    # Luôn kết thúc câu bằng dấu câu, kể cả khi LLM quên.
     return line + "." if line and line[-1] not in ".?!…" else line
 
 
@@ -291,7 +285,7 @@ class GroqClient:
             "max_completion_tokens": max_tokens,
         }
         if "qwen3" in self.model:
-            payload["reasoning_effort"] = "none"   # tắt chế độ suy nghĩ: nhanh hơn, không trả <think>
+            payload["reasoning_effort"] = "none"
         response = self.session.post(
             self.url, json=payload, timeout=self.timeout,
             headers={"Authorization": f"Bearer {self.api_key}"},
@@ -316,7 +310,7 @@ class SentenceComposer:
         self.on_update = on_update
         self.sentence = ""
         self.words: tuple[str, ...] = ()
-        self.status = "idle"           # idle | pending | ok | fallback | error
+        self.status = "idle"
         self.error: str | None = None
         self._lock = threading.RLock()
         self._wake = threading.Event()
@@ -345,7 +339,7 @@ class SentenceComposer:
             return fallback, "fallback", None
         try:
             sentence = clean_completion(self.client.chat(self.messages(words)))
-        except Exception as exc:   # mạng/API lỗi: vẫn hiển thị câu thô
+        except Exception as exc:
             return fallback, "error", str(exc)
         return (sentence, "ok", None) if sentence else (fallback, "fallback", None)
 
@@ -354,7 +348,7 @@ class SentenceComposer:
         with self._lock:
             self._version += 1
             version = self._version
-            if not words:            # chuỗi rỗng: không cần gọi API
+            if not words:
                 self._pending = None
                 self._publish(version, words, "", "idle", None)
                 return
@@ -376,7 +370,6 @@ class SentenceComposer:
             self._thread.join(timeout=1.0)
 
     def _publish(self, version: int, words, sentence: str, status: str, error: str | None) -> None:
-        # gọi khi đang giữ _lock
         if version < self._shown:
             return
         self._shown = version

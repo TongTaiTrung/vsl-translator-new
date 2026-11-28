@@ -1,5 +1,3 @@
-// Ghép chuỗi nhãn thành câu bằng Groq, dùng API key của chính người dùng.
-// Key đi trong header `x-groq-key` của từng request, chỉ được chuyển tiếp tới Groq: không lưu, không ghi log.
 
 import { cleanCompletion, composeMessages, DEFAULT_MODEL, naiveSentence } from "@/lib/sentence";
 
@@ -36,7 +34,7 @@ export async function POST(request: Request) {
     temperature: 0.2,
     max_completion_tokens: 200,
   };
-  if (model.includes("qwen3")) payload.reasoning_effort = "none"; // tắt chế độ suy nghĩ: nhanh, không trả <think>
+  if (model.includes("qwen3")) payload.reasoning_effort = "none";
 
   let response: Response;
   try {

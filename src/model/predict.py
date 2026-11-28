@@ -30,7 +30,7 @@ class StreamConfig:
     no_hand_timeout: float = 0.6
     mirror_data: bool = False
     top_k: int = 3
-    target_fps: float | None = 15.0   # dữ liệu thu ~15 fps; lấp gap/khử gai tính theo số frame. None = nhận mọi frame
+    target_fps: float | None = 15.0
 
     def __post_init__(self) -> None:
         if self.window_seconds <= 0 or not 0 < self.min_window_seconds <= self.window_seconds:
@@ -58,7 +58,7 @@ class VSLPredictor:
         if not 0 <= min_probability_gap <= 1:
             raise ValueError("min_probability_gap must be in [0, 1]")
         if checkpoint_path is None:
-            checkpoint_path = latest_checkpoint()          # runs/best, không có thì run mới nhất theo tên
+            checkpoint_path = latest_checkpoint()
         self.checkpoint_path = Path(checkpoint_path).expanduser().resolve()
         if not self.checkpoint_path.is_file():
             raise FileNotFoundError(self.checkpoint_path)
@@ -144,7 +144,7 @@ class VSLPredictor:
                 if mirror_data:
                     frame = cv2.flip(frame, 1)
                 frame = frame_padding(frame)
-                timestamp = None if fps is None else round(i * 1000 / fps)   # giống reextract
+                timestamp = None if fps is None else round(i * 1000 / fps)
                 pose_result, hand_result, _ = landmarkers.detect(frame, timestamp_ms=timestamp)
                 features.append(extract(pose_result, hand_result))
         finally:
@@ -184,7 +184,7 @@ class VSLStreamSession:
         self.landmarkers = landmarkers if landmarkers is not None else LandmarkerLoader(
             running_mode=VisionRunningMode.VIDEO
         )
-        self.memory = None          # memory.MemoryEnsemble của người dùng, None = mô hình gốc
+        self.memory = None
         self._closed = False
         self.reset()
 
@@ -208,7 +208,6 @@ class VSLStreamSession:
             raise RuntimeError("Stream session is closed")
         now = time.monotonic() if now is None else float(now)
         fps = self.config.target_fps
-        # bỏ frame đến sớm hơn nhịp thu dữ liệu: không chạy MediaPipe, trả trạng thái cũ
         if fps and self.last_state is not None and now - self.last_processed < 1.0 / fps - 1e-3:
             return self.last_state
         self.last_processed = now
@@ -231,7 +230,7 @@ class VSLStreamSession:
         if self._closed:
             raise RuntimeError("Stream session is closed")
         now = float(now)
-        hand_present = bool(active_presence(feature).any())   # tay đang buông (dưới bụng) không tính
+        hand_present = bool(active_presence(feature).any())
         if hand_present:
             self.last_hand_time = now
         if self.last_hand_time is None or now - self.last_hand_time > self.config.no_hand_timeout:

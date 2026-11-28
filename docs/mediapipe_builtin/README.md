@@ -23,7 +23,7 @@ flowchart TD
 | `defs.py` | Đường dẫn model, alias class MediaPipe, `VisionRunningMode`, `Delegate`, danh sách connection để vẽ |
 | `landmarkers_loader.py` | `LandmarkerLoader`: tạo, detect, đóng landmarker |
 | `stream_process.py` | `StreamProcess`: giữ kết quả callback mới nhất cho LIVE_STREAM |
-| `models/` | `pose_landmarker_full.task`, `hand_landmarker.task`, `pose_landmarker_heavy.task`, `holistic_landmarker.task` |
+| `models/` | `pose_landmarker_full.task`, `hand_landmarker.task`, `blaze_face_short_range.tflite` (web) |
 | `__init__.py` | Re-export `defs.*`, `StreamProcess`, `LandmarkerLoader` |
 
 `LandmarkerLoader` hiện chỉ dùng `pose_landmarker_full.task` và `hand_landmarker.task`. Hai model còn lại có sẵn nhưng không được loader tham chiếu.

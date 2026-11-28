@@ -1,9 +1,3 @@
-// Chạy `next dev` bằng HTTPS trên mọi card mạng để điện thoại/máy khác cùng mạng LAN mở được web app.
-// Trình duyệt chỉ cho dùng camera trên trang HTTPS (hoặc localhost), nên cần chứng chỉ: script tự tạo chứng chỉ
-// tự ký bằng openssl cho localhost + các IP LAN hiện tại vào certificates/ (tạo lại khi IP đổi).
-//
-//   npm run dev:lan            # cổng 3000, thay cho `npm run dev` (Next chỉ cho một dev server mỗi thư mục)
-//   PORT=3443 npm run dev:lan
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
@@ -26,7 +20,6 @@ const san = ["DNS:localhost", "IP:127.0.0.1", ...ips.map((ip) => `IP:${ip}`)].jo
 const current = existsSync(sanPath) ? readFileSync(sanPath, "utf8") : "";
 if (current !== san || !existsSync(keyPath) || !existsSync(certPath)) {
   mkdirSync(certDir, { recursive: true });
-  // iOS từ chối chứng chỉ TLS có hạn > 825 ngày.
   execFileSync("openssl", [
     "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-sha256", "-days", "825",
     "-keyout", keyPath, "-out", certPath, "-subj", "/CN=vsl-web LAN dev",

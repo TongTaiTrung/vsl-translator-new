@@ -31,9 +31,6 @@ __all__ = [
 ]
 
 
-# =============================================================================
-# DỮ LIỆU
-# =============================================================================
 def load_dataset_npz(path):
     """Đọc 1 file .npz kiểu data/cache/dataset.npz; các khoá groups/augmented là tuỳ chọn."""
     d = np.load(path, allow_pickle=True)
@@ -60,7 +57,7 @@ def _fit_fold(X, trn, va, y_used, n_classes, layout, cfg, device):
         kwargs["norm_stats"] = (torch.from_numpy(norm.mean).to(device), torch.from_numpy(norm.std).to(device),
                                 norm.presence_aware)
     else:
-        presence = getattr(tr, "PRESENCE_SLICE", slice(129, 131))   # P1: presence là 129:131
+        presence = getattr(tr, "PRESENCE_SLICE", slice(129, 131))
         kwargs["hand_presence"] = torch.from_numpy(X[trn][..., presence].copy()).to(device)
     yt = torch.from_numpy(y_used).to(device)
     m, info = tr.train_one(
@@ -102,9 +99,6 @@ def _logits_and_embedding(model, Xn: np.ndarray, device):
     return logits.float().cpu().numpy(), captured[0].float().cpu().numpy()
 
 
-# =============================================================================
-# CV CHUẨN (để lấy OOF logits + embedding cho diagnose())
-# =============================================================================
 def run_cv(X, y, classes, groups, vmask, cfg: tr.Config, device=None, k: int = 5,
            folds_to_run: int | None = None):
     """Lặp lại đúng vòng lặp fold của run_training (không lưu), trả về model/norm/va mỗi fold."""
@@ -144,7 +138,6 @@ def diagnose(X, y, classes, vmask, res, device, noise_sigma: float = 1.0, seed: 
         mask[va] = True
         _, Et = _logits_and_embedding(m, norm(X[trn_orig]), device)
 
-        # hình học: khoảng cách cosine đến centroid (chuẩn hoá từ embedding TRAIN)
         nv = Ev / np.linalg.norm(Ev, axis=1, keepdims=True)
         nt = Et / np.linalg.norm(Et, axis=1, keepdims=True)
         centroids = np.stack([nt[y[trn_orig] == c].mean(0) for c in range(C)])
@@ -155,14 +148,11 @@ def diagnose(X, y, classes, vmask, res, device, noise_sigma: float = 1.0, seed: 
                 sep = float((1 - centroids[a] @ centroids[b]) / max((spread[a] + spread[b]) / 2, 1e-9))
                 pair_scores.setdefault((a, b), []).append(sep)
 
-        # logit gap sạch vs. nhiễu Gauss (trong không gian đặc trưng thô, trước chuẩn hoá)
         true_logit = lo[np.arange(len(va)), y[va]]
         rival = lo.copy()
         rival[np.arange(len(va)), y[va]] = -np.inf
         clean_gap.extend((true_logit - rival.max(1)).tolist())
 
-        # chỉ thêm nhiễu vào cột có tín hiệu trong clip: nhiễu lên cột toàn 0 của tay vắng sẽ "tạo ra"
-        # một tay giả, khiến chỉ số không so sánh được giữa bản chuẩn hoá thường và theo presence.
         live = (X[va] != 0).any(axis=1, keepdims=True)
         noisy_X = X[va] + rng.normal(0, 1, X[va].shape).astype(np.float32) * noise_sigma * global_std * live
         lp, _ = _logits_and_embedding(m, norm(noisy_X), device)
@@ -188,9 +178,6 @@ def diagnose(X, y, classes, vmask, res, device, noise_sigma: float = 1.0, seed: 
     }
 
 
-# =============================================================================
-# OPEN-SET: HOLD-ONE-CLASS-OUT
-# =============================================================================
 def open_set_hold_one_class_out(X, y, classes, groups, vmask, device, seed, held_classes=None,
                                  fold: int = 0, k: int = 5, min_confidence: float = 0.65,
                                  min_gap: float = 0.08, cfg: tr.Config | None = None) -> list[dict]:
@@ -231,9 +218,6 @@ def open_set_hold_one_class_out(X, y, classes, groups, vmask, device, seed, held
     return results
 
 
-# =============================================================================
-# NHIỄU GAUSS / INPUT KHÔNG PHẢI DẤU HIỆU
-# =============================================================================
 def gaussian_noise_false_acceptance(res, classes, device, n_samples: int = 50, seed: int = 0,
                                      min_confidence: float = 0.65, min_gap: float = 0.08,
                                      temperatures=(1.0, 0.2)) -> dict:
@@ -242,7 +226,7 @@ def gaussian_noise_false_acceptance(res, classes, device, n_samples: int = 50, s
     (từ run_cv) -> tỉ lệ bị chấp nhận nhầm theo luật của predictor thật."""
     rng = np.random.default_rng(seed)
     in_dim = res["norms"][0].mean.shape[-1]
-    T = res["va"][0]  # chỉ để lấy độ dài chuỗi thực tế từ 1 batch validation
+    T = res["va"][0]
     seq_len = None
     for m in res["models"]:
         seq_len = None
@@ -269,9 +253,6 @@ def gaussian_noise_false_acceptance(res, classes, device, n_samples: int = 50, s
     return out
 
 
-# =============================================================================
-# TAY THỨ 2 LỌT KHUNG: TỈ LỆ ĐỔI NHÃN
-# =============================================================================
 def _composite_left_hand(target: np.ndarray, donor: np.ndarray, sl: dict, lowered_y: float | None):
     """Clip thô một tay + tay trái của donor (hai tay); tính lại inter_hand_vec/hand_contact.
 
@@ -334,12 +315,9 @@ def distractor_flip_rate(raw, y, classes, vmask, res, device, fx, lowered_y: flo
     return out
 
 
-X_LEN = 30   # độ dài chuỗi sau process_sequence (EXPECTED_FRAMES)
+X_LEN = 30
 
 
-# =============================================================================
-# CLI
-# =============================================================================
 def _run_one_seed(X, y, classes, groups, vmask, seed, k, held_classes, out_dir, device):
     cfg = _notebook_like_config(seed)
     res = run_cv(X, y, classes, groups, vmask, cfg, device=device, k=k)

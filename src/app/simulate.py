@@ -192,7 +192,7 @@ def main(argv=None) -> None:
     stats = {"fast": 0, "ensemble": 0, "confirm": 0, "confirm_rejected": 0}
     for fold in groups:
         fold_samples = [s for s in samples if s[1] == fold]
-        if holdout:   # chỉ model fold k: chưa thấy các clip thuộc fold k
+        if holdout:
             predictor.ensemble = full_ensemble
             predictor.ensemble = make_fast_ensemble(predictor, fold)
         fast_ensemble = make_fast_ensemble(predictor, 0 if holdout else fast_config.fast_model)

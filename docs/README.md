@@ -1,5 +1,7 @@
 # Tài liệu VSL Translator
 
+> Các tài liệu theo module trong `docs/` có từ trước `FEATURE_VERSION = 8`: kích thước đã được cập nhật (383 / `(30, 434)`) nhưng bảng cột, chỉ số slice và mô tả nhóm đặc trưng có thể còn cũ. Nguồn tham chiếu hiện hành là vault Obsidian [`vault/Home.md`](../vault/Home.md) và `src/features/extract.py`.
+
 Tài liệu này mô tả **module hiện tại trong `src/`**: kiến trúc, luồng dữ liệu và cách sử dụng từng module.
 
 ## Mục lục
@@ -7,7 +9,7 @@ Tài liệu này mô tả **module hiện tại trong `src/`**: kiến trúc, lu
 | Module | Thư mục nguồn | Vai trò | Tài liệu |
 |---|---|---|---|
 | MediaPipe builtin | `src/builtin/mediapipe_builtin` | Bọc MediaPipe Pose/Hand landmarker, quản lý running mode và timestamp | [mediapipe_builtin/](mediapipe_builtin/README.md) |
-| Features | `src/features` | Chuẩn hoá khung hình, trích xuất 131 đặc trưng/frame, xử lý chuỗi thành `(30, 170)` | [features/](features/README.md) |
+| Features | `src/features` | Chuẩn hoá khung hình, trích xuất 383 đặc trưng/frame, xử lý chuỗi thành `(30, 434)` | [features/](features/README.md) |
 | Data | `src/data` | Ghi/đọc mẫu, trích xuất lại từ video gốc, tăng cường dữ liệu | [data/](data/README.md) |
 | Model | `src/model` | Huấn luyện ensemble, hiệu chỉnh xác suất, dự đoán offline/stream | [model/](model/README.md) |
 | Visualization | `src/visualization` | Vẽ landmark pose/bàn tay lên khung hình BGR | [visualization/](visualization/README.md) |
@@ -25,8 +27,8 @@ Ngoài ra, [Đánh giá kiến trúc AI và quy trình huấn luyện](tue-17-11
 flowchart LR
     A[Camera / video] --> B[frame_padding<br/>1280x1280]
     B --> C[LandmarkerLoader<br/>Pose + Hand]
-    C --> D[extract<br/>T x 131]
-    D --> E[process_sequence<br/>30 x 170]
+    C --> D[extract<br/>T x 383]
+    D --> E[process_sequence<br/>30 x 434]
     E --> F[(dataset .npz<br/>X, y, classes, groups)]
     F --> G[training.run_training<br/>k-fold ensemble]
     G --> H[(runs/.../ensemble.pt)]
@@ -39,16 +41,16 @@ flowchart LR
 
 | Tên | Shape | Ý nghĩa |
 |---|---|---|
-| Raw frame features | `(T, 131)` | Đặc trưng từng frame, có thể chứa `NaN` khi mất pose/tay |
-| Processed sequence | `(30, 170)` | Đã nội suy, khử gai, co giãn thời gian, thêm 39 chiều chuyển động |
-| Dataset | `X (N, 30, 170)`, `y (N,)` | Đầu vào huấn luyện, kèm `classes` và `groups` |
+| Raw frame features | `(T, 383)` | Đặc trưng từng frame, có thể chứa `NaN` khi mất pose/tay |
+| Processed sequence | `(30, 434)` | Đã nội suy, khử gai, co giãn thời gian, thêm 39 chiều chuyển động |
+| Dataset | `X (N, 30, 434)`, `y (N,)` | Đầu vào huấn luyện, kèm `classes` và `groups` |
 | Prediction | JSON dict | `label`, `confidence`, `accepted`, `top[{label, confidence}]` |
 
 ### Quy ước chung
 
 - Ảnh là **BGR uint8**, luôn được đưa về **1280 x 1280** bằng `frame_padding` trước khi detect/trích xuất.
 - Toạ độ landmark MediaPipe là chuẩn hoá `[0, 1]`; hệ quy chiếu thân được dựng từ hai vai, đơn vị là độ rộng vai.
-- `FEATURE_VERSION = 2`, `FRAME_FEATURE_DIM = 131`, `EXPECTED_FRAMES = 30`, `SEQ_FEATURE_DIM = 170`.
+- `FEATURE_VERSION = 8`, `FRAME_FEATURE_DIM = 383`, `EXPECTED_FRAMES = 30`, `SEQ_FEATURE_DIM = 434`.
 - Dữ liệu huấn luyện phải dùng **cùng extractor/feature version** với checkpoint dự đoán.
 - `groups` dùng để chia fold không rò rỉ: mẫu augment và bản gốc phải cùng group.
 
@@ -70,7 +72,7 @@ try:
 finally:
     loader.close()
 
-sequence = process_sequence(raw, target_len=30)  # (30, 170)
+sequence = process_sequence(raw, target_len=30)  # (30, 434)
 
 # 2) Dự đoán với checkpoint runs/best/ensemble.pt (run mới nhất)
 predictor = VSLPredictor()

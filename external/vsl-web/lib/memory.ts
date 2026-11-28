@@ -1,26 +1,14 @@
-// Mẫu ký cá nhân (bộ nhớ của mô hình, src/model/memory.py), lưu trong IndexedDB của trình duyệt này.
-//
-// - Ghi mẫu: client gửi landmark của một lần ký tới POST /api/memory/sample; server trích feature thô,
-//   kiểm tra tay có xuất hiện đủ lâu, trả feature (float32 base64) để lưu ở đây. Server không giữ mẫu.
-// - Khi mở phiên /api/stream, recognizer gửi kèm các mẫu (lib/recognizer.ts: setMemory); server chỉ giữ
-//   chúng trong phiên đó. Xoá ở đây là xoá hẳn.
-// - Lưu feature thô (không lưu embedding) nên vẫn dùng được khi đổi checkpoint, miễn cùng số cột feature
-//   (`featureDim`, so với /api/health); lớp không còn trong checkpoint bị server bỏ qua.
-// - Hai nguồn mẫu: "manual" (người dùng ghi / sửa nhãn) và "auto" (tự học từ câu người dùng giữ lại, không
-//   xoá/undo). Mẫu tự động không bao giờ đẩy mẫu thủ công ra, và mỗi từ có tối đa MAX_AUTO_PER_LABEL mẫu tự động.
 
 import type { FrameLandmarks } from "./landmarks";
 
 export interface Sample {
   id: string;
   label: string;
-  /** Feature thô float32 little-endian, base64; (frames, featureDim). */
   features: string;
   frames: number;
   featureDim: number;
   handFrames: number;
   createdAt: number;
-  /** Mẫu cũ (trước khi có tự học) không có trường này: coi là "manual". */
   source?: SampleSource;
 }
 
@@ -31,9 +19,7 @@ export interface MemoryPayload {
   exemplars: { label: string; features: string; frames: number }[];
 }
 
-/** Số mẫu tối đa mỗi từ (giống MAX_PER_CLASS của server): thêm mẫu mới thì bỏ mẫu cũ nhất. */
 export const MAX_PER_LABEL = 5;
-/** Số mẫu tự động tối đa mỗi từ: luôn chừa chỗ cho mẫu thủ công, và tự học sai không chiếm hết bộ nhớ. */
 export const MAX_AUTO_PER_LABEL = 3;
 
 export const sourceOf = (s: Sample): SampleSource => s.source ?? "manual";
@@ -73,7 +59,6 @@ export async function listSamples(): Promise<Sample[]> {
   return all.sort((a, b) => a.createdAt - b.createdAt);
 }
 
-/** Những mẫu phải xoá để thêm `sample`; null = không thêm được (mẫu tự động khi từ đã đầy mẫu thủ công). */
 export function evictionFor(existing: Sample[], sample: Sample): Sample[] | null {
   const same = existing.filter((s) => s.label === sample.label).sort((a, b) => a.createdAt - b.createdAt);
   const autos = same.filter((s) => sourceOf(s) === "auto");
@@ -84,14 +69,12 @@ export function evictionFor(existing: Sample[], sample: Sample): Sample[] | null
     const room = Math.min(MAX_AUTO_PER_LABEL, MAX_PER_LABEL - manuals.length);
     drop.push(...autos.slice(0, Math.max(0, autos.length - room + 1)));
   } else {
-    // Mẫu thủ công: đẩy mẫu tự động cũ nhất ra trước, rồi mới tới mẫu thủ công cũ nhất.
     const over = same.length - MAX_PER_LABEL + 1;
     drop.push(...[...autos, ...manuals].slice(0, Math.max(0, over)));
   }
   return drop;
 }
 
-/** Thêm một mẫu theo luật của `evictionFor`; trả false nếu không thêm. */
 export async function addSample(sample: Sample): Promise<boolean> {
   const drop = evictionFor(await listSamples(), sample);
   if (drop === null) return false;
@@ -132,7 +115,6 @@ export interface SampleResult {
   prediction: { top: { label: string; confidence: number }[] } | null;
 }
 
-/** Gửi landmark của một lần ký mẫu; server trả feature để lưu (chưa lưu gì ở đây). */
 export async function submitSample(apiUrl: string, label: string, landmarks: FrameLandmarks[]): Promise<SampleResult> {
   const response = await fetch(`${apiUrl.replace(/\/+$/, "")}/api/memory/sample`, {
     method: "POST",

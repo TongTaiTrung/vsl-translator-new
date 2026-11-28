@@ -31,7 +31,7 @@ class CheckpointRotationTests(unittest.TestCase):
         best_dir = self.root / BEST_NAME
         self.assertEqual(best, best_dir)
         self.assertTrue(best_dir.is_dir() and not best_dir.is_symlink())
-        self.assertFalse(new.exists())                              # đã đổi tên thành best
+        self.assertFalse(new.exists())
         self.assertEqual([p.name for p in list_runs(self.root)],
                          ["20261116_120000", "20261115_120000", "20261114_120000", "20261113_120000"])
         self.assertEqual(latest_checkpoint(self.root), best_dir / "ensemble.pt")
@@ -43,7 +43,7 @@ class CheckpointRotationTests(unittest.TestCase):
         self.assertEqual([p.name for p in list_runs(self.root)], ["20261123_090000"])
         self.assertEqual((self.root / BEST_NAME / ".run_name").read_text(), "20261124_090000")
         publish_run(make_run(self.root, "20261125_090000"), runs_dir=self.root, keep=1)
-        self.assertEqual(list_runs(self.root), [])                  # keep=1: chỉ còn best
+        self.assertEqual(list_runs(self.root), [])
 
     def test_legacy_symlink_best_is_replaced(self):
         old = make_run(self.root, "vsl_20261123_090000")
@@ -61,7 +61,7 @@ class CheckpointRotationTests(unittest.TestCase):
 
     def test_latest_checkpoint_without_best_uses_name_timestamp(self):
         make_run(self.root, "vsl_20261123_090000")
-        newer_mtime = make_run(self.root, "vsl_20261101_000000")   # tạo sau => mtime mới hơn
+        newer_mtime = make_run(self.root, "vsl_20261101_000000")
         self.assertTrue(newer_mtime.is_dir())
         self.assertEqual(latest_checkpoint(self.root).parent.name, "vsl_20261123_090000")
         with self.assertRaises(FileNotFoundError):

@@ -1,6 +1,3 @@
-// Thanh trượt dùng chung (ray + phần đã chọn + nút kéo), cùng kiểu với ô chọn tốc độ. Bên dưới vẫn là
-// <input type="range"> trong suốt phủ kín nên kéo chuột, chạm và phím mũi tên hoạt động như thanh trượt thường.
-// `stops`: vẽ chấm ở từng bậc (thanh trượt bậc, ví dụ x4/x6/x8) và trượt nút kéo có chuyển động.
 
 export function Slider(props: {
   min: number;

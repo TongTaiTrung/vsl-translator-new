@@ -23,7 +23,7 @@ flowchart TD
 | File | Vai trò |
 |---|---|
 | `data_reader.py` | `DataHandler`, `SampleRef`: index, đọc/ghi mẫu, validate, export dataset |
-| `data_collect.py` | CLI ghi webcam → video + chuỗi `(30, 170)` |
+| `data_collect.py` | CLI ghi webcam → video + chuỗi `(30, 434)` |
 | `reextract.py` | Trích xuất lại đặc trưng từ `data/raw/*.mp4` khi đổi extractor |
 | `augment.py` | Sinh biến thể feature-only, giữ group gốc để chia fold |
 | `__init__.py` | Docstring mô tả package |
@@ -37,7 +37,7 @@ data/
 ├── processed/
 │   └── <class>/
 │       └── <sample_id>/
-│           ├── 0.npz          # key "feature", shape (131,), float32
+│           ├── 0.npz          # key "feature", shape (383,), float32
 │           ├── 1.npz
 │           ├── ...
 │           └── meta.json
@@ -46,7 +46,7 @@ data/
         └── <sample_id>.mp4
 ```
 
-- Mỗi frame là một file `.npz` chứa đúng một array `(131,) float32`, cho phép `NaN`, cấm `Inf`.
+- Mỗi frame là một file `.npz` chứa đúng một array `(383,) float32`, cho phép `NaN`, cấm `Inf`.
 - Frame phải liên tục từ `0` đến `n-1`, tối thiểu `MIN_FRAMES = 8`.
 - `meta.json` chứa `session`, `created`, `n_frames`, `fps`, `feature_dim`, có thể có `augmentation`, `origin_sample_id`, `feature_version`...
 - Thư mục bắt đầu bằng `.` bị coi là tạm và bỏ qua.
@@ -57,7 +57,7 @@ data/
 ```text
 <root>/
 ├── raw/<class>/<id>.mp4                    # video 720x720 đã pad
-└── extracted/<class>/<group>/<id>.npz      # key "X", shape (30, 170)
+└── extracted/<class>/<group>/<id>.npz      # key "X", shape (30, 434)
 ```
 
 Mặc định `<root> = root_project`. Bố cục này **không** được `DataHandler` đọc trực tiếp; nó phục vụ thu thập nhanh hoặc notebook riêng.
@@ -74,10 +74,10 @@ Mặc định `<root> = root_project`. Bố cục này **không** được `Data
 
 ### Đọc
 
-- `load_raw(i)` → `(T, 131) float32`, có thể chứa `NaN`.
+- `load_raw(i)` → `(T, 383) float32`, có thể chứa `NaN`.
 - `__getitem__(i)`:
-  - Có `processor` → `processor(raw)`, thường là `(30, 170)`.
-  - Không có `processor` → chỉ chấp nhận mẫu đúng `SEQUENCE_LENGTH = 30`, trả `(30, 131)`.
+  - Có `processor` → `processor(raw)`, thường là `(30, 434)`.
+  - Không có `processor` → chỉ chấp nhận mẫu đúng `SEQUENCE_LENGTH = 30`, trả `(30, 383)`.
 - `quality_report()` → thống kê frame, `pose_coverage`, tỉ lệ có tay trái/phải.
 - `validate_dataset()` → đọc thử toàn bộ file, trả số mẫu hợp lệ.
 
@@ -85,7 +85,7 @@ Mặc định `<root> = root_project`. Bố cục này **không** được `Data
 
 `write_sample(...)`:
 
-1. Validate số frame ≥ 8, shape `(131,)`, dtype `float32`, không `Inf`.
+1. Validate số frame ≥ 8, shape `(383,)`, dtype `float32`, không `Inf`.
 2. Từ chối nếu toàn bộ frame không có pose; từ chối nếu không có tay nào (trừ `require_hand=False`).
 3. Ghi vào thư mục tạm `.tmp_<token>`, ghi video tạm nếu có `frames`.
 4. `os.replace` thư mục/video sang tên chính thức (atomic). Nếu lỗi, dọn sạch cả bản tạm và bản đã commit dở.
@@ -105,7 +105,7 @@ Mặc định `<root> = root_project`. Bố cục này **không** được `Data
 - CLI: `python -m src.data.data_collect -c <class> -n <số mẫu> -g <group>`.
 - Mở webcam, lật gương, pad 720, hiển thị preview.
 - `SPACE`: bắt đầu/kết thúc ghi; `Q`/`ESC`: thoát.
-- Khi kết thúc: lấy từng frame đã ghi, chạy lại detect, `extract` từng frame, `process_sequence` → `(30, 170)`, lưu video MP4 và NPZ.
+- Khi kết thúc: lấy từng frame đã ghi, chạy lại detect, `extract` từng frame, `process_sequence` → `(30, 434)`, lưu video MP4 và NPZ.
 - ID tiếp theo được tính trên cả `raw/<class>/*.mp4` và `extracted/<class>/<group>/*.npz`.
 
 ## `reextract.py`
@@ -114,8 +114,8 @@ Mặc định `<root> = root_project`. Bố cục này **không** được `Data
 - `extract_video_features(video)`:
   - Đọc toàn bộ frame, pad 720, chạy `LandmarkerLoader` ở `VIDEO`.
   - Timestamp suy ra từ số frame và FPS, ép tăng nghiêm ngặt.
-  - Validate: ≥ `MIN_FRAMES`, shape `(T, 131)`, float32, không `Inf`, có pose, có tay.
-  - Trả `(raw_features, fps)`; đồng thời tạo `(30, 170)` để kiểm tra tính hợp lệ.
+  - Validate: ≥ `MIN_FRAMES`, shape `(T, 383)`, float32, không `Inf`, có pose, có tay.
+  - Trả `(raw_features, fps)`; đồng thời tạo `(30, 434)` để kiểm tra tính hợp lệ.
 - `reextract_sample(video, raw_root, processed_root, backup_root)`:
   - Yêu cầu đường dẫn dạng `raw/<class>/<numeric id>.mp4`.
   - Trích xuất vào thư mục stage; validate từng file.
@@ -148,7 +148,7 @@ Mặc định `<root> = root_project`. Bố cục này **không** được `Data
 
 ## Bất biến quan trọng
 
-- Mọi file feature phải là `float32 (131,)`; `Inf` bị cấm, `NaN` được phép ở raw.
+- Mọi file feature phải là `float32 (383,)`; `Inf` bị cấm, `NaN` được phép ở raw.
 - `MAX/ID` của sample phải là số; thư mục tạm bắt đầu bằng `.`.
 - Không augment mẫu augment (không tạo chuỗi phái sinh).
 - Không đổi `feature_version` mà không trích xuất lại toàn bộ dữ liệu.

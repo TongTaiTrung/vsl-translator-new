@@ -20,7 +20,7 @@ class NoLandmarkers:
 
 def hand_feature():
     feature = np.full(FEATURE_DIM, np.nan, dtype=np.float32)
-    feature[_PALM_Y[1]] = 0.4          # tay phải giơ ngang ngực
+    feature[_PALM_Y[1]] = 0.4
     return feature
 
 
@@ -114,7 +114,7 @@ class FastStreamSessionTests(unittest.TestCase):
         predictor = ScriptedPredictor(result("toi", 0.95, 0.9), result("toi", 0.8, 0.5))
         session = open_session(predictor, FastConfig(strict_confidence=0.85))
         self.feed(session, 1.0)
-        self.assertFalse(session.confirm("toi", early=True))      # ensemble 0.8 < 0.85
+        self.assertFalse(session.confirm("toi", early=True))
         self.feed(session, 1.6)
         self.assertTrue(session.confirm("toi", early=False))
         self.assertFalse(session.confirm("cảm ơn"))
@@ -130,12 +130,12 @@ class FastTranslatorTests(unittest.TestCase):
     def test_commits_after_early_votes_and_ensemble_confirmation(self):
         predictor = ScriptedPredictor(result("toi", 0.95, 0.9), result("toi", 0.92, 0.85))
         session = open_session(predictor)
-        session.update_frame = lambda feature, now=None: session.update_features(feature, now=now)   # phát lại
+        session.update_frame = lambda feature, now=None: session.update_features(feature, now=now)
         translator = FastRealtimeTranslator(None, session=session, vote_config=VoteConfig(min_consecutive=5),
                                             composer=SentenceComposer(None, background=False))
         committed = [translator.process(hand_feature(), now=i / 15)["committed"] for i in range(20)]
         first = committed.index("toi")
-        self.assertEqual(first, 17)               # frame 15 = 1.0 s là phiếu đầu; phiếu thứ 3 ở frame 17
+        self.assertEqual(first, 17)
         self.assertEqual(translator.words, ["toi"])
         self.assertEqual(predictor.calls.count("full"), 1)
         translator.close()

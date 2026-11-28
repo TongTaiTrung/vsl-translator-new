@@ -22,7 +22,6 @@ class BuiltinCollectionTests(unittest.TestCase):
                 self.assertEqual(padded[FRAME_SIZE // 2, FRAME_SIZE // 2, 0], 255)
 
     def test_frame_padding_keeps_normalized_geometry_across_resolutions(self):
-        # Video cũ 720x720 (đã pad từ 1280x720) và camera 1280x720 phải cho cùng vùng nội dung.
         for height, width in ((720, 720), (720, 1280), (405, 720)):
             with self.subTest(shape=(height, width)):
                 frame = np.full((height, width, 3), 255, dtype=np.uint8)

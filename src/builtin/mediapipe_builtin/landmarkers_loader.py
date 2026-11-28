@@ -34,8 +34,6 @@ class LandmarkerLoader:
         tracking_confidence=0.5,
         parallel=False,
     ):
-        # parallel: ở chế độ IMAGE/VIDEO chạy pose (luồng phụ) song song với hand (~34 → ~21 ms/frame trên CPU);
-        # hai graph độc lập nên kết quả giống hệt chạy tuần tự.
         self._delegate=delegate
         self._executor = ThreadPoolExecutor(1, thread_name_prefix="pose") if parallel else None
         self._running_mode = running_mode

@@ -75,11 +75,11 @@ def publish_run(run_dir: str | Path, runs_dir: Path = RUNS_DIR, keep: int = KEEP
     run_dir, runs_dir = Path(run_dir).resolve(), Path(runs_dir).resolve()
     best = runs_dir / BEST_NAME
     if run_dir == best.resolve() and best.is_dir() and not best.is_symlink():
-        return best                                          # đã là runs/best
+        return best
     if run_dir.parent != runs_dir or run_dir.name in PROTECTED or not (run_dir / "ensemble.pt").is_file():
         return None
 
-    if best.is_symlink() or best.is_file():                  # kiểu cũ: symlink -> run thật, run thật vẫn ở lại làm lưu trữ
+    if best.is_symlink() or best.is_file():
         best.unlink()
     elif best.is_dir():
         archive = runs_dir / _archive_name(best)

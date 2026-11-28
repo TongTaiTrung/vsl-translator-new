@@ -19,7 +19,6 @@ import sys
 
 import cv2
 
-# Ứng viên 16:9, lớn → nhỏ. Camera trả về đúng kích thước đầu tiên nó hỗ trợ.
 RESOLUTIONS_16_9 = (
     (3840, 2160), (2560, 1440), (1920, 1080), (1600, 900),
     (1280, 720), (960, 540), (848, 480), (640, 360),
@@ -73,7 +72,6 @@ def open_camera(index: int = 0, resolution: tuple[int, int] | None = None, *,
         if default is None:
             raise RuntimeError(f"Camera {index} không trả về frame nào")
         if cap.getBackendName() != "AVFOUNDATION":
-            # V4L2/DirectShow/MSMF: YUYV ở độ phân giải cao chỉ được vài fps, MJPG thì đủ 30 fps.
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
 
         wanted = [tuple(resolution)] if resolution is not None else [tuple(c) for c in candidates]
@@ -89,14 +87,13 @@ def open_camera(index: int = 0, resolution: tuple[int, int] | None = None, *,
             if actual[0] * actual[1] > best[0] * best[1]:
                 best = actual
         if chosen is None:
-            # Không ứng viên nào khớp đúng: quay lại kích thước thật lớn nhất đã thấy.
             chosen = _request(cap, best) or best
             if resolution is not None and verbose:
                 print(f"Camera {index} không hỗ trợ {resolution[0]}x{resolution[1]}, dùng {chosen[0]}x{chosen[1]}",
                       file=sys.stderr)
         if fps is not None:
             cap.set(cv2.CAP_PROP_FPS, fps)
-            if (_read_size(cap) or chosen) != chosen:     # vài driver đổi định dạng khi đặt fps
+            if (_read_size(cap) or chosen) != chosen:
                 _request(cap, chosen)
     except Exception:
         cap.release()

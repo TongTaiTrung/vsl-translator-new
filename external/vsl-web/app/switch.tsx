@@ -1,5 +1,3 @@
-// Công tắc bật/tắt dùng chung cho các sheet cài đặt (thay checkbox). Vẫn là <input type="checkbox" role="switch">
-// nên bàn phím (Space) và trình đọc màn hình hoạt động như checkbox thường.
 
 export function Switch(props: {
   label: string;

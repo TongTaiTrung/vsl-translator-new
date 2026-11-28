@@ -100,7 +100,7 @@ loader = LandmarkerLoader(
 )
 ```
 
-Có thể trỏ tới model `.task` khác, ví dụ `pose_landmarker_heavy.task`:
+Có thể trỏ tới một model `.task` khác bằng đường dẫn:
 
 ```python
 from pathlib import Path
@@ -108,7 +108,7 @@ from src.builtin.mediapipe_builtin import LandmarkerLoader
 from src.builtin.mediapipe_builtin.defs import CURRENT_DIR
 
 loader = LandmarkerLoader(
-    pose_model_path=str(CURRENT_DIR / "models" / "pose_landmarker_heavy.task")
+    pose_model_path=str(CURRENT_DIR / "models" / "custom_pose.task")
 )
 ```
 

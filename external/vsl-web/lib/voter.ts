@@ -1,11 +1,8 @@
-// Bản TypeScript của src/app/voting.py (WordVoter): một nhãn phải thắng N phiếu liên tiếp mới được chốt.
-// Ở web, mỗi phản hồi của /api/predict cho một cửa sổ 30 frame là một phiếu.
 
 export class WordVoter {
   sequence: string[] = [];
   candidate: string | null = null;
   count = 0;
-  /** Từ vừa chốt: không chốt lại cho tới khi người dùng nghỉ tay hoặc chốt một từ khác. */
   blocked: string | null = null;
 
   constructor(
@@ -13,7 +10,6 @@ export class WordVoter {
     public maxWords = 64,
   ) {}
 
-  /** Ghi nhận một phiếu; trả về nhãn nếu nó vừa được thêm vào chuỗi. */
   vote(label: string | null): string | null {
     if (label === null) {
       this.interrupt();
@@ -38,7 +34,6 @@ export class WordVoter {
     this.count = 0;
   }
 
-  /** Tay đã rời khung: đứt chuỗi đếm và cho phép lặp lại từ vừa chốt. */
   release(): void {
     this.interrupt();
     this.blocked = null;

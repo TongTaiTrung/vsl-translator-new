@@ -71,7 +71,7 @@ class PredictorTests(unittest.TestCase):
         def fake_extract(_pose, hand):
             feature = np.full(FEATURE_DIM, np.nan, dtype=np.float32)
             if hand:
-                feature[_PALM_Y[1]] = 0.4      # tay phải giơ ngang ngực
+                feature[_PALM_Y[1]] = 0.4
             return feature
 
         landmarkers = FakeLandmarkers()
@@ -160,13 +160,13 @@ class PredictorTests(unittest.TestCase):
                 pass
 
         resting = np.full(FEATURE_DIM, np.nan, dtype=np.float32)
-        resting[_PALM_Y[0]] = 1.2                # tay trái buông dưới bụng
+        resting[_PALM_Y[0]] = 1.2
         config = StreamConfig(target_fps=10)
         with patch("src.model.predict.extract", return_value=resting), \
              VSLStreamSession(object(), config, FakeLandmarkers()) as session:
             frame = np.zeros((10, 10, 3), dtype=np.uint8)
             states = [session.update_frame(frame, now=t) for t in (0.0, 0.05, 0.1, 0.12, 0.2)]
-        self.assertEqual(FakeLandmarkers.calls, 3)       # 0.05 và 0.12 bị bỏ
+        self.assertEqual(FakeLandmarkers.calls, 3)
         self.assertIs(states[1], states[0])
         self.assertFalse(states[-1]["hand_present"])
 

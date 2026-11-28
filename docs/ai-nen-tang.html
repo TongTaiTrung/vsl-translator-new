@@ -1,0 +1,2637 @@
+<title>Nền tảng AI VSL Translator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600&family=Lexend:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Bố cục: cột nội dung đọc như giáo trình, mục lục dính bên trái theo thứ tự pipeline.
+   Mỗi chương: Thuật ngữ (Là gì / Công thức / Ví dụ / Để làm gì / Trong dự án) → Trong dự án → Luyện TensorTonic */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #142030;
+  --muted: #586577;
+  --line: #dbe1e9;
+  --accent: #2c56c9;
+  --accent-soft: #e5ebfa;
+  --tt: #0d7466;
+  --tt-soft: #e1f3ef;
+  --code-bg: #eef1f6;
+  --f-pos: #3d6ee0;
+  --f-shape: #8a4fd1;
+  --f-ori: #c58410;
+  --f-pres: #8a94a3;
+  --f-mot: #13907f;
+  --easy: #1f8a4c;
+  --medium: #b7790f;
+  --hard: #c23b3b;
+  --warn-bg: #fff6e5;
+  --warn-line: #e9c27a;
+  --font-display: "Lexend", "Be Vietnam Pro", system-ui, sans-serif;
+  --font-body: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e131a; --surface: #151c26; --ink: #e4e9f0; --muted: #98a4b3; --line: #253041;
+    --accent: #86a2f6; --accent-soft: #1c2742; --tt: #4cc7b3; --tt-soft: #12302c; --code-bg: #1a2230;
+    --f-pos: #6f95f0; --f-shape: #b085ea; --f-ori: #e0a63a; --f-pres: #7d8795; --f-mot: #3cbca8;
+    --easy: #4cc480; --medium: #e2a93b; --hard: #ef6b6b; --warn-bg: #2a2212; --warn-line: #7a5d22;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e131a; --surface: #151c26; --ink: #e4e9f0; --muted: #98a4b3; --line: #253041;
+  --accent: #86a2f6; --accent-soft: #1c2742; --tt: #4cc7b3; --tt-soft: #12302c; --code-bg: #1a2230;
+  --f-pos: #6f95f0; --f-shape: #b085ea; --f-ori: #e0a63a; --f-pres: #7d8795; --f-mot: #3cbca8;
+  --easy: #4cc480; --medium: #e2a93b; --hard: #ef6b6b; --warn-bg: #2a2212; --warn-line: #7a5d22;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.65;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+code, pre, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+:not(pre) > code { background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; }
+pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; overflow-x: auto; line-height: 1.55; margin: 0; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.25; margin: 0; }
+p { margin: 0; }
+
+.shell { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 1fr; gap: 40px; padding-block: 40px 80px; }
+@media (min-width: 1000px) { .shell { grid-template-columns: 230px minmax(0, 1fr); } }
+
+/* Mục lục */
+.toc { display: none; }
+@media (min-width: 1000px) {
+  .toc { display: block; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; max-height: calc(100vh - 48px); overflow-y: auto; }
+}
+.toc-label { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin-bottom: 10px; }
+.toc ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 2px; counter-reset: t -1; }
+.toc li { counter-increment: t; }
+.toc a { display: grid; grid-template-columns: 26px 1fr; text-decoration: none; color: var(--muted); font-size: 14px; padding: 4px 8px; border-radius: 6px; line-height: 1.4; }
+.toc a::before { content: counter(t); font-family: var(--font-mono); font-size: 12px; padding-top: 1px; }
+.toc a:hover { background: var(--accent-soft); color: var(--ink); }
+
+main { min-width: 0; display: grid; gap: 56px; }
+
+/* Mở đầu */
+.intro { display: grid; gap: 18px; max-width: 760px; }
+.eyebrow { font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+.intro h1 { font-size: clamp(30px, 5vw, 44px); font-weight: 700; letter-spacing: -0.01em; }
+.intro .lede { font-size: 18px; color: var(--muted); max-width: 64ch; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; color: var(--muted); padding-top: 4px; }
+.facts b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.howto { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; font-size: 14.5px; display: grid; gap: 8px; }
+.howto-row { display: flex; flex-wrap: wrap; gap: 6px 8px; }
+.howto-row span { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; background: var(--code-bg); color: var(--muted); }
+.howto-row span.p { background: var(--accent-soft); color: var(--accent); }
+
+/* Pipeline */
+.pipe { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); counter-reset: p; }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 4px; position: relative; counter-increment: p; align-content: start; }
+.step::before { content: counter(p); position: absolute; top: 10px; right: 12px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.step h3 { font-size: 15px; font-weight: 600; padding-right: 18px; }
+.step .shape { font-family: var(--font-mono); font-size: 12.5px; color: var(--accent); }
+.step p { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+.step .file { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); word-break: break-all; }
+.legend-line { font-size: 13px; color: var(--muted); }
+
+/* Chương */
+section.ch { display: grid; gap: 20px; scroll-margin-top: 24px; }
+.ch-head { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 28px; }
+.ch-num { font-family: var(--font-mono); font-size: 13px; color: var(--accent); }
+.ch-head h2 { font-size: clamp(22px, 3.2vw, 28px); font-weight: 600; }
+.ch-head .why { color: var(--muted); max-width: 68ch; }
+
+.block-label { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+.block-label .count { font-family: var(--font-mono); letter-spacing: 0; text-transform: none; font-weight: 400; margin-left: 6px; }
+.concepts { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.concept { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.concept h3 { font-size: 15.5px; font-weight: 600; }
+.concept p { font-size: 14.5px; color: var(--muted); }
+.formula { font-family: var(--font-mono); font-size: 13px; background: var(--code-bg); border-radius: 6px; padding: 6px 10px; color: var(--ink); overflow-x: auto; white-space: nowrap; }
+
+/* Thẻ thuật ngữ */
+.terms { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr)); }
+.term { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px 16px; display: grid; gap: 10px; align-content: start; min-width: 0; scroll-margin-top: 24px; }
+.term:target { outline: 2px solid var(--accent); outline-offset: 2px; }
+.term-head { display: grid; gap: 1px; }
+.term h3 { font-size: 17px; font-weight: 600; }
+.term .vi { font-size: 13.5px; color: var(--muted); }
+.term dl { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 7px 12px; margin: 0; font-size: 14.5px; line-height: 1.55; }
+.term dt { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; padding-top: 3px; }
+.term dt.p { color: var(--accent); }
+.term dd { margin: 0; min-width: 0; }
+.term dd.f { background: var(--code-bg); padding: 8px 12px; border-radius: 6px; overflow-x: auto; font-size: 15px; }
+.term dd.f mjx-container[display="true"] { margin: 0 !important; text-align: left !important; }
+.term dt.c { color: var(--tt); }
+.code-refs { display: grid; gap: 8px; }
+.code-ref { display: grid; gap: 3px; min-width: 0; }
+.code-ref .ref { white-space: normal; overflow-wrap: anywhere; color: var(--tt); }
+.code-ref pre { padding: 7px 10px; font-size: 12px; line-height: 1.5; border-radius: 6px; }
+.code-ref pre code { font-size: 1em; }
+.mathblock { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; overflow-x: auto; display: grid; gap: 10px; }
+.mathblock mjx-container[display="true"] { margin: 0 !important; text-align: left !important; }
+.term dd.x { color: var(--muted); }
+.term dd.x b { color: var(--ink); font-weight: 600; }
+.term .tt-mini { font-size: 13px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 8px; }
+.term .tt-mini a { color: var(--tt); font-weight: 600; text-decoration: none; }
+.term .tt-mini a:hover { text-decoration: underline; }
+@media (max-width: 480px) {
+  .term dl { grid-template-columns: 1fr; gap: 2px; }
+  .term dd { margin-bottom: 6px; }
+}
+
+.inproj { background: var(--accent-soft); border-radius: 10px; padding: 16px 18px; display: grid; gap: 10px; min-width: 0; }
+.inproj .block-label { color: var(--accent); }
+.inproj ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 15px; }
+.ref { font-family: var(--font-mono); font-size: 12.5px; color: var(--accent); white-space: nowrap; }
+
+.note { border-left: 3px solid var(--warn-line); background: var(--warn-bg); padding: 12px 16px; border-radius: 0 8px 8px 0; font-size: 15px; max-width: 72ch; }
+
+/* Bài tập TensorTonic */
+.tt-wrap { display: grid; gap: 10px; }
+.tt-wrap .block-label { color: var(--tt); }
+.tt-list { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
+.tt-item { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); text-decoration: none; color: var(--ink); min-width: 0; }
+.tt-item:hover { border-color: var(--tt); background: var(--tt-soft); }
+.tt-item .t { font-weight: 600; font-size: 14.5px; line-height: 1.35; }
+.tt-item .w { grid-column: 2; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.diff { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 99px; border: 1px solid currentColor; margin-top: 2px; white-space: nowrap; }
+.diff.Easy { color: var(--easy); } .diff.Medium { color: var(--medium); } .diff.Hard { color: var(--hard); }
+
+/* Thanh 418 cột */
+.fbar { display: flex; height: 34px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+.fbar span { display: block; min-width: 2px; border-right: 1px solid var(--surface); }
+.fbar-wrap { overflow-x: auto; display: grid; gap: 10px; }
+.fbar-inner { min-width: 560px; display: grid; gap: 8px; }
+.fkey { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.fkey i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.ftable { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.ftable th, .ftable td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.ftable th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+.ftable td.n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.ftable td code { white-space: nowrap; }
+.swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
+.tscroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.tscroll table { min-width: 620px; }
+
+/* Tra cứu */
+.search { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.search input { font: inherit; font-size: 15px; flex: 1 1 260px; min-width: 0; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.search .hits { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.gloss { display: grid; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.g-row { display: grid; grid-template-columns: minmax(0, 210px) minmax(0, 1fr) auto; gap: 4px 14px; padding: 9px 14px; border-bottom: 1px solid var(--line); align-items: baseline; }
+.g-row:last-child { border-bottom: 0; }
+.g-row a { font-weight: 600; text-decoration: none; }
+.g-row a:hover { text-decoration: underline; }
+.g-row .gv { display: block; font-size: 12.5px; color: var(--muted); font-weight: 400; }
+.g-row .gd { font-size: 14px; color: var(--muted); }
+.g-row .gc { font-family: var(--font-mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+@media (max-width: 640px) { .g-row { grid-template-columns: minmax(0, 1fr) auto; } .g-row .gd { grid-column: 1 / -1; } }
+.g-letter { padding: 6px 14px; background: var(--code-bg); font-family: var(--font-mono); font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
+
+/* Lộ trình */
+.road-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chip-btn { font: inherit; font-size: 13.5px; padding: 6px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.chip-btn[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.progress { margin-left: auto; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.progress b { color: var(--tt); }
+.road { display: grid; gap: 22px; }
+.road-group h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; color: var(--muted); }
+.road-group h3 span { font-family: var(--font-mono); color: var(--accent); margin-right: 8px; }
+.road-row { display: grid; grid-template-columns: 22px auto minmax(0, 1fr); gap: 4px 12px; align-items: start; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.road-row input { width: 17px; height: 17px; margin: 3px 0 0; accent-color: var(--tt); }
+.road-row .info { display: grid; gap: 1px; min-width: 0; }
+.road-row a { font-weight: 600; font-size: 15px; text-decoration: none; }
+.road-row a:hover { text-decoration: underline; }
+.road-row .w { font-size: 13.5px; color: var(--muted); }
+.road-row.done a { color: var(--muted); text-decoration: line-through; }
+
+/* Chương 13: từng bước forward */
+.flow { display: grid; gap: 14px; }
+.fstep { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 12px; min-width: 0; scroll-margin-top: 24px; }
+.fs-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fs-num { flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-family: var(--font-mono); font-size: 13px; font-weight: 600; }
+.fs-head h3 { font-size: 17px; font-weight: 600; }
+.fs-meta { display: flex; flex-wrap: wrap; gap: 4px 18px; font-family: var(--font-mono); font-size: 12.5px; }
+.fs-io { color: var(--accent); }
+.fs-params { color: var(--muted); }
+.fstep > p { font-size: 14.5px; color: var(--muted); }
+.fs-math { background: var(--code-bg); border-radius: 6px; padding: 10px 14px; overflow-x: auto; font-size: 15px; min-width: 0; }
+.fs-math mjx-container[display="true"] { margin: 0 !important; text-align: left !important; }
+.fs-sub { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+.fs-sub.c { color: var(--tt); }
+.wscroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+.wscroll table { min-width: 560px; }
+.wscroll td code { white-space: nowrap; }
+.fs-note { font-size: 13.5px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 8px; }
+
+footer { color: var(--muted); font-size: 13.5px; border-top: 1px solid var(--line); padding-top: 20px; max-width: 72ch; }
+
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="shell">
+  <nav class="toc" aria-label="Mục lục">
+    <div class="toc-label">Mục lục</div>
+    <ol>
+      <li><a href="#tong-quan">Bức tranh tổng thể</a></li>
+      <li><a href="#tensor">Tensor và vòng học</a></li>
+      <li><a href="#hinh-hoc">Hình học landmark</a></li>
+      <li><a href="#chuoi">Xử lý chuỗi thời gian</a></li>
+      <li><a href="#chuan-hoa">Chuẩn hoá</a></li>
+      <li><a href="#chia-du-lieu">Chia dữ liệu và CV</a></li>
+      <li><a href="#augment">Tăng cường dữ liệu</a></li>
+      <li><a href="#kien-truc">Kiến trúc mạng</a></li>
+      <li><a href="#loss">Hàm mất mát</a></li>
+      <li><a href="#toi-uu">Tối ưu hoá</a></li>
+      <li><a href="#ensemble">Ensemble và từ chối</a></li>
+      <li><a href="#danh-gia">Đánh giá</a></li>
+      <li><a href="#realtime">Suy luận thời gian thực</a></li>
+      <li><a href="#forward">Từng phép tính có trọng số</a></li>
+      <li><a href="#tra-cuu">Tra cứu thuật ngữ</a></li>
+      <li><a href="#lo-trinh">Lộ trình TensorTonic</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="intro">
+      <div class="eyebrow">Tài liệu học nội bộ · phần AI cốt lõi</div>
+      <h1>Nền tảng AI của VSL Translator</h1>
+      <p class="lede">Những kiến thức cần nắm để đọc hiểu phần AI của dự án, đi theo đúng thứ tự dữ liệu chảy qua hệ thống: từ landmark MediaPipe, qua đặc trưng và huấn luyện, đến dự đoán có từ chối. Mỗi thuật ngữ chuyên ngành đều được giải thích, kèm công thức, ví dụ bằng số và chỗ nó xuất hiện trong code.</p>
+      <div class="facts">
+        <span><b>31</b> lớp ký hiệu</span>
+        <span><b>421</b> clip gốc, <b>1 395</b> sau augment</span>
+        <span>mỗi clip là tensor <b class="mono">(30, 418)</b></span>
+        <span><b>6</b> model × <b>299 564</b> tham số</span>
+        <span>CV <b>99,76 %</b> (lạc quan, xem chương 5)</span>
+      </div>
+      <div class="howto">
+        <div>Mỗi thẻ thuật ngữ có các mục:</div>
+        <div class="howto-row"><span>Là gì</span><span>Công thức</span><span>Trong code</span><span>Ví dụ</span><span>Để làm gì</span><span class="p">Trong dự án</span></div>
+        <div>Thuật ngữ được giải thích ở chương nó xuất hiện lần đầu. Quên nghĩa một từ thì tìm ở <a href="#tra-cuu">chương Tra cứu</a> (có <span id="term-total">nhiều</span> thuật ngữ, có ô tìm kiếm).</div>
+      </div>
+    </header>
+
+    <!-- 0 -->
+    <section class="ch" id="tong-quan">
+      <div class="ch-head">
+        <div class="ch-num">Chương 0</div>
+        <h2>Bức tranh tổng thể</h2>
+        <p class="why">Dự án không đưa ảnh vào mạng nơ-ron. MediaPipe đã làm phần thị giác (tìm khớp tay, khớp người); phần AI của dự án là <b>phân loại chuỗi đặc trưng hình học</b>. Nắm được shape ở từng bước là đã hiểu được nửa hệ thống.</p>
+      </div>
+      <div class="pipe">
+        <div class="step"><h3>Video BGR</h3><div class="shape">(T, H, W, 3)</div><p>Webcam hoặc file .mp4, ~15 fps.</p><div class="file">data/raw/&lt;lớp&gt;/&lt;id&gt;.mp4</div></div>
+        <div class="step"><h3>Đệm khung vuông</h3><div class="shape">(T, 1280, 1280, 3)</div><p>Để toạ độ x, y chuẩn hoá cùng một tỉ lệ.</p><div class="file">features/frame.py</div></div>
+        <div class="step"><h3>MediaPipe</h3><div class="shape">pose 33×4 · tay 2×21×3</div><p>Landmark ảnh + hand_world (mét). Mô hình có sẵn, không train.</p><div class="file">builtin/mediapipe_builtin/</div></div>
+        <div class="step"><h3>extract()</h3><div class="shape">(367,) mỗi frame</div><p>Vị trí, thủ hình, độ cong ngón, hướng bàn tay, cờ hiện diện.</p><div class="file">features/extract.py:400</div></div>
+        <div class="step"><h3>process_sequence()</h3><div class="shape">(30, 418)</div><p>Lấp NaN, khử gai, co giãn về 30 frame, thêm vận tốc và nét.</p><div class="file">features/extract.py:612</div></div>
+        <div class="step"><h3>Chuẩn hoá z-score</h3><div class="shape">(B, 30, 418)</div><p>μ, σ riêng cho từng model; tay vắng → 0.</p><div class="file">model/training.py:226</div></div>
+        <div class="step"><h3>VSLNet × 6</h3><div class="shape">(B, 31) logits</div><p>5 model theo fold + 1 model toàn bộ dữ liệu.</p><div class="file">model/training.py:449</div></div>
+        <div class="step"><h3>Trung bình softmax</h3><div class="shape">(B, 31) xác suất</div><p>Chia nhiệt độ T rồi lấy trung bình 6 model.</p><div class="file">model/training.py:997</div></div>
+        <div class="step"><h3>Từ chối</h3><div class="shape">nhãn | None</div><p>Cần độ tin ≥ 0,65 và cách lớp thứ hai ≥ 0,08.</p><div class="file">model/predict.py:85</div></div>
+        <div class="step"><h3>Nhãn ổn định</h3><div class="shape">cửa sổ trượt 2 s</div><p>3 lần dự đoán liên tiếp phải trùng nhau.</p><div class="file">model/predict.py:225</div></div>
+      </div>
+      <p class="legend-line">Huấn luyện dùng bước 4–7 trên dữ liệu đã trích sẵn (<code>data/processed/</code>); khi chạy thật, cả 10 bước chạy trên từng frame camera.</p>
+      <div class="block-label">Thuật ngữ<span class="count" data-count="tong-quan"></span></div>
+      <div class="terms" data-sec="tong-quan"></div>
+    </section>
+
+    <!-- 1 -->
+    <section class="ch" id="tensor">
+      <div class="ch-head">
+        <div class="ch-num">Chương 1</div>
+        <h2>Tensor, mô hình và vòng học</h2>
+        <p class="why">Mọi đoạn code trong <code>training.py</code> đều xoay quanh ba trục B (batch), T (thời gian), D (đặc trưng) và một vòng lặp: forward → loss → backward → cập nhật. Chương này là vốn từ tối thiểu để đọc phần còn lại.</p>
+      </div>
+      <div class="block-label">Thuật ngữ<span class="count" data-count="tensor"></span></div>
+      <div class="terms" data-sec="tensor"></div>
+      <div class="inproj">
+        <div class="block-label">Trong dự án</div>
+        <ul>
+          <li><span class="ref">training.py:132</span> <code>load_dataset</code> đọc <code>.npz</code> gồm <code>X, y, classes, groups</code>; NaN/Inf bị thay bằng 0.</li>
+          <li><span class="ref">features/schema.py</span> <code>EXPECTED_FRAMES = 30</code>; số cột thô <code>FEATURE_DIM = 367</code>, sau khi thêm chuyển động <code>SEQ_FEATURE_DIM = 418</code>.</li>
+          <li><span class="ref">training.py:51</span> <code>Config</code> gom mọi siêu tham số; <span class="ref">training.py:160</span> <code>make_demo_dataset</code> sinh dữ liệu giả cùng shape: <code>--demo --folds-to-run 1 --epochs 5</code>.</li>
+        </ul>
+      </div>
+      <div class="tt-wrap"><div class="block-label">Luyện trên TensorTonic</div><div class="tt-list" data-sec="tensor"></div></div>
+    </section>
+
+    <!-- 2 -->
+    <section class="ch" id="hinh-hoc">
+      <div class="ch-head">
+        <div class="ch-num">Chương 2</div>
+        <h2>Hình học landmark thành đặc trưng</h2>
+        <p class="why">367 cột mỗi frame đều là đại số tuyến tính trên các điểm 3D. Hiểu bất biến (invariance) ở đây giải thích vì sao model học được từ chỉ 421 clip.</p>
+      </div>
+      <div class="block-label">Thuật ngữ<span class="count" data-count="hinh-hoc"></span></div>
+      <div class="terms" data-sec="hinh-hoc"></div>
+
+      <div class="block-label">Bố cục 418 cột của một frame</div>
+      <div class="fbar-wrap">
+        <div class="fbar-inner">
+          <div class="fbar" id="fbar" role="img" aria-label="Tỉ lệ 418 cột theo nhóm đặc trưng"></div>
+          <div class="fkey">
+            <span><i style="background:var(--f-pos)"></i>Vị trí (61)</span>
+            <span><i style="background:var(--f-shape)"></i>Thủ hình (286)</span>
+            <span><i style="background:var(--f-ori)"></i>Hướng bàn tay (18)</span>
+            <span><i style="background:var(--f-pres)"></i>Hiện diện (2)</span>
+            <span><i style="background:var(--f-mot)"></i>Chuyển động (51)</span>
+          </div>
+        </div>
+      </div>
+      <div class="tscroll">
+        <table class="ftable">
+          <thead><tr><th>Nhóm cột</th><th style="text-align:right">Số cột</th><th>Ý nghĩa</th><th>Kiến thức dùng</th></tr></thead>
+          <tbody id="ftable"></tbody>
+        </table>
+      </div>
+      <div class="inproj">
+        <div class="block-label">Trong dự án</div>
+        <ul>
+          <li><span class="ref">extract.py:52</span> <code>_GROUPS</code> khai báo bố cục cột; mọi module khác lấy chỉ số qua <code>FEATURE_SLICES</code>, không viết cứng số cột.</li>
+          <li><span class="ref">extract.py:257</span> <code>_curl_stats</code>: góc atan2 của 15 khớp, tổng gập, gập PIP+DIP, độ thẳng ngón. Đây là cột tách <code>u</code> khỏi dấu â/ô/ê.</li>
+          <li><span class="ref">extract.py:334</span> <code>_hand_shape_and_orientation</code>: cos khớp, độ duỗi, độ xoè, tiếp xúc đầu ngón, hệ trục lòng bàn tay.</li>
+          <li><span class="ref">extract.py:216</span> 11 neo cơ thể (trán, mũi, miệng, cằm, má trái, má phải, cổ, ngực, bụng, hai vai) cho <code>body_contact</code>.</li>
+          <li>Đổi <code>extract</code> thì phải tăng <code>FEATURE_VERSION</code> (đang là 7) và chạy lại <code>reextract</code>.</li>
+        </ul>
+      </div>
+      <div class="tt-wrap"><div class="block-label">Luyện trên TensorTonic</div><div class="tt-list" data-sec="hinh-hoc"></div></div>
+    </section>
+
+    <!-- 3 -->
+    <section class="ch" id="chuoi">
+      <div class="ch-head">
+        <div class="ch-num">Chương 3</div>
+        <h2>Xử lý chuỗi thời gian</h2>
+        <p class="why"><code>process_sequence</code> biến một chuỗi dài ngắn bất kỳ, có lỗ hổng do mất detect, thành tensor (30, 418) sạch. Hàm này chạy giống hệt nhau lúc train và lúc dự đoán, nên mọi lỗi ở đây xuất hiện ở cả hai nơi.</p>
+      </div>
+      <div class="block-label">Thuật ngữ<span class="count" data-count="chuoi"></span></div>
+      <div class="terms" data-sec="chuoi"></div>
+      <div class="inproj">
+        <div class="block-label">Trong dự án</div>
+        <ul>
+          <li><span class="ref">extract.py:612</span> <code>process_sequence</code> theo thứ tự: bỏ tay đang buông → lấp NaN → khử gai → co giãn về 30 → làm mượt và lấy vận tốc (39 cột) → nét (12 cột).</li>
+          <li><span class="ref">extract.py:586</span> <code>_stroke</code>: chỉ tính trên đoạn tay hợp lệ suốt cả đoạn, để tay vừa lọt vào khung không bị tính là một nét.</li>
+          <li>Chỉ sửa <code>process_sequence</code> thì không cần trích lại landmark, nhưng mọi checkpoint phải train lại.</li>
+        </ul>
+      </div>
+      <div class="tt-wrap"><div class="block-label">Luyện trên TensorTonic</div><div class="tt-list" data-sec="chuoi"></div></div>
+    </section>
+
+    <!-- 4 -->
+    <section class="ch" id="chuan-hoa">
+      <div class="ch-head">
+        <div class="ch-num">Chương 4</div>
+        <h2>Chuẩn hoá đặc trưng</h2>
+        <p class="why">Cột góc (radian) và cột vị trí (đơn vị vai) có thang khác nhau hàng chục lần. Chuẩn hoá đưa mọi cột về cùng thang để gradient không bị một nhóm cột lấn át.</p>
+      </div>
+      <div class="block-label">Thuật ngữ<span class="count" data-count="chuan-hoa"></span></div>
+      <div class="terms" data-sec="chuan-hoa"></div>
+      <pre><code><span style="color:var(--muted)"># training.py:226 — dùng chung cho Normalizer, VSLEnsemble và ONNX</span>
+z = torch.nan_to_num(((x - mean) / std).clamp(-8.0, 8.0), nan=0.0)
+v = hand_validity(x)                    <span style="color:var(--muted)"># (…, T, 2): tay trái / phải có mặt?</span>
+keep = (1 - m.sum(0)) + vl*m[0] + vr*m[1] + vl*vr*m[2]
+z = z * keep                            <span style="color:var(--muted)"># cột của tay vắng → 0</span></code></pre>
+      <div class="inproj">
+        <div class="block-label">Trong dự án</div>
+        <ul>
+          <li><span class="ref">training.py:243</span> <code>Normalizer</code> fit trên đúng tập train của từng model.</li>
+          <li><span class="ref">training.py:205</span> <code>hand_validity</code>: tay được coi là có mặt khi cột <code>hand_pos</code> khác 0, không dùng presence mềm.</li>
+          <li><span class="ref">training.py:1097</span> <code>save_ensemble</code> lưu <code>means, stds</code> shape (6, 418) vào <code>ensemble.pt</code>.</li>
+        </ul>
+      </div>
+      <div class="tt-wrap"><div class="block-label">Luyện trên TensorTonic</div><div class="tt-list" data-sec="chuan-hoa"></div></div>
+    </section>
+
+    <!-- 5 -->
+    <section class="ch" id="chia-du-lieu">
+      <div class="ch-head">
+        <div class="ch-num">Chương 5</div>
+        <h2>Chia dữ liệu, cross-validation và rò rỉ</h2>
+        <p class="why">Với 421 clip gốc, cách chia dữ liệu quyết định con số độ chính xác có ý nghĩa hay không. Đây là phần CLAUDE.md gọi là "hàng rào duy nhất chống rò rỉ".</p>
+      </div>
+      <div class="block-label">Thuật ngữ<span class="count" data-count="chia-du-lieu"></span></div>
+      <div class="terms" data-sec="chia-du-lieu"></div>
+      <div class="note"><b>Cẩn thận khi đọc 99,76 %.</b> Mọi lớp trừ <code>m</code> được quay trong một buổi. Đo trên lớp <code>m</code>, cùng một ký hiệu ở hai bối cảnh quay cách nhau trong không gian đặc trưng xa hơn hai ký hiệu khác nhau quay cùng buổi. CV theo clip vì vậy chỉ đo "cùng bối cảnh". <code>benchmark.py</code> giữ hẳn <code>lớp@buổi</code> ra ngoài để đo khả năng tổng quát thật.</div>
+      <div class="inproj">
+        <div class="block-label">Trong dự án</div>
+        <ul>
+          <li><span class="ref">training.py:177</span> <code>make_folds</code> bọc <code>StratifiedGroupKFold</code>; group là <code>origin_sample_id</code> ghi trong meta của mẫu augment.</li>
+          <li><span class="ref">training.py:1401</span> <code>validation_mask</code>: chỉ mẫu gốc được chấm điểm; mẫu augment chỉ dùng để train.</li>
+          <li>Không bao giờ augment một mẫu đã augment (<code>augment.py</code> bỏ qua mẫu có khoá <code>augmentation</code>).</li>
+        </ul>
+      </div>
+      <div class="tt-wrap"><div class="block-label">Luyện trên TensorTonic</div><div class="tt-list" data-sec="chia-du-lieu"></div></div>
+    </section>
+
+    <!-- 6 -->
+    <section class="ch" id="augment">
+      <div class="ch-head">
+        <div class="ch-num">Chương 6</div>
+        <h2>Tăng cường dữ liệu và điều hoà</h2>
+        <p class="why">Ít dữ liệu thì model dễ học thuộc. Dự án tăng cường ở hai tầng (ngoại tuyến trên landmark, trực tuyến trên tensor) và có một bộ điều khiển tự chỉnh mức điều hoà theo dấu hiệu overfit.</p>
+      </div>
+      <div class="block-label">Thuật ngữ<span class="count" data-count="augment"></span></div>
+      <div class="terms" data-sec="augment"></div>
+      <div class="inproj">
+        <div class="block-label">Trong dự án</div>
+        <ul>
+          <li><span class="ref">training.py:335</span> <code>Augmenter</code>: mọi phép augment trực tuyến, chạy trên tensor đã chuẩn hoá ngay trên GPU/MPS.</li>
+          <li><span class="ref">training.py:679</span> <code>AdaptiveController</code>: biến <code>s</code> ∈ [0,1; 1] điều khiển biên độ augment, dropout, group-dropout.</li>
+          <li><span class="ref">src/data/augment.py</span>, <span class="ref">src/features/view.py</span>: augment ngoại tuyến; mẫu augment ghi <code>origin_sample_id</code> để giữ chung group.</li>
+        </ul>
+      </div>
+      <div class="tt-wrap"><div class="block-label">Luyện trên TensorTonic</div><div class="tt-list" data-sec="augment"></div></div>
+    </section>
+
+    <!-- 7 -->
+    <section class="ch" id="kien-truc">
+      <div class="ch-head">
+        <div class="ch-num">Chương 7</div>
+        <h2>Kiến trúc mạng VSLNet</h2>
+        <p class="why">Model đang chạy trong <code>runs/best</code> là <code>arch = "vslnet"</code>: mã hoá từng nhóm đặc trưng, tích chập đa thang thời gian, GRU hai chiều, gộp theo thời gian rồi phân lớp. Bảng dưới là shape thật đo từ checkpoint; các thuật ngữ trong bảng được giải thích ngay sau. Công thức của từng lớp kèm tên trọng số trong file nằm ở <a href="#forward">chương 13</a>.</p>
+      </div>
+      <div class="tscroll">
+        <table class="ftable">
+          <thead><tr><th>Khối</th><th>Thao tác</th><th>Shape ra</th><th style="text-align:right">Tham số</th></tr></thead>
+          <tbody>
+            <tr><td>Đầu vào</td><td>Đặc trưng đã chuẩn hoá</td><td><code>(B, 30, 418)</code></td><td class="n">—</td></tr>
+            <tr><td><code>GroupStem</code></td><td>8 nhóm cột, mỗi nhóm Linear → LayerNorm → GELU (30+38+60+45+9+8+20+8 = 218), rồi Linear 218→128, LayerNorm, GELU, Dropout. Nhóm hiện diện nhân 0,25.</td><td><code>(B, 30, 128)</code></td><td class="n">45 964</td></tr>
+            <tr><td><code>MultiScaleBlock</code> × 2</td><td>Conv1d depthwise kernel 3, 5, 9 → nối 384 kênh → Conv 1×1 về 128 → BatchNorm → GELU → Dropout → cộng residual</td><td><code>(B, 128, 30)</code></td><td class="n">104 192</td></tr>
+            <tr><td><code>GRU</code> hai chiều</td><td>Ẩn 96 mỗi chiều, đọc chuỗi xuôi và ngược</td><td><code>(B, 30, 192)</code></td><td class="n">130 176</td></tr>
+            <tr><td>Gộp thời gian</td><td>Attention pooling (softmax trên 30 frame) ⊕ trung bình ⊕ max</td><td><code>(B, 576)</code></td><td class="n">193</td></tr>
+            <tr><td>Đầu phân lớp</td><td>LayerNorm → Dropout → Linear 576→31</td><td><code>(B, 31)</code></td><td class="n">19 039</td></tr>
+            <tr><td colspan="3"><b>Tổng một model</b></td><td class="n"><b>299 564</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="block-label">Thuật ngữ<span class="count" data-count="kien-truc"></span></div>
+      <div class="terms" data-sec="kien-truc"></div>
+      <div class="block-label">Hai kiến trúc thay thế trong cùng file</div>
+      <div class="concepts">
+        <div class="concept"><h3>HandPairNet</h3><p>Hai tay đi qua <b>cùng một encoder</b> (chia sẻ trọng số), tay trái được soi gương về hệ tay phải. Tay vắng thay bằng một <b>token học được</b> thay vì số 0. Nhánh tay−tay nhân với p_trái · p_phải. <span class="ref">training.py:473</span></p></div>
+        <div class="concept"><h3>SignFormer</h3><p>Mỗi điểm trong 20 điểm <code>hand_local</code> là một token; self-attention giữa các điểm học quan hệ ngón. Theo thời gian: conv + 2 lớp Transformer pre-LN, mã hoá vị trí sinusoid, stochastic depth. Đã có unit test, chưa kiểm chứng trên ladder. <span class="ref">training.py:577</span></p></div>
+      </div>
+      <div class="tt-wrap"><div class="block-label">Luyện trên TensorTonic</div><div class="tt-list" data-sec="kien-truc"></div></div>
+    </section>
+
+    <!-- 8 -->
+    <section class="ch" id="loss">
+      <div class="ch-head">
+        <div class="ch-num">Chương 8</div>
+        <h2>Hàm mất mát</h2>
+        <p class="why">Loss của dự án là tổng của bốn thành phần, mỗi thành phần giải quyết một lỗi cụ thể đã quan sát được trên dữ liệu.</p>
+      </div>
+      <div class="mathblock">
+        <div>\[\begin{aligned}
+\mathcal{L} \;=\; & \operatorname{CE}_{\varepsilon = 0.1}\big(z,\ y;\ w\big) && \text{phân lớp chính} \\
+& +\ 0.25 \cdot \max\!\Big(0,\ 0.8 + \max_{j \neq y} z_j - z_y\Big) && \text{lề với lớp sai mạnh nhất} \\
+& +\ 0.5 \cdot \operatorname{CE}\big(z^{\text{tay phụ}},\ y\big) && \text{clip đã chèn tay gây nhiễu} \\
+& +\ 0.12 \cdot \operatorname{KL}\Big(\operatorname{softmax}(z) \,\Big\|\, \operatorname{softmax}\big(z^{\text{tay phụ}}\big)\Big) && \text{tay phụ không được đổi dự đoán}
+\end{aligned}\]</div>
+        <div class="code-ref"><span class="ref">src/model/training.py:909-925 · đã gộp các lệnh xuống dòng cho gọn</span><pre><code>loss = F.cross_entropy(out, y, weight=cw, label_smoothing=cfg.label_smoothing)
+…
+    loss = loss + cfg.hard_negative_weight * hard_negative_margin_loss(out, y, cfg.hard_negative_margin)
+if extra_out is not None:
+    loss = loss + cfg.extra_hand_loss * F.cross_entropy(extra_out, y, weight=cw, label_smoothing=cfg.label_smoothing)
+if extra_out is not None and cfg.hand_consistency &gt; 0:
+    teacher = torch.softmax(out.detach(), dim=-1)
+    loss = loss + cfg.hand_consistency * F.kl_div(F.log_softmax(extra_out, dim=-1), teacher, reduction="batchmean")</code></pre></div>
+      </div>
+      <div class="block-label">Thuật ngữ<span class="count" data-count="loss"></span></div>
+      <div class="terms" data-sec="loss"></div>
+      <div class="inproj">
+        <div class="block-label">Trong dự án</div>
+        <ul>
+          <li><span class="ref">training.py:909</span> đến <span class="ref">:925</span> ghép bốn thành phần loss trong <code>train_one</code>.</li>
+          <li><span class="ref">training.py:736</span> <code>hard_negative_margin_loss</code>; <span class="ref">training.py:823</span> trọng số lớp căn bậc hai nghịch đảo.</li>
+          <li>Batch sạch và clip có tay phụ chạy chung một lượt forward với số slot cố định: trên MPS, batch đổi kích thước làm GRU biên dịch lại và chậm ~6 lần.</li>
+        </ul>
+      </div>
+      <div class="tt-wrap"><div class="block-label">Luyện trên TensorTonic</div><div class="tt-list" data-sec="loss"></div></div>
+    </section>
+
+    <!-- 9 -->
+    <section class="ch" id="toi-uu">
+      <div class="ch-head">
+        <div class="ch-num">Chương 9</div>
+        <h2>Tối ưu hoá và vòng lặp huấn luyện</h2>
+        <p class="why">Cấu hình trong <code>runs/best/metrics.json</code>: AdamW lr 2e-3, warmup 5 epoch, tối đa 60 epoch, các fold dừng ở epoch 10–15.</p>
+      </div>
+      <div class="block-label">Thuật ngữ<span class="count" data-count="toi-uu"></span></div>
+      <div class="terms" data-sec="toi-uu"></div>
+      <div class="inproj">
+        <div class="block-label">Trong dự án</div>
+        <ul>
+          <li><span class="ref">training.py:775</span> <code>train_one</code>: toàn bộ vòng lặp một model.</li>
+          <li><span class="ref">training.py:879</span> lịch LR; <span class="ref">:930</span> <code>clip_grad_norm_</code>; <span class="ref">:657</span> lớp <code>EMA</code>.</li>
+          <li><span class="ref">training.py:1206</span> <code>run_training</code>: k fold → OOF → hiệu chỉnh → model toàn bộ → <code>publish_run</code> đổi tên thành <code>runs/best</code>.</li>
+        </ul>
+      </div>
+      <div class="tt-wrap"><div class="block-label">Luyện trên TensorTonic</div><div class="tt-list" data-sec="toi-uu"></div></div>
+    </section>
+
+    <!-- 10 -->
+    <section class="ch" id="ensemble">
+      <div class="ch-head">
+        <div class="ch-num">Chương 10</div>
+        <h2>Ensemble, hiệu chỉnh xác suất và từ chối</h2>
+        <p class="why">Một hệ thống dùng thật phải biết nói "không chắc". Phần này biến 6 model thành một xác suất đáng tin và một quy tắc từ chối.</p>
+      </div>
+      <div class="block-label">Thuật ngữ<span class="count" data-count="ensemble"></span></div>
+      <div class="terms" data-sec="ensemble"></div>
+      <pre><code><span style="color:var(--muted)"># predict.py:85 — quyết định cuối cùng</span>
+threshold = max(checkpoint["reject_threshold"], 0.65)   <span style="color:var(--muted)"># 0.2 từ OOF → nâng lên 0.65</span>
+accepted  = top1 >= threshold and (top1 - top2) >= 0.08
+reason    = None if accepted else ("ambiguous" if top1 >= threshold else "low_confidence")</code></pre>
+      <div class="inproj">
+        <div class="block-label">Trong dự án</div>
+        <ul>
+          <li><span class="ref">training.py:997</span> <code>VSLEnsemble.forward</code>: chuẩn hoá bằng μ, σ của từng model → softmax(z/T) → trung bình.</li>
+          <li><span class="ref">training.py:1035</span> <code>fit_temperature</code> tham số hoá T qua sigmoid để luôn nằm trong biên.</li>
+          <li><span class="ref">training.py:1080</span> <code>choose_reject_threshold</code>; <span class="ref">training.py:1137</span> xuất ONNX gồm cả chuẩn hoá và ensemble.</li>
+        </ul>
+      </div>
+      <div class="tt-wrap"><div class="block-label">Luyện trên TensorTonic</div><div class="tt-list" data-sec="ensemble"></div></div>
+    </section>
+
+    <!-- 11 -->
+    <section class="ch" id="danh-gia">
+      <div class="ch-head">
+        <div class="ch-num">Chương 11</div>
+        <h2>Đánh giá model</h2>
+        <p class="why">Accuracy một con số che mất lớp nào đang yếu và lớp nào hay bị nhầm với lớp nào. Dự án lưu thêm các chỉ số chi tiết vào <code>metrics.json</code>.</p>
+      </div>
+      <div class="block-label">Thuật ngữ<span class="count" data-count="danh-gia"></span></div>
+      <div class="terms" data-sec="danh-gia"></div>
+      <div class="tt-wrap"><div class="block-label">Luyện trên TensorTonic</div><div class="tt-list" data-sec="danh-gia"></div></div>
+    </section>
+
+    <!-- 12 -->
+    <section class="ch" id="realtime">
+      <div class="ch-head">
+        <div class="ch-num">Chương 12</div>
+        <h2>Suy luận thời gian thực</h2>
+        <p class="why">Khi chạy với camera, không có "một clip" sẵn: hệ thống phải tự quyết định cửa sổ nào là một ký hiệu và khi nào kết quả đủ chắc để hiện ra.</p>
+      </div>
+      <div class="block-label">Thuật ngữ<span class="count" data-count="realtime"></span></div>
+      <div class="terms" data-sec="realtime"></div>
+      <div class="inproj">
+        <div class="block-label">Trong dự án</div>
+        <ul>
+          <li><span class="ref">predict.py:24</span> <code>StreamConfig</code>; <span class="ref">predict.py:225</span> <code>update_features</code> quản lý cửa sổ và nhãn ổn định.</li>
+          <li>Mỗi client một <code>VSLStreamSession</code> riêng (MediaPipe ở chế độ VIDEO cần timestamp tăng dần), không dùng chung.</li>
+          <li><span class="ref">src/model/memory.py</span> bộ nhớ mẫu; <span class="ref">training.py:985</span> <code>logits_and_embedding</code> lấy embedding từ đầu phân lớp.</li>
+        </ul>
+      </div>
+      <div class="tt-wrap"><div class="block-label">Luyện trên TensorTonic</div><div class="tt-list" data-sec="realtime"></div></div>
+    </section>
+
+    <!-- 13 -->
+    <section class="ch" id="forward">
+      <div class="ch-head">
+        <div class="ch-num">Chương 13</div>
+        <h2>Từ đầu vào đến kết quả: từng phép tính có trọng số</h2>
+        <p class="why">Chương 7 cho biết mạng gồm những khối nào. Chương này đi chậm hơn: với một clip <code>(30, 418)</code>, viết ra đúng phép tính của từng lớp, chỉ rõ trọng số nào trong <code>runs/best/ensemble.pt</code> được dùng (tên khoá và shape thật đọc từ file), shape đầu ra và dòng code. Trước hết là file trọng số chứa gì và huấn luyện đã tạo ra nó thế nào.</p>
+      </div>
+
+      <div class="block-label">1 · File trọng số <code>ensemble.pt</code> chứa gì</div>
+      <div class="tscroll">
+        <table class="ftable">
+          <thead><tr><th>Khoá</th><th>Shape / giá trị</th><th>Là gì</th><th>Dùng ở bước</th></tr></thead>
+          <tbody>
+            <tr><td><code>state_dicts</code></td><td>list 6 × 76 tensor</td><td>Trọng số học được của 6 model: 5 model theo fold + 1 model toàn bộ dữ liệu. Mỗi model 299 564 tham số học bằng gradient và 514 số thống kê của BatchNorm (<code>running_mean</code>, <code>running_var</code>, bộ đếm).</td><td>2 → 7</td></tr>
+            <tr><td><code>means</code>, <code>stds</code></td><td><code>(6, 418)</code> mỗi cái</td><td>μ và σ của từng cột, mỗi model một hàng, tính trên đúng tập train của model đó. Không học bằng gradient.</td><td>1</td></tr>
+            <tr><td><code>groups</code></td><td>8 cặp cột</td><td>Ranh giới 8 nhóm đặc trưng: (0,61) (61,137) (137,257) (257,347) (347,365) (365,367) (367,406) (406,418).</td><td>2</td></tr>
+            <tr><td><code>temperature</code></td><td><code>1.0</code></td><td>Nhiệt độ T học trên logits OOF (chạm biên dưới 1,0, nên thực tế không đổi xác suất).</td><td>8</td></tr>
+            <tr><td><code>reject_threshold</code></td><td><code>0.2</code></td><td>Ngưỡng từ chối chọn trên OOF; khi dự đoán bị nâng lên 0,65.</td><td>10</td></tr>
+            <tr><td><code>classes</code></td><td>31 tên lớp</td><td>Chỉ số lớp → nhãn tiếng Việt.</td><td>10</td></tr>
+            <tr><td><code>cfg</code>, <code>in_shape</code>, <code>feature_version</code></td><td>dict, <code>(30, 418)</code>, <code>7</code></td><td>Cấu hình để dựng lại đúng mạng (<code>d_model</code> 128, <code>gru_hidden</code> 96, kernel 3/5/9…) trước khi nạp trọng số; kiểm tra phiên bản đặc trưng.</td><td>nạp file</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="legend-line">File nặng 7,37 MB, được ghi bởi <span class="ref">training.py:1098</span> và đọc lại bởi <code>load_ensemble</code> (<span class="ref">training.py:1104</span>): dựng 6 mạng rỗng theo <code>cfg</code>, rồi <code>load_state_dict</code> chép số vào từng lớp.</p>
+
+      <div class="block-label">2 · Huấn luyện tạo ra các con số đó như thế nào</div>
+      <div class="mathblock" id="train-math"></div>
+
+      <div class="block-label">3 · Một clip đi qua model: 10 bước</div>
+      <p class="legend-line">Kí hiệu: \(x\) là clip thô, \(\tilde x\) là clip đã chuẩn hoá, \(t = 1..30\) là frame, \(k = 1..6\) là model, \(z\) là logits. Dropout chỉ chạy khi train, lúc dự đoán là phép đồng nhất nên không có trong công thức. Bước 1–7 chạy riêng cho từng model \(k\) với bộ trọng số của nó.</p>
+      <div class="flow" id="flow"></div>
+
+      <div class="block-label">4 · Số thật trên một clip: mẫu <code>a/0</code></div>
+      <div class="concepts">
+        <div class="concept"><h3>Đầu vào</h3><p>31 frame thô <code>(31, 367)</code> → <code>process_sequence</code> → <code>(30, 418)</code>. Sau chuẩn hoá bằng μ, σ của model 1, mọi giá trị nằm trong [−4,01; 3,44].</p></div>
+        <div class="concept"><h3>Attention pooling</h3><p>Trọng số α cao nhất ở frame 6, 7, 5 (đếm từ 0), mỗi frame ≈ 0,041 so với mức đều 1/30 ≈ 0,033: model chú ý hơn vào đoạn tay đã vào thế.</p></div>
+        <div class="concept"><h3>Logits model 1</h3><p><code>a</code> 5,91 · <code>e</code> 0,39 · <code>i</code> 0,13. Softmax với T = 1 cho p(<code>a</code>) = 0,938.</p></div>
+        <div class="concept"><h3>Ensemble và quyết định</h3><p>p(<code>a</code>) của 6 model: 0,938 · 0,910 · 0,932 · 0,933 · 0,927 · 0,916 → trung bình <b>0,926</b>. Lớp thứ hai <code>i</code> 0,003, cách 0,923 ≥ 0,08 và 0,926 ≥ 0,65 → <b>nhận, nhãn "a"</b>.</p></div>
+      </div>
+      <div class="note">Mẫu <code>a/0</code> nằm trong dữ liệu huấn luyện của model, nên xác suất cao hơn một clip mới. Ở đây nó chỉ dùng để cho thấy con số thật ở từng bước.</div>
+
+      <div class="inproj">
+        <div class="block-label">Đã kiểm chứng</div>
+        <ul>
+          <li>Mình viết lại cả 7 bước của một model chỉ bằng phép nhân ma trận, <code>erf</code>, <code>sigmoid</code>, <code>tanh</code> theo đúng các công thức trên, đọc trọng số từ <code>ensemble.pt</code>. Logits lệch so với <code>model(z)</code> tối đa <b>9,5 · 10⁻⁷</b>, tức là sai số làm tròn float32.</li>
+          <li>Trung bình softmax của 6 model khớp tuyệt đối với <code>VSLEnsemble.forward</code> (chênh 0).</li>
+          <li>Tên khoá và shape trong bảng ở bước 2–7 in trực tiếp từ <code>state_dict</code> của file; các đoạn code đã so đúng dòng với <code>src/</code>.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 14 -->
+    <section class="ch" id="tra-cuu">
+      <div class="ch-head">
+        <div class="ch-num">Chương 14</div>
+        <h2>Tra cứu thuật ngữ</h2>
+        <p class="why">Mọi thuật ngữ trong tài liệu, xếp theo bảng chữ cái. Gõ tiếng Anh hoặc tiếng Việt để lọc; bấm tên để nhảy tới thẻ giải thích đầy đủ.</p>
+      </div>
+      <div class="search">
+        <input id="q" type="search" placeholder="Ví dụ: logits, softmax, chuẩn hoá, GRU…" aria-label="Tìm thuật ngữ" autocomplete="off">
+        <span class="hits" id="hits"></span>
+      </div>
+      <div class="gloss" id="gloss"></div>
+    </section>
+
+    <!-- 15 -->
+    <section class="ch" id="lo-trinh">
+      <div class="ch-head">
+        <div class="ch-num">Chương 15</div>
+        <h2>Lộ trình luyện TensorTonic</h2>
+        <p class="why">Toàn bộ bài tập ở trên gom lại theo thứ tự nên làm: đi theo pipeline, trong mỗi chương làm bài Easy trước. Đánh dấu bài đã làm; tiến độ chỉ lưu trên trình duyệt của bạn.</p>
+      </div>
+      <div class="road-tools" role="group" aria-label="Lọc theo độ khó">
+        <button class="chip-btn" type="button" data-f="all" aria-pressed="true">Tất cả</button>
+        <button class="chip-btn" type="button" data-f="Easy" aria-pressed="false">Easy</button>
+        <button class="chip-btn" type="button" data-f="Medium" aria-pressed="false">Medium</button>
+        <button class="chip-btn" type="button" data-f="Hard" aria-pressed="false">Hard</button>
+        <button class="chip-btn" type="button" data-f="todo" aria-pressed="false">Chưa làm</button>
+        <span class="progress" id="progress"></span>
+      </div>
+      <div class="road" id="road"></div>
+    </section>
+
+    <footer>
+      Số liệu lấy từ <code>runs/best/metrics.json</code> (run <code>20261126_230658</code>, 31 lớp, VSLNet) và đếm tham số trực tiếp từ <code>build_model</code>. Số dòng code theo <code>src/</code> tại commit <code>5bc3292</code>. Độ khó bài tập lấy từ trang TensorTonic ngày 28/11/2026; một số bài cần tài khoản để nộp.
+    </footer>
+  </main>
+</div>
+
+<script>
+const TT = "https://www.tensortonic.com/problems/";
+const SECTIONS = [
+  ["tong-quan", "0", "Bức tranh tổng thể"],
+  ["tensor", "1", "Tensor và vòng học"],
+  ["hinh-hoc", "2", "Hình học landmark"],
+  ["chuoi", "3", "Xử lý chuỗi thời gian"],
+  ["chuan-hoa", "4", "Chuẩn hoá"],
+  ["chia-du-lieu", "5", "Chia dữ liệu và CV"],
+  ["augment", "6", "Tăng cường dữ liệu"],
+  ["kien-truc", "7", "Kiến trúc mạng"],
+  ["loss", "8", "Hàm mất mát"],
+  ["toi-uu", "9", "Tối ưu hoá"],
+  ["ensemble", "10", "Ensemble và từ chối"],
+  ["danh-gia", "11", "Đánh giá"],
+  ["realtime", "12", "Suy luận thời gian thực"],
+];
+const SEC_NUM = Object.fromEntries(SECTIONS.map(s => [s[0], s[1]]));
+
+// [slug, tiêu đề, độ khó, chương, liên hệ với dự án]
+const PROBLEMS = [
+  ["one-hot-encoding", "One-Hot Encoding (Multi-class)", "Medium", "tensor", "Nhãn y là chỉ số lớp; label smoothing làm việc trên dạng one-hot mềm."],
+  ["pad-sequences", "Pad Sequences", "Medium", "tensor", "Cách phổ biến để gom chuỗi khác độ dài; so với cách co giãn về 30 frame của dự án."],
+  ["dl-mini-batch-training", "Mini-Batch Training Loop", "Medium", "tensor", "Khung vòng lặp mà train_one mở rộng thêm augment, EMA, early stopping."],
+  ["pytorch-softmax-from-scratch", "Softmax from Scratch", "Easy", "tensor", "Biến logits (B, 31) thành xác suất."],
+
+  ["vector-norm-3d", "Compute 3D Vector Norm", "Easy", "hinh-hoc", "palm_size, độ dài đốt ngón, chuẩn L2 trong _unit_vector."],
+  ["normalize-3d", "Normalize 3D Vectors", "Easy", "hinh-hoc", "palm_dir, palm_normal, hướng 5 ngón đều là vector đơn vị."],
+  ["euclidean-distance", "Implement Euclidean Distance", "Easy", "hinh-hoc", "Khoảng cách tay tới 11 neo cơ thể và giữa hai tay trước khi qua kernel exp(−γd²)."],
+  ["numpy-angle-features", "Angle Features", "Easy", "hinh-hoc", "15 góc khớp ngón trong handshape và finger_curl."],
+  ["angle-between-3d", "Angle Between 3D Vectors", "Medium", "hinh-hoc", "Làm bằng cả arccos và atan2 để thấy vì sao v7 đổi sang atan2."],
+  ["rotate-around-z", "Rotate 3D Point Around Z-Axis", "Medium", "hinh-hoc", "Roll của camera trong view.py; mở rộng sang yaw, pitch."],
+  ["homogeneous-transform", "Apply 4×4 Homogeneous Transform", "Medium", "hinh-hoc", "Xoay + tịnh tiến quanh giữa vai khi giả lập camera."],
+
+  ["linear-interpolation", "Linear Interpolation", "Medium", "chuoi", "Co giãn chuỗi về 30 frame và lấp đoạn NaN ngắn trong _fill_gaps."],
+  ["impute-missing", "Impute Missing Values (mean/median)", "Hard", "chuoi", "Các chiến lược xử lý dữ liệu thiếu; dự án nội suy đoạn ngắn, điền 0 + cờ cho đoạn dài."],
+
+  ["zscore-standardization", "Implement z-Score Standardization", "Easy", "chuan-hoa", "Chính là Normalizer, trước khi thêm phần presence-aware."],
+  ["jax-l01-masked-mean", "Masked Mean Without Boolean Indexing", "Easy", "chuan-hoa", "μ, σ của từng tay chỉ tính trên frame tay đó có mặt."],
+  ["numpy-normalize-columns", "Normalize Columns", "Medium", "chuan-hoa", "Chuẩn hoá theo cột trên ma trận (N·T, D) như Normalizer.__init__."],
+
+  ["ml-kfold-cv", "K-Fold Cross-Validation", "Easy", "chia-du-lieu", "5 fold của run_training, mỗi fold sinh một model trong ensemble."],
+  ["kfold-split", "K-Fold Split (Indices Only)", "Hard", "chia-du-lieu", "Tự sinh chỉ số fold như make_folds trả về fold_of."],
+  ["stratified-split", "Stratified Train/Test Split", "Hard", "chia-du-lieu", "Giữ tỉ lệ lớp; thêm điều kiện group là thành StratifiedGroupKFold."],
+
+  ["cv-mixup", "MixUp Augmentation", "Easy", "augment", "Nhánh mixup trong train_one (đang tắt bằng mixup_alpha = 0)."],
+  ["dropout-training", "Implement Dropout (Training Mode)", "Medium", "augment", "Dropout và cách AdaptiveController đổi xác suất dropout theo s."],
+  ["bilinear-interpolation", "Bilinear Interpolation", "Medium", "augment", "Phép nội suy bên trong F.grid_sample của time-warp."],
+
+  ["linear-layer-forward", "Linear Layer Forward Pass in Python", "Easy", "kien-truc", "Mọi encoder trong GroupStem và đầu phân lớp."],
+  ["rnn-step-forward", "RNN Step Forward (Tanh Cell)", "Easy", "kien-truc", "Bước nền tảng trước khi hiểu GRU."],
+  ["cosine-similarity", "Implement Cosine Similarity in Python (NumPy)", "Easy", "kien-truc", "CosineHead và phép so khớp trong bộ nhớ cá nhân."],
+  ["gelu", "Implement GELU Activation in Python", "Medium", "kien-truc", "Hàm kích hoạt của stem, khối conv và Transformer."],
+  ["dl-layer-normalization", "Layer Normalization", "Medium", "kien-truc", "LayerNorm trong GroupStem, trước đầu phân lớp và trong PreLNBlock."],
+  ["dl-batch-normalization", "Batch Normalization", "Medium", "kien-truc", "BatchNorm1d sau Conv 1×1 trong MultiScaleBlock."],
+  ["dl-depthwise-separable-convolution", "Depthwise Separable Convolution", "Medium", "kien-truc", "Lõi của MultiScaleBlock (bản 2D, ý tưởng y hệt bản 1D)."],
+  ["pytorch-residual-block", "Residual Block", "Medium", "kien-truc", "x + drop(act(bn(pw(dw(x))))) trong MultiScaleBlock."],
+  ["gru-cell-forward", "Build a Mini GRU Cell (Forward Pass)", "Medium", "kien-truc", "nn.GRU hai chiều của VSLNet."],
+  ["dl-gru-cell", "GRU Cell", "Medium", "kien-truc", "Bản đầy đủ hơn của cổng z, r và trạng thái ứng viên."],
+  ["global-avg-pooling", "Implement Global Average Pooling", "Medium", "kien-truc", "Nhánh h.mean(1) trong phép gộp thời gian."],
+  ["dl-scaled-dot-product-attention", "Scaled Dot-Product Attention in Python", "Medium", "kien-truc", "Phép tính trong nn.MultiheadAttention của SignFormer."],
+  ["positional-encoding", "Implement Sinusoidal Positional Encoding", "Medium", "kien-truc", "_sinusoid ở training.py:551, giúp SignFormer chạy với mọi T."],
+  ["cv-vit-attention-block", "ViT Multi-Head Self-Attention", "Medium", "kien-truc", "Gần với PointShapeEncoder: mỗi điểm bàn tay là một token như patch ảnh."],
+  ["dl-multi-head-attention", "Multi-Head Attention", "Hard", "kien-truc", "4 đầu attention trong PreLNBlock."],
+
+  ["hinge-loss", "Implement Hinge Loss (Binary SVM)", "Easy", "loss", "Bản nhị phân của hard_negative_margin_loss."],
+  ["softmax-function", "Implement Numerically Stable Softmax", "Medium", "loss", "Softmax trừ max; dùng ở attention pooling, ensemble, KL."],
+  ["calculus-softmax-stability", "Softmax Numerical Stability & Log-Sum-Exp", "Medium", "loss", "Vì sao CE tính qua log-softmax."],
+  ["cross-entropy-loss", "Implement Cross-Entropy Loss in Python", "Medium", "loss", "Thành phần chính của loss."],
+  ["label-smoothing-loss", "Label Smoothing Loss", "Medium", "loss", "label_smoothing = 0,1 trong Config."],
+  ["kl-divergence", "Implement KL Divergence in Python (NumPy)", "Medium", "loss", "Ràng buộc nhất quán khi chèn tay phụ (hand_consistency = 0,12)."],
+  ["calculus-softmax-ce-gradient", "Softmax + Cross-Entropy Gradient", "Hard", "loss", "Chứng minh gradient = p − onehot(y)."],
+
+  ["adamw-optimizer", "Implement AdamW (Decoupled Weight Decay)", "Easy", "toi-uu", "Optimizer của dự án, weight_decay = 0,05."],
+  ["optim-linear-warmup", "Linear Warmup", "Easy", "toi-uu", "5 epoch warmup đầu tiên."],
+  ["cosine-annealing-lr", "Cosine Annealing LR Scheduler", "Easy", "toi-uu", "Pha giảm LR sau warmup."],
+  ["warmup-decay-lr", "Warmup + Linear Decay LR Schedule", "Easy", "toi-uu", "So sánh decay tuyến tính với cosine của dự án."],
+  ["exponential-moving-average", "Exponential Moving Average", "Easy", "toi-uu", "Lớp EMA giữ bản trọng số mượt (decay 0,99)."],
+  ["gradient-clipping", "Gradient Clipping (Global Norm)", "Medium", "toi-uu", "clip_grad_norm_(…, 1.0) mỗi bước."],
+  ["pytorch-early-stopping", "Early Stopping", "Hard", "toi-uu", "patience = 10, min_epochs = 15, chỉ chọn best sau warmup + 5."],
+
+  ["jax-l04-ensemble-in-axes", "Model Ensemble with in_axes", "Medium", "ensemble", "Chạy nhiều model rồi gộp như VSLEnsemble."],
+  ["expected-calibration-error", "Expected Calibration Error", "Medium", "ensemble", "Đo xem temperature scaling có giúp xác suất đáng tin hơn không."],
+  ["threshold-under-precision-constraint", "Choose a Threshold Under a Precision Constraint", "Medium", "ensemble", "Cùng ý tưởng với choose_reject_threshold (acc ≥ 95 %, coverage ≥ 50 %)."],
+
+  ["cv-topk-accuracy", "Top-K Classification Accuracy", "Easy", "danh-gia", "top5 trong eval_metrics và oof_report."],
+  ["metrics-f1-micro", "Implement Micro-F1", "Easy", "danh-gia", "Làm xong thì đổi sang macro-F1 như metrics.json."],
+  ["confusion-matrix-norm", "Compute Confusion Matrix with Normalization", "Hard", "danh-gia", "confusion_pairs và confusion_matrix trong evaluation."],
+
+  ["cosine-embedding-loss", "Implement Cosine Embedding Loss in Python", "Easy", "realtime", "Nếu muốn train embedding cho bộ nhớ cá nhân thay vì dùng embedding sẵn."],
+  ["triplet-loss", "Implement Triplet Loss", "Easy", "realtime", "Học embedding để ký hiệu cùng lớp gần nhau, khác lớp xa nhau."],
+];
+const PROB = Object.fromEntries(PROBLEMS.map(p => [p[0], p]));
+
+/* Thuật ngữ. Trường: id, en (tên chuyên ngành), vi (tên tiếng Việt), s (chương),
+   what (là gì), ex (ví dụ), why (để làm gì), proj (trong dự án), tt (slug TensorTonic).
+   Công thức (f, TeX) và chỗ trong code (c) nằm ở object MATH bên dưới, cùng khoá id.
+   Trong chuỗi: `code` → <code>, **đậm** → <b>. */
+const TERMS = [
+  // ---------- 0. Tổng quan ----------
+  { id: "machine-learning", en: "Machine Learning", vi: "Học máy", s: "tong-quan",
+    what: "Cách làm chương trình bằng cách cho máy tự tìm quy luật từ nhiều ví dụ có đáp án, thay vì lập trình viên tự viết luật.",
+    why: "Viết luật tay để phân biệt 31 ký hiệu từ 418 con số mỗi frame là gần như không thể; học từ ví dụ thì làm được.",
+    proj: "Máy học từ 421 clip đã gắn nhãn (`data/raw/<lớp>/<id>.mp4`)." },
+  { id: "deep-learning", en: "Deep Learning / Neural Network", vi: "Học sâu / mạng nơ-ron", s: "tong-quan",
+    what: "Mô hình gồm nhiều lớp biến đổi chồng lên nhau; mỗi lớp là phép nhân ma trận cộng hàm phi tuyến. Các con số trong ma trận được học từ dữ liệu.",
+    why: "Tự học được quan hệ phức tạp (ví dụ: thủ hình + chuyển động nào thì là dấu sắc) mà không cần mô tả bằng tay.",
+    proj: "VSLNet viết bằng PyTorch, ~300 nghìn tham số mỗi model (`training.py:449`)." },
+  { id: "landmark", en: "Landmark", vi: "Điểm mốc", s: "tong-quan",
+    what: "Toạ độ (x, y, z) của một khớp cơ thể hay khớp ngón tay, do MediaPipe ước lượng từ ảnh.",
+    ex: "Điểm 0 của bàn tay là cổ tay, điểm 8 là đầu ngón trỏ, điểm 4 là đầu ngón cái.",
+    why: "Nén một ảnh hàng triệu pixel thành vài trăm con số, bỏ đi nền, quần áo, ánh sáng, chỉ giữ hình học của cơ thể.",
+    proj: "Mỗi frame có 33 điểm pose và 21 điểm cho mỗi tay. Bản gốc lưu ở `landmarks.npz` dạng `(T, 33, 4)` và `(T, 2, 21, 3)`, NaN khi không thấy." },
+  { id: "mediapipe", en: "MediaPipe", vi: "Thư viện MediaPipe", s: "tong-quan",
+    what: "Bộ mô hình thị giác máy tính của Google đã được huấn luyện sẵn (pretrained), nhận ảnh và trả về landmark người, tay.",
+    why: "Dự án không phải tự train mô hình nhận diện khớp tay (việc đó cần hàng triệu ảnh); chỉ dùng kết quả của nó.",
+    proj: "`src/builtin/mediapipe_builtin/` bọc hai file `.task` (pose, hand). Ở chế độ VIDEO, timestamp truyền vào phải tăng dần nghiêm ngặt." },
+  { id: "feature", en: "Feature / Feature vector", vi: "Đặc trưng / vector đặc trưng", s: "tong-quan",
+    what: "Một con số mô tả một khía cạnh của dữ liệu (ví dụ góc gập của ngón trỏ). Vector đặc trưng là danh sách các con số đó xếp theo thứ tự cố định.",
+    why: "Đưa hiểu biết về ngôn ngữ ký hiệu (thủ hình, vị trí, hướng, chuyển động) vào dạng số để mạng xử lý.",
+    proj: "`extract()` cho 367 đặc trưng mỗi frame; `process_sequence` thêm 51 cột chuyển động thành 418." },
+  { id: "class-label", en: "Class / Label", vi: "Lớp / nhãn", s: "tong-quan",
+    what: "Lớp là một đáp án có thể có của bài toán. Nhãn là đáp án đúng gắn với một mẫu cụ thể.",
+    ex: "Lớp: `a`, `b`, `cảm ơn`… Một clip người ký «cảm ơn» có nhãn `cảm ơn`, lưu dưới dạng số 4.",
+    why: "Mô hình học cách ánh xạ đặc trưng → lớp; nhãn là thứ dùng để chấm đúng sai lúc học.",
+    proj: "31 lớp trong `runs/best/classes.json`; tên lớp là tiếng Việt đã chuẩn hoá Unicode NFC." },
+  { id: "sample-dataset", en: "Sample / Dataset", vi: "Mẫu / tập dữ liệu", s: "tong-quan",
+    what: "Một mẫu là một cặp (đầu vào, nhãn). Tập dữ liệu là tập hợp mọi mẫu.",
+    proj: "Một mẫu = một clip ký hiệu. 421 mẫu gốc, 1 395 mẫu sau khi thêm 974 bản augment. Lưu ở `data/processed/<lớp>/<id>/`." },
+  { id: "train-infer", en: "Training / Inference", vi: "Huấn luyện / suy luận", s: "tong-quan",
+    what: "Huấn luyện là quá trình điều chỉnh tham số để dự đoán khớp với nhãn. Suy luận là dùng tham số đã cố định để dự đoán dữ liệu mới.",
+    why: "Hai pha có hành vi khác nhau: dropout, augment, BatchNorm chỉ hoạt động kiểu «học» khi train; lúc suy luận phải gọi `model.eval()`.",
+    proj: "Huấn luyện: `notebooks/train.ipynb` → `run_training`. Suy luận: `src/model/predict.py`, `notebooks/realtime_predict.ipynb`." },
+  { id: "checkpoint", en: "Checkpoint", vi: "Điểm lưu model", s: "tong-quan",
+    what: "File lưu trọng số đã học cùng mọi thứ cần để dùng lại model.",
+    why: "Train một lần, dùng nhiều nơi (notebook, server, web) mà không phải train lại.",
+    proj: "`runs/best/ensemble.pt` chứa cấu hình, trọng số 6 model, `means`/`stds`, nhiệt độ, ngưỡng từ chối, danh sách lớp, `feature_version`. Giữ 5 run gần nhất trong `runs/`." },
+
+  // ---------- 1. Tensor và vòng học ----------
+  { id: "tensor", en: "Tensor", vi: "Mảng nhiều chiều", s: "tensor",
+    what: "Mảng số có số chiều bất kỳ: số vô hướng là 0 chiều, vector 1 chiều, ma trận 2 chiều, từ 3 chiều trở lên gọi chung là tensor. Tensor của PyTorch còn chạy được trên GPU và tự ghi lại phép tính để tính đạo hàm.",
+    ex: "Một clip là tensor shape `(30, 418)` = 12 540 số. Cả tập là `(1395, 30, 418)`.",
+    why: "Biểu diễn mọi dữ liệu theo một dạng thống nhất để tính song song hàng nghìn phép nhân cùng lúc.",
+    proj: "`X` trong `.npz` là tensor `(N, T, D)`; mọi hàm trong `training.py` nhận và trả tensor.", tt: "dl-mini-batch-training" },
+  { id: "shape-axis", en: "Shape / Axis (dim)", vi: "Kích thước / trục", s: "tensor",
+    what: "Shape là bộ số phần tử theo từng trục. Trục (dim) là chiều mà một phép toán chạy dọc theo.",
+    why: "Đọc code nhanh nhất là theo dõi shape; phần lớn lỗi là lấy trung bình sai trục hoặc quên đổi trục.",
+    proj: "Comment `# (B, T, D)` khắp `training.py`; `transpose(1, 2)` trước Conv1d vì Conv1d cần `(B, kênh, T)`." },
+  { id: "batch", en: "Batch / Mini-batch", vi: "Lô dữ liệu", s: "tensor",
+    what: "Nhóm B mẫu được đưa qua mạng cùng lúc; gradient tính trên cả nhóm.",
+    why: "Tận dụng tính song song của GPU, và gradient trung bình trên nhiều mẫu ít nhiễu hơn trên 1 mẫu.",
+    proj: "`bs = clip(n // 20, 16, 64)`, khoảng 55 với ~1 100 mẫu train. Trên MPS mọi lượt forward giữ cùng kích thước batch vì đổi kích thước làm GRU biên dịch lại." },
+  { id: "parameter", en: "Parameter / Weight / Bias", vi: "Tham số / trọng số / độ lệch", s: "tensor",
+    what: "Các con số bên trong mạng được thay đổi khi học: trọng số W (ma trận nhân) và bias b (số cộng thêm).",
+    ex: "Lớp Linear 576 → 31 có 576·31 = 17 856 trọng số + 31 bias = 17 887 tham số.",
+    why: "Toàn bộ «kiến thức» model học được nằm trong các con số này.",
+    proj: "299 564 tham số mỗi model; `state_dicts` trong `ensemble.pt` lưu chúng." },
+  { id: "hyperparameter", en: "Hyperparameter", vi: "Siêu tham số", s: "tensor",
+    what: "Thiết lập do người chọn trước khi huấn luyện, không học bằng gradient: tốc độ học, số epoch, tỉ lệ dropout, kích thước lớp ẩn…",
+    why: "Quyết định cách model học; chọn sai thì model không học được hoặc học thuộc.",
+    proj: "dataclass `Config` (`training.py:51`): `lr=0.002`, `d_model=128`, `gru_hidden=96`, `label_smoothing=0.1`… Lưu lại trong `metrics.json[\"config\"]`." },
+  { id: "forward", en: "Forward pass", vi: "Lan truyền xuôi", s: "tensor",
+    what: "Đưa đầu vào lần lượt qua các lớp để ra đầu ra.",
+    proj: "`VSLNet.forward` (`training.py:469`) = `head(drop(norm(pool(x))))`." },
+  { id: "logits", en: "Logits", vi: "Điểm thô của lớp", s: "tensor",
+    what: "Vector điểm số mạng trả về cho từng lớp **trước** softmax. Mỗi phần tử là một số thực bất kỳ (âm, dương, lớn, nhỏ), chưa phải xác suất; lớp có logit cao hơn là lớp model nghiêng về hơn.",
+    ex: "Với 3 lớp: logits = [2,0; 1,0; 0,1] nghĩa là model nghiêng về lớp 0, nhưng chưa nói được «chắc bao nhiêu phần trăm».",
+    why: "Lớp Linear cuối cho ra số tự do nên tự nhiên là logits. Loss (cross-entropy), nhiệt độ T và margin loss đều tính trực tiếp trên logits vì ổn định số học hơn tính trên xác suất.",
+    proj: "Đầu phân lớp Linear 576 → 31 trả logits `(B, 31)`. Logits OOF được lưu để fit nhiệt độ; margin loss so logit lớp đúng với logit lớp sai lớn nhất." },
+  { id: "softmax", en: "Softmax", vi: "Hàm softmax", s: "tensor",
+    what: "Hàm biến một vector logits thành phân phối xác suất: mọi phần tử dương, tổng bằng 1, giữ nguyên thứ tự lớn nhỏ.",
+    ex: "z = [2,0; 1,0; 0,1] → exp = [7,389; 2,718; 1,105], tổng 11,212 → **p = [0,659; 0,242; 0,099]**.",
+    why: "Đọc đầu ra thành độ tin (65,9 %) để so với ngưỡng và lấy trung bình giữa nhiều model. Trong attention, softmax biến điểm thành trọng số cộng lại bằng 1. Trừ max trước khi exp để không tràn số (exp(1000) = ∞).",
+    proj: "`VSLEnsemble` lấy `softmax(logits / T)` của 6 model rồi trung bình; attention pooling dùng softmax trên 30 frame; KL dùng softmax của dự đoán sạch.", tt: "pytorch-softmax-from-scratch" },
+  { id: "argmax", en: "Argmax / Top-k", vi: "Chỉ số lớn nhất / k lớn nhất", s: "tensor",
+    what: "argmax trả về **vị trí** của phần tử lớn nhất (không phải giá trị). Top-k trả về k vị trí lớn nhất.",
+    ex: "argmax([0,659; 0,242; 0,099]) = 0 → dự đoán lớp 0.",
+    why: "Biến xác suất thành một quyết định; top-k dùng để hiện các ứng viên thay thế.",
+    proj: "`logits.argmax(1) == y` để tính accuracy; `predict_topk` trả 3 lớp đầu kèm xác suất." },
+  { id: "one-hot", en: "One-hot encoding", vi: "Mã hoá one-hot", s: "tensor",
+    what: "Biểu diễn lớp c trong C lớp bằng vector dài C, toàn số 0 trừ số 1 ở vị trí c.",
+    ex: "Lớp 2 trong 4 lớp → [0, 0, 1, 0].",
+    why: "Biến nhãn thành một phân phối xác suất «chắc chắn 100 %» để so với phân phối model dự đoán.",
+    proj: "`F.one_hot` trong `hard_negative_margin_loss` để loại lớp đúng khi tìm lớp sai mạnh nhất. `F.cross_entropy` nhận thẳng chỉ số lớp (tương đương one-hot).", tt: "one-hot-encoding" },
+  { id: "loss", en: "Loss function", vi: "Hàm mất mát", s: "tensor",
+    what: "Một con số đo dự đoán sai đến mức nào; càng nhỏ càng tốt. Huấn luyện chính là tìm tham số làm loss nhỏ nhất.",
+    why: "Cho máy một mục tiêu đo được và có đạo hàm để biết nên chỉnh tham số theo hướng nào.",
+    proj: "Tổng 4 thành phần, chi tiết ở chương 8." },
+  { id: "gradient", en: "Gradient", vi: "Gradient (véc-tơ đạo hàm)", s: "tensor",
+    what: "Vector gồm đạo hàm riêng của loss theo từng tham số. Nó chỉ hướng làm loss tăng nhanh nhất; đi ngược hướng đó thì loss giảm.",
+    ex: "Nếu ∂L/∂w = +0,3 thì tăng w một chút làm loss tăng ~0,3 lần lượng đó → nên giảm w.",
+    why: "Là tín hiệu duy nhất cho biết phải chỉnh 299 564 tham số như thế nào.",
+    proj: "Gradient được cắt về chuẩn ≤ 1,0 trước khi cập nhật (`training.py:930`)." },
+  { id: "backprop", en: "Backpropagation / Autograd", vi: "Lan truyền ngược / tự tính đạo hàm", s: "tensor",
+    what: "Thuật toán tính gradient cho mọi tham số bằng quy tắc dây chuyền (chain rule), đi ngược từ loss về đầu vào. PyTorch tự làm việc này (autograd).",
+    proj: "`scaler.scale(loss).backward()` trong `train_one`." },
+  { id: "epoch-step", en: "Epoch / Step (iteration)", vi: "Vòng dữ liệu / bước cập nhật", s: "tensor",
+    what: "Một step là một lần cập nhật tham số trên một batch. Một epoch là duyệt hết tập train một lần.",
+    proj: "Tối đa 60 epoch; các fold đạt tốt nhất ở epoch 10–15; model toàn bộ dữ liệu chạy 25 epoch." },
+  { id: "seq-cls", en: "Sequence classification", vi: "Phân loại chuỗi", s: "tensor",
+    what: "Đầu vào là một chuỗi theo thời gian, đầu ra là **một** nhãn cho cả chuỗi (khác với gán nhãn cho từng frame).",
+    why: "Một ký hiệu chỉ có nghĩa khi xem cả chuyển động; một frame đơn lẻ không phân biệt được dấu sắc với dấu huyền.",
+    proj: "Một cửa sổ 30 frame → một trong 31 ký hiệu." },
+  { id: "padding", en: "Padding / Mask", vi: "Đệm / mặt nạ", s: "tensor",
+    what: "Padding thêm giá trị (thường là 0) vào chuỗi ngắn cho đủ độ dài; mask đánh dấu phần nào là thật để mạng bỏ qua phần đệm.",
+    why: "Batch cần mọi mẫu cùng shape.",
+    proj: "Theo thời gian, dự án **không** pad mà co giãn mọi clip về đúng 30 frame. Padding chỉ dùng cho ảnh: `frame_padding` đệm mỗi frame thành 1280×1280.", tt: "pad-sequences" },
+  { id: "device", en: "Device (CPU / CUDA / MPS)", vi: "Thiết bị tính toán", s: "tensor",
+    what: "Nơi tensor được lưu và tính: CPU, GPU NVIDIA (CUDA) hoặc GPU của Mac (MPS).",
+    why: "GPU nhanh hơn CPU hàng chục lần với phép nhân ma trận.",
+    proj: "`get_device()` chọn cuda → mps → cpu. Mixed precision (AMP) chỉ bật trên CUDA." },
+
+  // ---------- 2. Hình học ----------
+  { id: "vector", en: "Vector", vi: "Véc-tơ", s: "hinh-hoc",
+    what: "Một mũi tên trong không gian 3D, ghi bằng ba số (x, y, z). Hiệu hai điểm cho vector đi từ điểm này tới điểm kia.",
+    proj: "Hướng ngón = đầu ngón − gốc ngón; `face_vec` = tâm bàn tay − mũi; `inter_hand_vec` = tâm tay trái − tâm tay phải." },
+  { id: "norm", en: "Norm (L2) / Euclidean distance", vi: "Độ dài / khoảng cách Euclid", s: "hinh-hoc",
+    what: "Độ dài của vector; khoảng cách giữa hai điểm là độ dài của hiệu chúng.",
+    ex: "v = (3, 4, 0) → ‖v‖ = 5.",
+    why: "Đo khoảng cách, đo độ lớn, và chia để chuẩn hoá kích thước.",
+    proj: "`palm_size = ‖P9 − P0‖` (cổ tay tới gốc ngón giữa); `hand_scale` = độ dài trung bình 5 xương lòng bàn tay / độ rộng vai.", tt: "vector-norm-3d" },
+  { id: "unit-vector", en: "Unit vector", vi: "Véc-tơ đơn vị", s: "hinh-hoc",
+    what: "Vector có độ dài 1, chỉ giữ hướng.",
+    ex: "(3, 4, 0) → (0,6; 0,8; 0).",
+    why: "So sánh hướng mà không bị ảnh hưởng bởi tay to hay nhỏ, gần hay xa camera. ε = 1e-6 tránh chia cho 0.",
+    proj: "`_unit_vector` (`extract.py:201`) cho `palm_dir`, `palm_normal`, hướng 5 ngón.", tt: "normalize-3d" },
+  { id: "dot", en: "Dot product", vi: "Tích vô hướng", s: "hinh-hoc",
+    what: "Nhân từng thành phần rồi cộng lại. Bằng tích độ dài nhân cos góc giữa hai vector.",
+    ex: "(1, 0, 0) · (0,6; 0,8; 0) = 0,6 → hai hướng lệch nhau ~53°.",
+    why: "Đo hai hướng giống nhau bao nhiêu (1 = cùng hướng, 0 = vuông góc, −1 = ngược), và chiếu một vector lên một trục.",
+    proj: "15 cos khớp ngón, 4 độ xoè giữa các ngón, chiếu ngón cái lên trục ngang bàn tay (ngón cái nằm dưới ngón nào: t, n, m)." },
+  { id: "cross", en: "Cross product", vi: "Tích có hướng", s: "hinh-hoc",
+    what: "Từ hai vector cho ra vector thứ ba vuông góc với cả hai, độ dài bằng ‖a‖‖b‖ sin θ, chiều theo quy tắc bàn tay phải.",
+    why: "Lấy pháp tuyến (hướng vuông góc) của một mặt phẳng. Chú ý: tích có hướng đổi dấu khi soi gương.",
+    proj: "`palm_normal = (P5 − P0) × (P17 − P0)` cho biết lòng bàn tay quay về đâu; với tay trái lật dấu để hai tay đối xứng." },
+  { id: "atan2", en: "atan2 / Joint angle", vi: "Hàm atan2 / góc khớp", s: "hinh-hoc",
+    what: "atan2(y, x) trả về góc từ hai thành phần, đúng ở mọi góc. Góc giữa hai vector tính bằng atan2 của sin và cos.",
+    ex: "cos 16° = 0,96 còn cos 32° = 0,85: dùng cos thì phần gập nhẹ bị nén lại; dùng góc (radian) thì tuyến tính theo độ gập.",
+    why: "arccos có đạo hàm tiến ra vô cùng khi cos → 1, nên ngón gần thẳng làm nhiễu nhỏ của MediaPipe bị khuếch đại thành góc rung mạnh.",
+    proj: "`_curl_stats` (`extract.py:257`) từ bản đặc trưng v7.", tt: "angle-between-3d" },
+  { id: "basis", en: "Coordinate frame / Change of basis", vi: "Hệ trục toạ độ / đổi hệ trục", s: "hinh-hoc",
+    what: "Chọn một gốc O và ba trục đơn vị vuông góc (e1, e2, e3) gắn với một vật; toạ độ mới của điểm P là tích vô hướng của (P − O) với từng trục.",
+    why: "Mô tả hình dạng bàn tay mà không phụ thuộc tay đặt ở đâu, nghiêng thế nào, to hay nhỏ.",
+    proj: "Hai hệ trục: hệ thân (gốc giữa hai vai, đơn vị độ rộng vai, trục dọc luôn là phương thẳng đứng của ảnh) và hệ lòng bàn tay cho `hand_local` (20 điểm × 3, chia `palm_size`)." },
+  { id: "invariance", en: "Invariance", vi: "Tính bất biến", s: "hinh-hoc",
+    what: "Đặc trưng bất biến với một phép biến đổi nếu giá trị không đổi khi đầu vào bị biến đổi như vậy (dịch chuyển, xoay, phóng to, soi gương).",
+    ex: "Góc gập ngón trỏ không đổi dù tay ở trước ngực hay cạnh má.",
+    why: "Model không phải học lại cùng một thủ hình ở mọi vị trí và góc, nên cần ít dữ liệu hơn nhiều. Biến đổi nào không làm bất biến được bằng công thức thì dạy bằng augmentation.",
+    proj: "`finger_curl` bất biến với xoay, dịch, tỉ lệ và gương; pitch camera thì dạy bằng `rotate_view_pitch`." },
+  { id: "mirror", en: "Mirror symmetry / Equivariance", vi: "Đối xứng gương / tính đẳng biến", s: "hinh-hoc",
+    what: "Tay trái là ảnh gương của tay phải. Đẳng biến nghĩa là: biến đổi đầu vào thì đầu ra biến đổi theo một cách đã biết trước (ví dụ đảo dấu trục x).",
+    why: "Cho phép dùng chung một bộ trọng số cho cả hai tay, và chuyển dữ liệu tay trái sang hệ tay phải.",
+    proj: "`LEFT_MIRROR = (perm, sign)`: đảo dấu các cột x, đổi chỗ neo má trái/phải, vai trái/phải. `mirror_data` khi dự đoán phải khớp với lúc thu dữ liệu." },
+  { id: "rbf", en: "Gaussian (RBF) kernel", vi: "Kernel Gauss", s: "hinh-hoc",
+    what: "Hàm biến khoảng cách thành độ gần trong [0, 1]: bằng 1 khi chạm, giảm nhanh về 0 khi xa. γ càng lớn thì «vùng chạm» càng hẹp.",
+    ex: "γ = 18: d = 0,1 → 0,835; d = 0,5 → 0,011.",
+    why: "Thay đổi nhỏ khi tay ở gần được phóng đại, rung khi tay ở xa bị triệt; lại có đạo hàm mượt (khác với ngưỡng cứng «chạm / không chạm»).",
+    proj: "`body_contact` (γ riêng cho từng neo trong `_ANCHOR_GAMMA`, từ 4 đến 18, trục z nhân 0,25), `hand_contact`, tiếp xúc đầu ngón (γ = 3)." },
+  { id: "rotation", en: "Rotation matrix", vi: "Ma trận xoay", s: "hinh-hoc",
+    what: "Ma trận 3×3 trực chuẩn (Rᵀ R = I, định thức = 1); nhân với một điểm thì xoay điểm đó quanh gốc mà không đổi độ dài.",
+    why: "Giả lập camera đặt ở góc khác để tạo dữ liệu mới.",
+    proj: "`view.py` xoay landmark quanh giữa vai; `rotate_view_pitch` (`extract.py:159`) xoay trực tiếp trên đặc trưng.", tt: "rotate-around-z" },
+  { id: "euler", en: "Yaw / Pitch / Roll", vi: "Góc quay ngang / ngẩng / nghiêng", s: "hinh-hoc",
+    what: "Ba góc mô tả hướng camera: yaw quay trái phải, pitch ngẩng lên cúi xuống, roll nghiêng đầu.",
+    why: "Camera của người dùng không bao giờ đặt giống hệt lúc quay dữ liệu.",
+    proj: "Pitch không được ước lượng từ landmark (z của pose đổi theo ký hiệu nhiều hơn theo camera); thay vào đó augment ngẫu nhiên ±12° (`PITCH_AUG_DEG`), yaw ±20°, roll ±5°." },
+  { id: "world-landmark", en: "Image vs world landmarks", vi: "Landmark ảnh và landmark thế giới", s: "hinh-hoc",
+    what: "Landmark ảnh: x, y chuẩn hoá theo khung hình, z là độ sâu tương đối. Landmark thế giới (`hand_world`): toạ độ thật tính bằng mét, gốc gần tâm bàn tay.",
+    why: "Hai nguồn là hai đầu ra khác nhau của mạng MediaPipe, sai số khác nhau.",
+    proj: "`finger_curl` đo trên cả hai: `hand_world` làm phẳng độ móc ngón, trong khi độ móc là thứ tách `u` khỏi dấu â/ô/ê và `i` khỏi dấu ơ/ư." },
+  { id: "sign-params", en: "Handshape · Location · Orientation · Movement", vi: "Bốn thành tố của ký hiệu", s: "hinh-hoc",
+    what: "Thủ hình: hình dạng bàn tay. Vị trí: tay ở đâu so với cơ thể. Hướng: lòng bàn tay quay về đâu. Chuyển động: tay di chuyển thế nào.",
+    why: "Ngôn ngữ học ký hiệu dùng bốn thành tố này để mô tả mọi ký hiệu; hai ký hiệu khác nhau thường chỉ khác một thành tố.",
+    proj: "Các nhóm cột trong `_GROUPS` chia đúng theo bốn thành tố (xem bảng 418 cột bên dưới)." },
+
+  // ---------- 3. Chuỗi thời gian ----------
+  { id: "time-series", en: "Time series", vi: "Chuỗi thời gian", s: "chuoi",
+    what: "Dãy giá trị đo theo thời gian; thứ tự có ý nghĩa.",
+    proj: "Mỗi cột trong 418 cột là một chuỗi 30 giá trị theo thời gian." },
+  { id: "fps", en: "Frame rate (fps)", vi: "Số khung hình mỗi giây", s: "chuoi",
+    what: "Số frame camera ghi trong một giây.",
+    why: "Các bước «lấp đoạn thiếu ≤ 6 frame» hay «khử gai 1 frame» đếm theo frame, nên fps khác thì ý nghĩa khác.",
+    proj: "Dữ liệu thu ở ~15 fps; `StreamConfig.target_fps = 15` bỏ bớt frame nếu camera nhanh hơn." },
+  { id: "nan", en: "NaN / Missing value", vi: "Giá trị thiếu", s: "chuoi",
+    what: "NaN («Not a Number») đánh dấu chỗ không có giá trị. Mọi phép tính với NaN đều ra NaN.",
+    ex: "NaN + 1 = NaN; trung bình của [1, NaN, 3] = NaN.",
+    why: "Một NaN lọt vào mạng sẽ làm toàn bộ đầu ra và gradient thành NaN, nên phải xử lý trước.",
+    proj: "Tay không được detect → NaN. `process_sequence` lấp đoạn ngắn; `normalize_features` thay NaN còn sót bằng 0.", tt: "impute-missing" },
+  { id: "interp", en: "Linear interpolation", vi: "Nội suy tuyến tính", s: "chuoi",
+    what: "Ước lượng giá trị ở giữa hai điểm đã biết bằng đường thẳng nối chúng.",
+    ex: "Giữa (t=0, x=2) và (t=1, x=6), tại t = 0,25 → x = 3.",
+    proj: "`_fill_gaps` lấp đoạn NaN ≤ 6 frame; `interp1d(kind=\"linear\")` co giãn chuỗi về 30 frame.", tt: "linear-interpolation" },
+  { id: "resample", en: "Resampling", vi: "Lấy mẫu lại", s: "chuoi",
+    what: "Đổi số điểm của một chuỗi bằng cách nội suy trên một lưới thời gian mới.",
+    ex: "Clip 41 frame: lưới cũ linspace(0, 1, 41), lưới mới linspace(0, 1, 30), nội suy từng cột.",
+    why: "Mọi clip có cùng độ dài 30, người ký nhanh hay chậm đều được kéo về cùng thang thời gian.",
+    proj: "Bước 3 của `process_sequence`; cờ tay hợp lệ cũng được co giãn cùng." },
+  { id: "spike", en: "Spike / Outlier", vi: "Gai / giá trị ngoại lai", s: "chuoi",
+    what: "Một giá trị lệch bất thường so với xung quanh, thường do detector lỗi ở một frame.",
+    why: "Chỉ xoá lỗi 1 frame; cử động thật kéo dài nhiều frame nên không thoả điều kiện «hai bên khớp nhau».",
+    proj: "Bước 2 của `process_sequence`, `spike_threshold = 0.45` nhân hệ số theo cột." },
+  { id: "smoothing", en: "Smoothing filter", vi: "Bộ lọc làm mượt", s: "chuoi",
+    what: "Thay mỗi điểm bằng trung bình có trọng số của chính nó và các điểm lân cận. Đây là một phép tích chập 1D với kernel [¼, ½, ¼].",
+    ex: "[0, 0, 4, 0, 0] → [0, 1, 2, 1, 0].",
+    why: "Lấy đạo hàm khuếch đại nhiễu, nên làm mượt trước khi tính vận tốc.",
+    proj: "Bước 4, chỉ áp dụng cho cột nguồn của chuyển động; cột thủ hình giữ nguyên để không mất rung, búng ngón." },
+  { id: "finite-diff", en: "Finite difference / Velocity", vi: "Sai phân / vận tốc", s: "chuoi",
+    what: "Xấp xỉ đạo hàm bằng hiệu các giá trị kề nhau. Sai phân trung tâm dùng điểm trước và sau.",
+    why: "Mô tả chuyển động (tay đi lên, quay cổ tay) chứ không chỉ tư thế tĩnh.",
+    proj: "`np.gradient` trên vị trí tay và hướng bàn tay → 39 cột chuyển động. Nhân T−1 để đơn vị là «độ rộng vai trên cả cửa sổ»." },
+  { id: "stroke", en: "Stroke feature", vi: "Đặc trưng nét", s: "chuoi",
+    what: "Đặc trưng riêng của dự án: với mỗi tay, tìm đoạn 5 frame có độ dời đầu ngón trỏ lớn nhất trong cửa sổ, lấy độ dời của đầu ngón trỏ và tâm bàn tay trên đoạn đó, lặp lại giá trị ở mọi frame.",
+    why: "Dấu sắc, huyền, nặng là cú vẩy chỉ ~4 frame; vận tốc từng frame quá nhỏ nên trước đây model học tắt theo tư thế tĩnh.",
+    proj: "12 cột `STROKE_SLICE`, nhóm stem riêng; `_stroke` (`extract.py:586`)." },
+  { id: "rest-hand", en: "Resting hand / Active presence", vi: "Tay buông / hiện diện chủ động", s: "chuoi",
+    what: "Tay có tâm lòng bàn tay thấp hơn mức bụng (`REST_Y = 0,9` độ rộng vai dưới giữa vai) được coi là đang nghỉ và bị bỏ qua như tay vắng.",
+    why: "Tay buông thõng không mang thông tin nhưng vẫn được detect, làm model nghĩ đây là ký hiệu hai tay.",
+    proj: "`_drop_resting_hands` khi train và `active_presence` khi stream dùng cùng một quy tắc." },
+
+  // ---------- 4. Chuẩn hoá ----------
+  { id: "mean-std", en: "Mean / Standard deviation", vi: "Trung bình / độ lệch chuẩn", s: "chuan-hoa",
+    what: "Trung bình là tổng chia số phần tử. Độ lệch chuẩn đo các giá trị tản ra quanh trung bình bao xa.",
+    ex: "[1, 2, 3, 4, 5] → μ = 3, σ ≈ 1,414.",
+    proj: "Tính theo từng cột trên ma trận `(N·30, 418)` trong `Normalizer`." },
+  { id: "normalization", en: "Normalization / Standardization", vi: "Chuẩn hoá", s: "chuan-hoa",
+    what: "Đưa dữ liệu về một thang chung. Các kiểu hay gặp: z-score (trung bình 0, độ lệch 1), min-max (về [0, 1]), chuẩn hoá L2 (vector độ dài 1).",
+    why: "Cột có thang lớn không lấn át cột thang nhỏ; tối ưu hội tụ nhanh và ổn định hơn.",
+    proj: "z-score theo cột cho đầu vào; LayerNorm, BatchNorm bên trong mạng; chuẩn hoá L2 cho embedding." },
+  { id: "zscore", en: "z-score", vi: "Điểm chuẩn z", s: "chuan-hoa",
+    what: "Một giá trị cách trung bình bao nhiêu lần độ lệch chuẩn.",
+    ex: "x = 0,30, μ = 0,20, σ = 0,05 → z = 2 (cao hơn trung bình 2 độ lệch chuẩn).",
+    why: "Mọi cột có trung bình 0, độ lệch 1, so sánh được với nhau.",
+    proj: "σ tối thiểu 1e-3 để cột gần hằng số không bị chia cho ~0; kết quả kẹp trong [−8, 8].", tt: "zscore-standardization" },
+  { id: "clamp", en: "Clamp / Clip", vi: "Kẹp giá trị", s: "chuan-hoa",
+    what: "Ép một giá trị vào đoạn [a, b]: nhỏ hơn a thành a, lớn hơn b thành b.",
+    ex: "clamp(12, −8, 8) = 8.",
+    why: "Chặn giá trị cực đoan (landmark lỗi) làm hỏng cả batch.",
+    proj: "z ∈ [−8, 8]; nhiệt độ T ∈ [1, 10]. (Cắt gradient ở chương 9 là cắt theo chuẩn, khác với kẹp từng giá trị.)" },
+  { id: "mask", en: "Mask / Masked mean", vi: "Mặt nạ / trung bình có mặt nạ", s: "chuan-hoa",
+    what: "Mask là tensor 0/1 cùng shape, đánh dấu phần tử nào được tính. Trung bình có mặt nạ chỉ lấy trung bình trên phần tử có mask = 1.",
+    ex: "x = [0, 0, 0,4, 0,6], m = [0, 0, 1, 1] → μ = 0,5 (không phải 0,25).",
+    why: "Tay trái vắng ở phần lớn frame (toàn 0). Lấy trung bình cả số 0 đó sẽ kéo μ lệch, làm giá trị tay trái bị phóng đại khi tay trái xuất hiện.",
+    proj: "`presence_norm=True`: μ, σ cột mỗi tay chỉ tính trên frame tay đó có mặt; cột tay vắng nhân 0 (`keep`).", tt: "jax-l01-masked-mean" },
+  { id: "leakage", en: "Data leakage", vi: "Rò rỉ dữ liệu", s: "chuan-hoa",
+    what: "Thông tin từ tập dùng để đánh giá lọt vào lúc huấn luyện, làm điểm đánh giá đẹp giả tạo.",
+    ex: "Tính μ, σ trên toàn bộ dữ liệu; hoặc bản augment của một clip nằm ở train trong khi clip gốc nằm ở validation.",
+    why: "Model trông tốt trên giấy nhưng kém khi dùng thật.",
+    proj: "μ, σ fit riêng trên tập train của mỗi fold; mẫu augment chung group với clip gốc; không augment mẫu đã augment." },
+
+  // ---------- 5. Chia dữ liệu ----------
+  { id: "splits", en: "Train / Validation / Test set", vi: "Tập huấn luyện / kiểm định / kiểm tra", s: "chia-du-lieu",
+    what: "Train dùng để học tham số. Validation dùng để chọn epoch, siêu tham số. Test dùng để đánh giá cuối cùng, chỉ dùng một lần, không được dùng để chỉnh gì.",
+    why: "Đánh giá trên dữ liệu đã dùng để chọn lựa thì sẽ lạc quan quá mức.",
+    proj: "Validation = fold đang giữ ra trong CV. `benchmark.py` đóng vai test: giữ hẳn một lớp ở một buổi quay ra ngoài." },
+  { id: "overfit", en: "Overfitting / Underfitting", vi: "Quá khớp / chưa khớp", s: "chia-du-lieu",
+    what: "Quá khớp: model học thuộc tập train (train tốt, validation kém). Chưa khớp: model chưa học đủ (cả hai đều kém).",
+    why: "Dữ liệu ít (421 clip, ~300 nghìn tham số) nên nguy cơ quá khớp cao.",
+    proj: "`AdaptiveController` theo dõi gap; gap > 0,12 mà model còn sức → tăng điều hoà." },
+  { id: "generalization", en: "Generalization", vi: "Khả năng tổng quát hoá", s: "chia-du-lieu",
+    what: "Khả năng dự đoán đúng trên dữ liệu chưa từng thấy. Đây mới là mục tiêu thật, không phải điểm trên tập train.",
+    proj: "Dữ liệu chưa thấy với dự án là: người ký khác, camera khác, phòng khác, ánh sáng khác." },
+  { id: "cv", en: "Cross-validation (CV)", vi: "Kiểm định chéo", s: "chia-du-lieu",
+    what: "Chia dữ liệu nhiều lần theo nhiều cách khác nhau, mỗi lần train và đánh giá, rồi lấy trung bình.",
+    why: "Một lần chia đơn lẻ có thể may hoặc rủi; trung bình nhiều lần ổn định hơn, và dùng hết dữ liệu cho cả train lẫn đánh giá.",
+    proj: "`cv_acc_mean = 0,9976`, `cv_acc_std = 0,0048` qua 5 fold." },
+  { id: "kfold", en: "K-fold", vi: "Chia K phần", s: "chia-du-lieu",
+    what: "Chia dữ liệu thành K phần bằng nhau; lần lượt mỗi phần làm validation, K−1 phần còn lại làm train. Mỗi mẫu được đánh giá đúng một lần.",
+    ex: "K = 5: fold 0 train trên phần 1–4, đánh giá phần 0; fold 1 train trên 0, 2–4…",
+    proj: "K = 5; `fold_acc = [1,0; 0,988; 1,0; 1,0; 1,0]`; 5 model này trở thành 5 thành viên của ensemble.", tt: "ml-kfold-cv" },
+  { id: "stratified", en: "Stratified split", vi: "Chia phân tầng", s: "chia-du-lieu",
+    what: "Chia sao cho mỗi phần giữ tỉ lệ lớp như toàn bộ dữ liệu.",
+    ex: "Lớp `h` có 30 clip gốc còn `b` có 5: mỗi fold nhận ~6 clip `h` và ~1 clip `b`.",
+    why: "Tránh fold thiếu hẳn một lớp, làm điểm số dao động vô lý.",
+    proj: "Phần «Stratified» trong `StratifiedGroupKFold`.", tt: "stratified-split" },
+  { id: "group-split", en: "Group split", vi: "Chia theo nhóm", s: "chia-du-lieu",
+    what: "Các mẫu cùng một nhóm luôn nằm chung một phía (cùng train hoặc cùng validation).",
+    why: "Bản augment gần như giống clip gốc; nếu chia lẻ thì model «đã thấy đề» khi đánh giá.",
+    proj: "Group = `origin_sample_id` ghi trong meta của mẫu augment; `make_folds` (`training.py:177`)." },
+  { id: "oof", en: "Out-of-fold (OOF) prediction", vi: "Dự đoán ngoài fold", s: "chia-du-lieu",
+    what: "Với mỗi mẫu, dùng dự đoán của model **không** được train trên mẫu đó. Ghép K fold lại được dự đoán sạch cho toàn bộ dữ liệu.",
+    why: "Là dữ liệu «chưa thấy» duy nhất có sẵn để chọn nhiệt độ và ngưỡng từ chối mà không rò rỉ.",
+    proj: "`oof` shape `(N, 31)` và `oof_mask` (chỉ mẫu gốc) trong `run_training`; dùng cho T, ngưỡng, ma trận nhầm lẫn, đối thủ gần nhất." },
+  { id: "shift", en: "Distribution shift / Domain shift", vi: "Lệch phân phối", s: "chia-du-lieu",
+    what: "Dữ liệu khi dùng thật có phân phối khác dữ liệu train (camera, ánh sáng, người ký, góc quay khác).",
+    why: "Model chỉ đúng trên phân phối nó đã thấy; CV không đo được lệch này nếu mọi fold cùng một bối cảnh.",
+    proj: "Lớp `m` quay hai buổi (16/11 và 18/11) cho thấy lệch bối cảnh lớn hơn khác biệt giữa hai ký hiệu. Đây là lý do có `view.py` và `benchmark.py`." },
+
+  // ---------- 6. Augmentation ----------
+  { id: "augmentation", en: "Data augmentation", vi: "Tăng cường dữ liệu", s: "augment",
+    what: "Tạo mẫu mới bằng cách biến đổi mẫu có sẵn theo cách không làm đổi nhãn.",
+    ex: "Clip «cảm ơn» quay từ góc lệch 10° vẫn là «cảm ơn».",
+    why: "Tăng đa dạng dữ liệu khi không quay thêm được, và dạy model bất biến với những biến đổi đó.",
+    proj: "Hai tầng: ngoại tuyến (`augment.py` + `view.py`, 974 mẫu) và trực tuyến (`Augmenter`, mỗi batch một khác)." },
+  { id: "view-aug", en: "View simulation", vi: "Giả lập góc quay", s: "augment",
+    what: "Biến đổi chính landmark như thể quay bằng camera khác (xoay, đổi khoảng cách, đổi phối cảnh), rồi chạy lại `extract` để mọi cột đổi nhất quán.",
+    why: "Thêm nhiễu thẳng lên đặc trưng không tái tạo được việc mọi cột cùng đổi khi camera đổi.",
+    proj: "`random_view`, `simulate_view` trong `view.py`; nếu không có `landmarks.npz` thì quay về nhiễu đặc trưng + `rotate_view_pitch`." },
+  { id: "regularization", en: "Regularization", vi: "Điều hoà", s: "augment",
+    what: "Mọi kỹ thuật làm model khó học thuộc hơn: augmentation, dropout, weight decay, label smoothing, early stopping.",
+    why: "Ép model học quy luật chung thay vì nhớ từng mẫu.",
+    proj: "Biến `s` của `AdaptiveController` điều khiển cường độ augment, dropout và group-dropout cùng lúc." },
+  { id: "adaptive-ctrl", en: "Adaptive regularization controller", vi: "Bộ điều khiển điều hoà thích ứng", s: "augment",
+    what: "Thành phần riêng của dự án: cứ 3 epoch (từ epoch 5) xem độ chính xác trên batch đã augment và độ chênh train/val để chỉnh s.",
+    why: "Tự tìm mức điều hoà vừa đủ: quá mạnh thì model không học nổi, quá nhẹ thì học thuộc.",
+    proj: "`AdaptiveController` (`training.py:679`); model toàn bộ dữ liệu dùng s trung bình của các fold, đóng băng." },
+  { id: "dropout", en: "Dropout", vi: "Bỏ ngẫu nhiên nơ-ron", s: "augment",
+    what: "Khi train, mỗi giá trị bị đặt về 0 với xác suất p, phần còn lại nhân 1/(1−p) để giữ kỳ vọng. Khi suy luận thì tắt.",
+    ex: "p = 0,2: x = [1, 2, 3, 4, 5] có thể thành [1,25; 0; 3,75; 5; 6,25].",
+    why: "Mạng không được phụ thuộc vào vài nơ-ron cụ thể, nên học đặc trưng dư thừa, bền hơn.",
+    proj: "p = 0,2·(0,5 + s), kẹp [0,05; 0,5]; `set_dropout` đổi p mỗi epoch.", tt: "dropout-training" },
+  { id: "group-drop", en: "Group dropout", vi: "Bỏ ngẫu nhiên cả nhóm đặc trưng", s: "augment",
+    what: "Thành phần riêng của dự án: với mỗi mẫu, tắt cả một nhóm cột (ví dụ cả nhóm vị trí) với xác suất 0,12·s; luôn giữ lại ít nhất một nhóm.",
+    why: "Buộc model dùng được mọi nguồn thông tin, ví dụ phải nhìn đặc trưng nét chứ không chỉ dựa vào vị trí tay.",
+    proj: "Trong `GroupStem.forward` (`training.py:410`)." },
+  { id: "time-warp", en: "Time warping", vi: "Méo trục thời gian", s: "augment",
+    what: "Lấy mẫu lại chuỗi trên một trục thời gian bị co giãn ngẫu nhiên và cắt lệch đầu cuối.",
+    why: "Mô phỏng người ký nhanh chậm khác nhau, và cửa sổ bắt đầu sớm muộn khác nhau.",
+    proj: "Bước 1 của `Augmenter`, dùng `F.grid_sample`." },
+  { id: "bilinear", en: "Bilinear interpolation / grid_sample", vi: "Nội suy song tuyến", s: "augment",
+    what: "Nội suy tuyến tính theo hai chiều. `F.grid_sample` lấy giá trị ảnh tại toạ độ thực bất kỳ bằng cách này.",
+    why: "Cho phép lấy mẫu chuỗi tại thời điểm lẻ (frame 12,4) và vẫn có đạo hàm.",
+    proj: "Chuỗi được xem như ảnh `(B, D, 1, T)`; chiều cao bằng 1 nên thực chất là nội suy tuyến tính theo thời gian.", tt: "bilinear-interpolation" },
+  { id: "noise", en: "Gaussian noise / Scaling jitter", vi: "Nhiễu Gauss / co giãn ngẫu nhiên", s: "augment",
+    what: "Cộng nhiễu theo phân phối chuẩn vào từng giá trị; nhân mỗi cột với một hệ số gần 1.",
+    why: "Mô phỏng rung landmark và khác biệt cơ thể giữa người ký.",
+    proj: "Bước 2 của `Augmenter`; bước 3 che ngẫu nhiên 6 %·s số frame (giả lập mất detect)." },
+  { id: "mixup", en: "Mixup", vi: "Trộn mẫu", s: "augment",
+    what: "Trộn hai mẫu và nhãn của chúng theo cùng tỉ lệ λ lấy từ phân phối Beta.",
+    why: "Làm ranh giới giữa các lớp mượt hơn.",
+    proj: "Có code nhưng `mixup_alpha = 0` nên đang tắt.", tt: "cv-mixup" },
+  { id: "distractor", en: "Distractor hand", vi: "Tay gây nhiễu", s: "augment",
+    what: "Thành phần riêng của dự án: chèn tay của một clip khác vào clip một tay, giữ nguyên nhãn.",
+    why: "Khi dùng thật, tay thứ hai (đang buông, hoặc của người khác) hay lọt vào khung; model không được đổi dự đoán vì nó.",
+    proj: "`extra_hand_probability = 0,4`; `add_distractor_hand_features` tính lại cột tay−tay; `distractor_flip_rate` trong `diagnostics.py` đo tỉ lệ đổi nhãn." },
+
+  // ---------- 7. Kiến trúc ----------
+  { id: "layer", en: "Layer / Module", vi: "Lớp / khối", s: "kien-truc",
+    what: "Một phép biến đổi có (hoặc không có) tham số; mạng là chồng các lớp. Trong PyTorch mọi lớp kế thừa `nn.Module`.",
+    proj: "`GroupStem`, `MultiScaleBlock`, `CosineHead`, `VSLNet` đều là `nn.Module`." },
+  { id: "linear", en: "Linear (fully connected) layer", vi: "Lớp tuyến tính", s: "kien-truc",
+    what: "Nhân đầu vào với ma trận trọng số rồi cộng bias. Mỗi đầu ra là tổng có trọng số của mọi đầu vào.",
+    ex: "x có 2 phần tử [1, 2], W = [[0,5; −1]], b = [0,1] → y = 0,5 − 2 + 0,1 = −1,4.",
+    why: "Khối cơ bản để trộn và đổi kích thước đặc trưng.",
+    proj: "Encoder từng nhóm cột, `proj` 218 → 128, đầu phân lớp 576 → 31.", tt: "linear-layer-forward" },
+  { id: "activation", en: "Activation function", vi: "Hàm kích hoạt", s: "kien-truc",
+    what: "Hàm phi tuyến đặt sau lớp tuyến tính.",
+    why: "Không có nó, chồng bao nhiêu lớp Linear cũng chỉ bằng một lớp Linear (tích các ma trận vẫn là một ma trận), không học được quan hệ phức tạp.",
+    proj: "GELU ở mọi khối; tanh và sigmoid bên trong GRU." },
+  { id: "relu-gelu", en: "ReLU / GELU", vi: "Hàm ReLU / GELU", s: "kien-truc",
+    what: "ReLU giữ số dương, cắt số âm về 0. GELU là phiên bản mượt: nhân x với xác suất x lớn hơn một biến chuẩn.",
+    ex: "x = −1: ReLU = 0, GELU ≈ −0,159. x = 1: ReLU = 1, GELU ≈ 0,841.",
+    why: "GELU không cắt cứng tại 0, gradient mượt hơn; là lựa chọn mặc định của Transformer.",
+    proj: "`nn.GELU()` trong stem, khối conv, Transformer.", tt: "gelu" },
+  { id: "sigmoid-tanh", en: "Sigmoid / Tanh", vi: "Hàm sigmoid / tanh", s: "kien-truc",
+    what: "Sigmoid ép số thực về (0, 1); tanh ép về (−1, 1).",
+    ex: "σ(0) = 0,5; σ(2) ≈ 0,881.",
+    why: "Sigmoid dùng làm «cổng» (mở bao nhiêu phần trăm); tanh giới hạn trạng thái.",
+    proj: "Cổng z, r của GRU; `fit_temperature` dùng sigmoid để giữ T trong [1, 10]." },
+  { id: "layernorm", en: "LayerNorm", vi: "Chuẩn hoá theo lớp", s: "kien-truc",
+    what: "Chuẩn hoá z-score trên trục đặc trưng của **từng vector riêng lẻ** (mỗi mẫu, mỗi frame), rồi co giãn và dịch bằng hai tham số học được γ, β.",
+    ex: "x = [1, 2, 3] → μ = 2, σ ≈ 0,816 → [−1,22; 0; 1,22] (γ = 1, β = 0).",
+    why: "Giữ thang giá trị giữa các lớp ổn định, không phụ thuộc kích thước batch, chạy giống nhau khi train và suy luận.",
+    proj: "Trong mỗi encoder nhóm, sau `proj`, trước đầu phân lớp (`norm` 576), trong `PreLNBlock`.", tt: "dl-layer-normalization" },
+  { id: "batchnorm", en: "BatchNorm", vi: "Chuẩn hoá theo lô", s: "kien-truc",
+    what: "Chuẩn hoá mỗi kênh bằng μ, σ tính trên **cả batch** (và cả trục thời gian). Khi train cập nhật trung bình chạy; khi suy luận dùng trung bình chạy đó.",
+    why: "Ổn định và tăng tốc học cho khối tích chập. Phải gọi `model.eval()` khi suy luận, nếu không kết quả phụ thuộc batch.",
+    proj: "`nn.BatchNorm1d(128)` sau Conv 1×1 trong `MultiScaleBlock`.", tt: "dl-batch-normalization" },
+  { id: "conv1d", en: "1D Convolution", vi: "Tích chập 1 chiều", s: "kien-truc",
+    what: "Trượt một cửa sổ trọng số (kernel) dài k dọc trục thời gian; tại mỗi vị trí, nhân từng phần tử rồi cộng lại.",
+    ex: "x = [1, 2, 3, 4], w = [1, 0, −1] (padding 0) → [−2, −2, −2, 3]: kernel này đo độ dốc.",
+    why: "Bắt mẫu cục bộ theo thời gian (cú vẩy, đoạn giữ tĩnh) ở bất kỳ vị trí nào, cùng một bộ trọng số cho mọi vị trí.",
+    proj: "Kernel 3, 5, 9 với `padding = k // 2` nên đầu ra vẫn dài 30 frame." },
+  { id: "channel-kernel", en: "Channel / Kernel size", vi: "Kênh / kích thước kernel", s: "kien-truc",
+    what: "Kênh là số đặc trưng tại mỗi bước thời gian. Kích thước kernel là số frame tích chập nhìn một lần.",
+    proj: "128 kênh sau stem; kernel 3 frame ≈ 0,2 s, 9 frame ≈ 0,6 s ở cửa sổ 2 s." },
+  { id: "depthwise", en: "Depthwise separable convolution", vi: "Tích chập tách theo chiều sâu", s: "kien-truc",
+    what: "Tách tích chập thường làm hai bước: depthwise (mỗi kênh có kernel thời gian riêng, không trộn kênh) và pointwise (Conv 1×1 trộn các kênh).",
+    ex: "128 → 128, k = 9: conv thường 147 456 trọng số; depthwise + pointwise 1 152 + 16 384 = 17 536 (ít hơn ~8 lần).",
+    why: "Ít tham số hơn nhiều, quan trọng khi chỉ có 421 clip.",
+    proj: "`nn.Conv1d(d, d, k, groups=d)` × 3 kernel, nối thành 384 kênh, rồi `nn.Conv1d(384, 128, 1)`.", tt: "dl-depthwise-separable-convolution" },
+  { id: "receptive", en: "Receptive field", vi: "Vùng nhìn", s: "kien-truc",
+    what: "Số frame đầu vào ảnh hưởng tới một giá trị đầu ra.",
+    ex: "Hai khối với kernel lớn nhất 9: 1 + 2·8 = 17 frame.",
+    why: "Vùng nhìn phải đủ dài để thấy trọn một cử động.",
+    proj: "Conv nhìn tối đa 17/30 frame; GRU hai chiều phía sau nhìn toàn bộ chuỗi." },
+  { id: "residual", en: "Residual connection", vi: "Kết nối tắt", s: "kien-truc",
+    what: "Cộng đầu vào của khối vào đầu ra của nó.",
+    why: "Gradient đi thẳng qua phép cộng nên mạng sâu vẫn học được; khối chỉ cần học phần chênh lệch.",
+    proj: "`return x + self.drop(self.act(self.bn(self.pw(y))))` trong `MultiScaleBlock`; cả hai nhánh của `PreLNBlock`.", tt: "pytorch-residual-block" },
+  { id: "rnn", en: "RNN / Hidden state", vi: "Mạng hồi quy / trạng thái ẩn", s: "kien-truc",
+    what: "Mạng xử lý chuỗi từng bước, mang theo một vector trạng thái ẩn h tóm tắt những gì đã thấy.",
+    why: "Mô hình hoá thứ tự thời gian. Nhược điểm: với chuỗi dài, gradient nhân qua nhiều bước nên tắt dần (vanishing gradient).",
+    proj: "Không dùng RNN thuần, mà dùng GRU (bên dưới).", tt: "rnn-step-forward" },
+  { id: "gru", en: "GRU (Gated Recurrent Unit)", vi: "Mạng hồi quy có cổng", s: "kien-truc",
+    what: "RNN có hai cổng học được: cổng cập nhật z quyết định giữ bao nhiêu trạng thái cũ (z = 1 thì giữ nguyên h cũ); cổng reset r quyết định dùng bao nhiêu phần trạng thái cũ khi tính trạng thái ứng viên n. Công thức đúng theo cách PyTorch tính (r nhân sau khi đã nhân ma trận W_hn), đã kiểm bằng tay ở chương 13.",
+    why: "Cổng giúp giữ thông tin xa (đầu cử động) mà RNN thuần hay quên. Ít tham số hơn LSTM.",
+    proj: "`nn.GRU(128, 96, bidirectional=True)`, 130 176 tham số, khối lớn nhất của VSLNet. (⊙ là nhân từng phần tử.)", tt: "gru-cell-forward" },
+  { id: "bidir", en: "Bidirectional", vi: "Hai chiều", s: "kien-truc",
+    what: "Chạy hai RNN: một đọc xuôi, một đọc ngược thời gian, rồi nối trạng thái của hai chiều.",
+    why: "Mỗi frame biết cả trước lẫn sau nó; dùng được vì cả cửa sổ 2 s đã có sẵn lúc dự đoán.",
+    proj: "96 + 96 = 192 chiều mỗi frame." },
+  { id: "pooling", en: "Pooling (mean / max)", vi: "Gộp", s: "kien-truc",
+    what: "Nén một trục (ở đây là thời gian) thành một giá trị: trung bình (mean) hoặc lớn nhất (max).",
+    why: "Biến chuỗi 30 vector thành một vector cố định để phân lớp.",
+    proj: "`h.mean(1)` và `h.amax(1)` trong `VSLNet.pool`.", tt: "global-avg-pooling" },
+  { id: "attention", en: "Attention", vi: "Cơ chế chú ý", s: "kien-truc",
+    what: "Tính một điểm «quan trọng» cho từng phần tử, softmax các điểm thành trọng số, rồi lấy tổng có trọng số.",
+    why: "Cho mạng tự tập trung vào frame (hoặc điểm bàn tay) quan trọng thay vì đối xử như nhau.",
+    proj: "Attention pooling của VSLNet; self-attention trong SignFormer." },
+  { id: "attn-pool", en: "Attention pooling", vi: "Gộp có chú ý", s: "kien-truc",
+    what: "Một lớp Linear chấm điểm mỗi frame; softmax theo thời gian; tổng có trọng số là vector đại diện.",
+    why: "Ký hiệu thường có đoạn giữ tư thế quan trọng và đoạn chuyển tiếp ít ý nghĩa.",
+    proj: "`self.attn = nn.Linear(192, 1)` (193 tham số); kết quả nối với mean và max thành 576 chiều." },
+  { id: "qkv", en: "Self-attention / Query · Key · Value", vi: "Tự chú ý / truy vấn · khoá · giá trị", s: "kien-truc",
+    what: "Mỗi token tạo ba vector q, k, v bằng ba lớp Linear. Điểm giữa token i và j là q_i · k_j; trọng số là softmax các điểm; đầu ra là tổng có trọng số các v. «Self» nghĩa là q, k, v đến từ cùng một chuỗi.",
+    why: "Mỗi token tự chọn token khác cần nhìn. Chia √d để điểm không quá lớn làm softmax bão hoà.",
+    proj: "`PointShapeEncoder`: 20 điểm bàn tay là 20 token, attention học quan hệ ngón (ngón cái dưới ngón nào, trỏ−giữa bắt chéo…).", tt: "dl-scaled-dot-product-attention" },
+  { id: "multihead", en: "Multi-head attention", vi: "Chú ý nhiều đầu", s: "kien-truc",
+    what: "Chia vector d chiều thành h phần, mỗi phần chạy attention riêng, rồi nối lại.",
+    why: "Mỗi đầu học một kiểu quan hệ khác nhau.",
+    proj: "`nn.MultiheadAttention(d, 4)` trong `PreLNBlock`.", tt: "dl-multi-head-attention" },
+  { id: "transformer", en: "Transformer block (pre-LN)", vi: "Khối Transformer", s: "kien-truc",
+    what: "Một khối gồm self-attention và mạng truyền thẳng (FFN, hai lớp Linear), mỗi phần có kết nối tắt và LayerNorm. Pre-LN đặt LayerNorm **trước** mỗi phần.",
+    why: "Pre-LN train ổn định hơn post-LN, ít cần warmup dài.",
+    proj: "`PreLNBlock` (`training.py:528`), 2 lớp trong SignFormer.", tt: "cv-vit-attention-block" },
+  { id: "posenc", en: "Positional encoding", vi: "Mã hoá vị trí", s: "kien-truc",
+    what: "Vector cộng vào mỗi token để cho biết nó ở vị trí nào trong chuỗi. Bản sinusoid dùng sin, cos ở nhiều tần số.",
+    why: "Attention không tự biết thứ tự (đảo token thì kết quả đảo theo). Bản sinusoid không có tham số nên chạy được với mọi độ dài T.",
+    proj: "`_sinusoid` (`training.py:551`) trong SignFormer. VSLNet không cần vì Conv và GRU đã biết thứ tự.", tt: "positional-encoding" },
+  { id: "embedding", en: "Embedding", vi: "Vector nhúng", s: "kien-truc",
+    what: "Vector số biểu diễn một đối tượng, được học sao cho đối tượng giống nhau có vector gần nhau.",
+    why: "So sánh hai clip bằng khoảng cách giữa hai vector thay vì so 12 540 con số thô.",
+    proj: "Vector 576 chiều sau LayerNorm (đầu Linear) hoặc vector `emb` 128 chiều (đầu cosine); chuẩn hoá L2 rồi dùng cho bộ nhớ cá nhân." },
+  { id: "cosine-sim", en: "Cosine similarity", vi: "Độ tương đồng cosine", s: "kien-truc",
+    what: "Cos của góc giữa hai vector, chỉ quan tâm hướng, bỏ qua độ dài. Từ −1 (ngược) đến 1 (cùng hướng).",
+    ex: "a = (1, 1), b = (2, 2) → 1; a = (1, 0), b = (0, 1) → 0.",
+    why: "So sánh embedding mà không bị ảnh hưởng bởi độ lớn của vector.",
+    proj: "`CosineHead`; bộ nhớ cá nhân so cosine giữa clip và mẫu.", tt: "cosine-similarity" },
+  { id: "head", en: "Classification head / Cosine head", vi: "Đầu phân lớp", s: "kien-truc",
+    what: "Lớp cuối biến vector đặc trưng thành logits. Đầu tuyến tính: Linear. Đầu cosine: logit = s · cos(embedding, vector đại diện lớp).",
+    why: "Đầu cosine ổn định hơn khi nhiều lớp mà mỗi lớp ít mẫu, và cho embedding có ý nghĩa hình học.",
+    proj: "Run hiện tại dùng `head = \"linear\"`; `CosineHead` ở `training.py:436`." },
+  { id: "weight-sharing", en: "Weight sharing", vi: "Chia sẻ trọng số", s: "kien-truc",
+    what: "Dùng cùng một bộ tham số cho nhiều phần của đầu vào.",
+    why: "Ít tham số hơn, và áp đặt giả định hợp lý (một cử động có ý nghĩa như nhau ở frame nào; tay trái và tay phải có cấu tạo như nhau).",
+    proj: "Tích chập chia sẻ theo thời gian; HandPairNet và SignFormer chia sẻ encoder giữa hai tay." },
+  { id: "learned-token", en: "Learned token", vi: "Token học được", s: "kien-truc",
+    what: "Một vector tham số được học, dùng thay cho dữ liệu khi dữ liệu không có.",
+    why: "«Tay vắng» là một trạng thái riêng; điền số 0 sẽ trông như «tay ở vị trí trung bình».",
+    proj: "`self.absent` trong HandPairNet và SignFormer: `h = p·h + (1 − p)·absent`." },
+  { id: "drop-path", en: "Stochastic depth (drop path)", vi: "Bỏ ngẫu nhiên cả nhánh", s: "kien-truc",
+    what: "Khi train, bỏ cả nhánh F(x) của một kết nối tắt với xác suất p cho từng mẫu (giữ lại x).",
+    why: "Điều hoà cho mạng có kết nối tắt, giống dropout nhưng ở mức cả khối.",
+    proj: "`drop_path = 0,1`, tăng dần theo lớp trong SignFormer." },
+  { id: "group-stem", en: "Group stem", vi: "Khối mã hoá theo nhóm", s: "kien-truc",
+    what: "Thành phần riêng của dự án: mỗi nhóm cột (vị trí, thủ hình, hand_local, độ cong, hướng, hiện diện, chuyển động, nét) có một encoder nhỏ riêng, rồi mới trộn lại.",
+    why: "Nhóm nhỏ (2 cột hiện diện) không bị nhóm lớn (120 cột hand_local) lấn át; cho phép group-dropout.",
+    proj: "`GroupStem` (`training.py:384`); nhóm hiện diện nhân `presence_scale = 0,25` để model không đoán lớp chỉ dựa vào «một tay hay hai tay»." },
+
+  // ---------- 8. Loss ----------
+  { id: "cross-entropy", en: "Cross-entropy (CE)", vi: "Entropy chéo", s: "loss",
+    what: "Đo khoảng cách giữa phân phối nhãn y và phân phối dự đoán p. Với nhãn one-hot, CE chỉ là −log của xác suất gán cho lớp đúng.",
+    ex: "p_đúng = 0,659 → CE = 0,417.  p_đúng = 0,1 → CE = 2,303.  p_đúng = 0,01 → CE = 4,605.",
+    why: "Phạt rất nặng khi model tự tin mà sai; gradient theo logits gọn: p − y.",
+    proj: "`F.cross_entropy(out, y, weight=cw, label_smoothing=0.1)`.", tt: "cross-entropy-loss" },
+  { id: "logsumexp", en: "Log-sum-exp / Log-softmax", vi: "Log-tổng-mũ", s: "loss",
+    what: "Cách tính log Σ exp(z) không bị tràn số bằng cách rút max ra ngoài. Log-softmax = z − logsumexp(z).",
+    ex: "z = [1000, 999]: exp(1000) = ∞, nhưng m = 1000 → 1000 + log(1 + e⁻¹) = 1000,313.",
+    why: "Tính CE và KL ổn định với logits lớn.",
+    proj: "Bên trong `F.cross_entropy`; `F.log_softmax` trong thành phần KL.", tt: "calculus-softmax-stability" },
+  { id: "softmax-ce-grad", en: "Softmax + CE gradient", vi: "Đạo hàm softmax kết hợp CE", s: "loss",
+    what: "Đạo hàm của CE theo logits khi đi qua softmax rút gọn thành hiệu giữa xác suất dự đoán và nhãn.",
+    ex: "p = [0,659; 0,242; 0,099], đúng là lớp 0 → gradient = [−0,341; 0,242; 0,099]: tăng logit lớp đúng, giảm lớp sai.",
+    why: "Giải thích vì sao softmax và cross-entropy luôn đi cùng nhau: gradient đơn giản và không bão hoà.",
+    tt: "calculus-softmax-ce-gradient" },
+  { id: "label-smoothing", en: "Label smoothing", vi: "Làm mềm nhãn", s: "loss",
+    what: "Thay nhãn one-hot bằng nhãn «mềm»: lớp đúng giảm xuống, phần còn lại chia đều cho mọi lớp.",
+    ex: "ε = 0,1, C = 31: lớp đúng 0,9032, mỗi lớp khác 0,0032.",
+    why: "Model không bị ép đẩy logit lên vô cùng, bớt tự tin thái quá, xác suất có ý nghĩa hơn cho ngưỡng từ chối.",
+    proj: "`label_smoothing = 0.1` trong `Config`.", tt: "label-smoothing-loss" },
+  { id: "class-weight", en: "Class weight", vi: "Trọng số lớp", s: "loss",
+    what: "Nhân loss của mỗi mẫu với trọng số của lớp nó thuộc về; lớp ít mẫu có trọng số lớn hơn.",
+    ex: "N = 1 000, C = 31: lớp có 20 mẫu → w ≈ 1,27; lớp có 60 mẫu → w ≈ 0,73.",
+    why: "Tránh model thiên về lớp nhiều mẫu. Căn bậc hai để không bù quá tay.",
+    proj: "Chỉ bật khi lớp nhiều nhất gấp hơn 1,5 lần lớp ít nhất (`training.py:823`)." },
+  { id: "margin", en: "Margin / Hinge loss", vi: "Hàm mất mát lề", s: "loss",
+    what: "Không chỉ cần đúng, mà phải đúng cách biệt ít nhất m. Loss bằng 0 khi đã đủ lề, tăng tuyến tính khi chưa đủ.",
+    ex: "m = 0,8, z_đúng = 3,0, z_sai = 2,5 → L = 0,3.  z_sai = 1,0 → L = 0.",
+    why: "Tách xa các cặp lớp dễ nhầm thay vì chỉ thắng sát nút.",
+    proj: "`hard_negative_margin_loss`, m = 0,8, trọng số 0,25.", tt: "hinge-loss" },
+  { id: "hard-negative", en: "Hard negative", vi: "Mẫu âm khó", s: "loss",
+    what: "Với một mẫu, lớp sai mà model đang cho điểm cao nhất (đối thủ nguy hiểm nhất).",
+    why: "Tập trung sức học vào chỗ đang dễ sai nhất, như `c`/`a`, `dấu ă`/`dấu hỏi`.",
+    proj: "`logits.masked_fill(one_hot, −∞).max(1)` trong `hard_negative_margin_loss`." },
+  { id: "kl", en: "KL divergence", vi: "Độ lệch Kullback–Leibler", s: "loss",
+    what: "Đo phân phối q khác phân phối p bao nhiêu; luôn ≥ 0, bằng 0 khi hai phân phối trùng nhau, không đối xứng (KL(p‖q) ≠ KL(q‖p)).",
+    ex: "p = [0,9; 0,1], q = [0,6; 0,4] → 0,9·ln 1,5 + 0,1·ln 0,25 ≈ 0,226.",
+    why: "Ép hai dự đoán (clip sạch và clip có tay phụ) giống nhau, không chỉ cùng nhãn top-1.",
+    proj: "`F.kl_div(log_softmax(extra_out), softmax(out.detach()))`, trọng số `hand_consistency = 0,12`.", tt: "kl-divergence" },
+  { id: "detach", en: "Stop-gradient (detach) / Teacher", vi: "Chặn gradient / «thầy»", s: "loss",
+    what: "`tensor.detach()` biến tensor thành hằng số với autograd: gradient không chảy ngược qua nó.",
+    why: "Dự đoán trên clip sạch làm «thầy» cố định; chỉ kéo dự đoán trên clip có tay phụ về phía thầy, không kéo thầy về phía nhiễu.",
+    proj: "`teacher = torch.softmax(out.detach(), dim=-1)` (`training.py:922`)." },
+  { id: "multi-loss", en: "Weighted multi-term loss", vi: "Loss nhiều thành phần có trọng số", s: "loss",
+    what: "Tổng nhiều hàm loss, mỗi hàm nhân một hệ số; hệ số là siêu tham số.",
+    why: "Mỗi thành phần sửa một vấn đề; trọng số quyết định ưu tiên.",
+    proj: "λ: margin 0,25 · tay phụ 0,5 · KL 0,12 (`hard_negative_weight`, `extra_hand_loss`, `hand_consistency`)." },
+
+  // ---------- 9. Tối ưu ----------
+  { id: "gd", en: "Gradient descent / SGD", vi: "Hạ gradient", s: "toi-uu",
+    what: "Cập nhật tham số ngược hướng gradient một bước nhỏ. SGD (stochastic) tính gradient trên một mini-batch thay vì toàn bộ dữ liệu.",
+    ex: "θ = 1,0, gradient = 0,4, lr = 0,1 → θ = 0,96.",
+    why: "Cách duy nhất khả thi để tối ưu hàng trăm nghìn tham số." },
+  { id: "lr", en: "Learning rate (lr)", vi: "Tốc độ học", s: "toi-uu",
+    what: "Độ dài bước cập nhật. Lớn quá: dao động, phân kỳ. Nhỏ quá: học rất chậm, dễ kẹt.",
+    proj: "Đỉnh `lr = 2e-3`, đáy `min_lr = 1e-5`." },
+  { id: "optimizer", en: "Optimizer", vi: "Bộ tối ưu", s: "toi-uu",
+    what: "Thuật toán dùng gradient để cập nhật tham số (SGD, Adam, AdamW, LBFGS…).",
+    proj: "AdamW cho trọng số mạng; LBFGS cho nhiệt độ T." },
+  { id: "adam", en: "Adam", vi: "Bộ tối ưu Adam", s: "toi-uu",
+    what: "Giữ hai trung bình trượt cho mỗi tham số: m của gradient (quán tính) và v của bình phương gradient (độ lớn). Bước đi được chia cho √v nên mỗi tham số có bước riêng.",
+    why: "Hội tụ nhanh, ít phải chỉnh lr; quán tính làm giảm nhiễu của mini-batch." },
+  { id: "adamw", en: "AdamW / Weight decay", vi: "AdamW / suy giảm trọng số", s: "toi-uu",
+    what: "Weight decay kéo trọng số về 0 mỗi bước (phạt trọng số lớn). AdamW áp dụng phạt này **tách rời** khỏi phần chia √v của Adam.",
+    why: "Trọng số nhỏ thì hàm mượt hơn, ít học thuộc. Tách rời để mức phạt không bị Adam co giãn.",
+    proj: "λ = 0,05 chỉ cho tham số ≥ 2 chiều (ma trận); bias, LayerNorm, BatchNorm không decay (`training.py:803`).", tt: "adamw-optimizer" },
+  { id: "warmup", en: "Learning-rate warmup", vi: "Khởi động tốc độ học", s: "toi-uu",
+    what: "Tăng lr tuyến tính từ gần 0 lên giá trị đỉnh trong vài epoch đầu.",
+    why: "Đầu train trọng số ngẫu nhiên và thống kê của Adam chưa ổn định; bước lớn ngay sẽ phá hỏng mạng.",
+    proj: "`warmup_epochs = 5`.", tt: "optim-linear-warmup" },
+  { id: "cosine-lr", en: "Cosine annealing", vi: "Giảm tốc độ học theo cosine", s: "toi-uu",
+    what: "Sau warmup, giảm lr theo nửa chu kỳ cosine từ đỉnh về đáy.",
+    ex: "Ở giữa chặng (tiến độ 0,5): lr ≈ 1e-5 + (2e-3 − 1e-5)·0,5 ≈ 1e-3.",
+    why: "Bước lớn lúc đầu để đi nhanh, bước nhỏ về cuối để tinh chỉnh.",
+    proj: "Lịch LR ở `training.py:879`.", tt: "cosine-annealing-lr" },
+  { id: "plateau", en: "Reduce on plateau", vi: "Giảm tốc độ học khi đứng yên", s: "toi-uu",
+    what: "Khi loss validation không cải thiện sau một số epoch thì giảm lr.",
+    why: "Thoát khỏi chỗ dao động quanh điểm tốt khi lr còn quá lớn. Đổi mượt để không gây «vách đứng».",
+    proj: "`lr_patience = 8`, nhân vào lịch cosine." },
+  { id: "grad-clip", en: "Gradient clipping (global norm)", vi: "Cắt gradient theo chuẩn", s: "toi-uu",
+    what: "Nếu chuẩn L2 của toàn bộ gradient vượt c thì co cả vector lại cho chuẩn bằng c (giữ hướng).",
+    ex: "‖g‖ = 4, c = 1 → mọi gradient nhân 0,25.",
+    why: "Chặn bước cập nhật quá lớn từ một batch xấu.",
+    proj: "`clip_grad_norm_(model.parameters(), 1.0)`.", tt: "gradient-clipping" },
+  { id: "ema", en: "EMA of weights", vi: "Trung bình trượt mũ của trọng số", s: "toi-uu",
+    what: "Giữ một bản sao trọng số là trung bình trượt mũ của trọng số đang học; bản này thay đổi chậm và mượt.",
+    ex: "step 0: d = 0,1 (bám sát); step 90: d = 0,91; từ step 890: d = 0,99.",
+    why: "Trọng số cuối mỗi epoch dao động theo batch; bản EMA cho kết quả validation ổn định và tốt hơn.",
+    proj: "Lớp `EMA` (`training.py:657`); đánh giá, chọn best và lưu checkpoint đều dùng bản EMA.", tt: "exponential-moving-average" },
+  { id: "early-stop", en: "Early stopping / Patience", vi: "Dừng sớm / độ kiên nhẫn", s: "toi-uu",
+    what: "Dừng huấn luyện khi chỉ số validation không cải thiện sau `patience` epoch, và giữ trọng số của epoch tốt nhất.",
+    why: "Tiếp tục train sau điểm tốt nhất chỉ làm model học thuộc.",
+    proj: "Chọn epoch có val_acc cao nhất (hoà thì val_loss thấp hơn), chỉ từ epoch 10 trở đi (`select_after_warmup = 5`); `patience = 10`, tối thiểu 15, tối đa 60 epoch.", tt: "pytorch-early-stopping" },
+  { id: "full-model", en: "Full-data model", vi: "Model huấn luyện trên toàn bộ dữ liệu", s: "toi-uu",
+    what: "Sau CV, train thêm một model trên mọi mẫu, không có validation nên chạy số epoch cố định suy ra từ các fold.",
+    ex: "best_epochs = [10, 15, 10, 10, 14] → trung vị 10 → max(12, 25) = 25.",
+    why: "Dùng thêm 20 % dữ liệu mà các model fold không thấy.",
+    proj: "Thành viên thứ 6 của ensemble; `metrics.json[\"full_model\"]`." },
+  { id: "seed", en: "Random seed", vi: "Hạt giống ngẫu nhiên", s: "toi-uu",
+    what: "Giá trị khởi tạo bộ sinh số ngẫu nhiên; cùng seed thì cùng chuỗi số ngẫu nhiên.",
+    why: "Chạy lại ra cùng kết quả để so sánh công bằng giữa hai cấu hình.",
+    proj: "`seed = 42`; ladder thí nghiệm chạy 3 seed rồi so trung bình." },
+  { id: "finetune", en: "Fine-tuning / Replay", vi: "Tinh chỉnh / ôn lại dữ liệu cũ", s: "toi-uu",
+    what: "Train tiếp từ trọng số có sẵn thay vì từ đầu. Replay: trộn một phần dữ liệu cũ vào mỗi epoch để model không quên lớp cũ.",
+    why: "Thêm vài mẫu mới mà không phải train lại toàn bộ.",
+    proj: "`init_state` trong `train_one`; `ReplaySampler` (`training.py:745`); `notebooks/vsl_model_finetuner.ipynb`." },
+
+  // ---------- 10. Ensemble ----------
+  { id: "ensemble", en: "Ensemble", vi: "Gộp nhiều model", s: "ensemble",
+    what: "Kết hợp dự đoán của nhiều model, ở đây là lấy trung bình xác suất.",
+    why: "Lỗi ngẫu nhiên của từng model triệt nhau, kết quả ổn định hơn từng model riêng lẻ.",
+    proj: "K = 6 (5 fold + 1 toàn bộ dữ liệu); mỗi model chuẩn hoá bằng μ, σ riêng (`VSLEnsemble`).", tt: "jax-l04-ensemble-in-axes" },
+  { id: "confidence", en: "Confidence", vi: "Độ tin", s: "ensemble",
+    what: "Xác suất model gán cho lớp được chọn (lớp top-1).",
+    proj: "Trường `confidence` trong kết quả JSON của `predict_processed`." },
+  { id: "calibration", en: "Calibration", vi: "Hiệu chỉnh xác suất", s: "ensemble",
+    what: "Model hiệu chỉnh tốt khi độ tin khớp với tần suất đúng thật: trong các lần nói 80 %, đúng khoảng 80 %.",
+    why: "Ngưỡng từ chối chỉ có ý nghĩa khi độ tin đáng tin.",
+    proj: "Hiệu chỉnh bằng temperature scaling trên OOF." },
+  { id: "temperature", en: "Temperature scaling", vi: "Hiệu chỉnh nhiệt độ", s: "ensemble",
+    what: "Chia logits cho một số T > 0 trước softmax. T > 1 làm phân phối phẳng hơn (bớt tự tin), T < 1 làm nhọn hơn. Không đổi lớp top-1.",
+    ex: "z = [2,0; 1,0; 0,1]: T = 1 → [0,659; 0,242; 0,099]; T = 2 → [0,502; 0,304; 0,194].",
+    why: "Sửa thói quen tự tin quá mức của mạng bằng đúng một tham số, fit trên dữ liệu chưa thấy.",
+    proj: "`fit_temperature` giới hạn T ∈ [1, 10]. Run hiện tại: T = 1,0, trạng thái `at_bound`, vì OOF gần như không sai nên không có tín hiệu để hiệu chỉnh." },
+  { id: "ece", en: "Expected Calibration Error (ECE)", vi: "Sai số hiệu chỉnh kỳ vọng", s: "ensemble",
+    what: "Chia mẫu theo độ tin thành các khoảng (bin); trong mỗi bin so độ chính xác với độ tin trung bình; lấy trung bình có trọng số.",
+    ex: "Bin 0,8–0,9 có 100 mẫu, độ tin TB 0,85 nhưng đúng 70 → đóng góp 0,15 · 100/N.",
+    why: "Một con số đo xác suất có đáng tin không.",
+    tt: "expected-calibration-error" },
+  { id: "lbfgs", en: "L-BFGS", vi: "Thuật toán L-BFGS", s: "ensemble",
+    what: "Thuật toán tối ưu dùng xấp xỉ đạo hàm bậc hai từ các bước trước; hội tụ rất nhanh khi ít tham số.",
+    why: "Chỉ có một tham số T, LBFGS hội tụ trong vài chục bước.",
+    proj: "`torch.optim.LBFGS([u], line_search_fn=\"strong_wolfe\")`, T = exp(lo + (hi − lo)·σ(u))." },
+  { id: "reject", en: "Rejection / Selective prediction", vi: "Từ chối / dự đoán có chọn lọc", s: "ensemble",
+    what: "Cho phép model không trả lời khi không chắc. Coverage là tỉ lệ mẫu được trả lời; đánh đổi: ngưỡng cao thì đúng hơn nhưng trả lời ít hơn.",
+    why: "Đoán bừa một ký hiệu sai tệ hơn là nói «chưa rõ».",
+    proj: "`choose_reject_threshold` quét 0,20 → 0,95, chọn ngưỡng nhỏ nhất có accuracy ≥ 95 % và coverage ≥ 50 % → 0,20; `VSLPredictor` nâng lên tối thiểu 0,65.", tt: "threshold-under-precision-constraint" },
+  { id: "prob-gap", en: "Probability gap / Ambiguity", vi: "Khoảng cách xác suất / mơ hồ", s: "ensemble",
+    what: "Hiệu giữa xác suất lớp thứ nhất và lớp thứ hai.",
+    ex: "[0,70; 0,66; …]: độ tin cao nhưng gap = 0,04 → model đang phân vân giữa hai lớp.",
+    why: "Độ tin cao chưa đủ; hai lớp sát nhau là dấu hiệu nhầm.",
+    proj: "`min_probability_gap = 0,08`; lý do từ chối `ambiguous` (gap nhỏ) hoặc `low_confidence` (độ tin thấp)." },
+  { id: "onnx", en: "ONNX", vi: "Định dạng ONNX", s: "ensemble",
+    what: "Định dạng file chuẩn mô tả mạng nơ-ron, chạy được ngoài PyTorch (trình duyệt, điện thoại, server C++).",
+    why: "Đưa model lên web mà không cần Python.",
+    proj: "`export_onnx`: đầu vào `features` `(B, 30, 418)` thô → đầu ra `probs`, đã gồm chuẩn hoá và ensemble." },
+
+  // ---------- 11. Đánh giá ----------
+  { id: "accuracy", en: "Accuracy", vi: "Độ chính xác", s: "danh-gia",
+    what: "Tỉ lệ mẫu dự đoán đúng.",
+    ex: "421 mẫu OOF sai 1 → 420/421 = 99,76 %.",
+    why: "Dễ hiểu nhưng che mất lớp yếu khi các lớp lệch số lượng." },
+  { id: "tp-fp", en: "TP / FP / FN", vi: "Đúng dương / dương giả / âm giả", s: "danh-gia",
+    what: "Xét riêng một lớp c. TP: mẫu lớp c đoán đúng là c. FP: mẫu lớp khác bị đoán là c. FN: mẫu lớp c bị đoán thành lớp khác.",
+    ex: "Lỗi duy nhất `c → a`: với lớp `a` đó là 1 FP; với lớp `c` đó là 1 FN." },
+  { id: "precision-recall", en: "Precision / Recall", vi: "Độ chính xác dự báo / độ phủ", s: "danh-gia",
+    what: "Precision: trong các lần đoán là c, bao nhiêu đúng. Recall: trong các mẫu thật sự là c, bao nhiêu được nhận ra.",
+    ex: "Lớp `a`: 20 TP, 1 FP → precision = 0,952, recall = 1,0. Lớp `c`: 19 TP, 1 FN → recall = 0,95." },
+  { id: "f1", en: "F1 / Macro-F1 / Micro-F1", vi: "Điểm F1", s: "danh-gia",
+    what: "F1 là trung bình điều hoà của precision và recall. Macro-F1: tính F1 từng lớp rồi lấy trung bình (lớp nào cũng ngang nhau). Micro-F1: gộp TP, FP, FN của mọi lớp rồi tính (với bài một nhãn, bằng accuracy).",
+    ex: "Lớp `a`: 2·0,952·1 / 1,952 = 0,976.",
+    why: "Macro-F1 lộ ra lớp ít mẫu đang kém mà accuracy che mất.",
+    proj: "`macro_f1 = 0,998` trong `metrics.json[\"evaluation\"]`.", tt: "metrics-f1-micro" },
+  { id: "confusion", en: "Confusion matrix", vi: "Ma trận nhầm lẫn", s: "danh-gia",
+    what: "Bảng C×C: hàng là lớp thật, cột là lớp dự đoán, ô (i, j) đếm số mẫu lớp i bị đoán là j. Đường chéo là đoán đúng.",
+    why: "Thấy ngay cặp lớp nào hay bị nhầm và theo chiều nào.",
+    proj: "`confusion_matrix` trong evaluation; `confusion_pairs` liệt kê cặp nhầm (run hiện tại: `c → a` một lần).", tt: "confusion-matrix-norm" },
+  { id: "topk-acc", en: "Top-k accuracy", vi: "Độ chính xác top-k", s: "danh-gia",
+    what: "Tỉ lệ mẫu có lớp đúng nằm trong k lớp xác suất cao nhất.",
+    why: "Phân biệt model «gần đúng» (đúng nằm ở hạng 2) với «sai hẳn».",
+    proj: "`top5` trong `eval_metrics`.", tt: "cv-topk-accuracy" },
+  { id: "rival", en: "Closest rival", vi: "Đối thủ gần nhất", s: "danh-gia",
+    what: "Thành phần riêng của dự án: với mỗi lớp, lớp khác có xác suất trung bình cao nhất trên các mẫu của lớp đó.",
+    ex: "`dấu ă` ↔ `dấu hỏi` (0,029), `cảm ơn` ↔ `xin chào` (0,022), `c` ↔ `a` (0,017).",
+    why: "Cảnh báo sớm cặp lớp sắp nhầm, kể cả khi chưa có lỗi nào.",
+    proj: "`closest_rivals` (`training.py:1184`), lưu trong `metrics.json`." },
+  { id: "bootstrap", en: "Bootstrap confidence interval", vi: "Khoảng tin cậy bootstrap", s: "danh-gia",
+    what: "Lấy mẫu có hoàn lại từ tập đánh giá nhiều lần, tính chỉ số mỗi lần, lấy phân vị 2,5 % và 97,5 % làm khoảng tin cậy 95 %.",
+    why: "Với 421 mẫu, một con số accuracy đơn lẻ có sai số; khoảng tin cậy cho biết sai số đó lớn cỡ nào.",
+    proj: "`bootstrap_ci_95` trong `evaluation`." },
+  { id: "open-set", en: "Open-set / Robustness", vi: "Tập mở / độ bền", s: "danh-gia",
+    what: "Open-set: model gặp ký hiệu không thuộc 31 lớp và phải từ chối. Độ bền: kết quả giữ ổn định khi đầu vào bị nhiễu, thêm tay, đổi bối cảnh.",
+    why: "Khi dùng thật, người ta ký cả những thứ model chưa học.",
+    proj: "`diagnostics.py`: giữ lớp ra ngoài (open-set hold-out), `distractor_flip_rate`, độ tách cặp khó, độ bền với nhiễu." },
+
+  // ---------- 12. Realtime ----------
+  { id: "sliding-window", en: "Sliding window", vi: "Cửa sổ trượt", s: "realtime",
+    what: "Chỉ giữ dữ liệu của khoảng thời gian gần nhất; mỗi frame mới vào thì frame cũ nhất ra.",
+    why: "Luồng camera không có điểm bắt đầu, kết thúc; cửa sổ tạo ra «một clip» liên tục.",
+    proj: "`window_seconds = 2.0`, `min_window_seconds = 1.5`, `min_frames = 8` trong `StreamConfig`." },
+  { id: "latency", en: "Latency", vi: "Độ trễ", s: "realtime",
+    what: "Thời gian từ lúc người ký đến lúc nhãn hiện ra.",
+    why: "Độ trễ cao làm trải nghiệm hội thoại khó chịu; độ trễ thấp quá thì kết quả chập chờn.",
+    proj: "Cần ít nhất 1,5 s dữ liệu, sau đó dự đoán mỗi 3 frame (~0,2 s ở 15 fps) và cần 3 lần trùng nhau." },
+  { id: "debounce", en: "Output stabilization", vi: "Làm ổn định đầu ra", s: "realtime",
+    what: "Chỉ chấp nhận một nhãn khi nó lặp lại đủ số lần liên tiếp.",
+    why: "Tránh nhãn nhảy liên tục giữa các lớp khi tay đang chuyển tiếp.",
+    proj: "`stability_frames = 3`; mất tay quá `no_hand_timeout = 0,6` s thì xoá cửa sổ và bắt đầu ký hiệu mới." },
+  { id: "session", en: "Stream session / State", vi: "Phiên luồng / trạng thái", s: "realtime",
+    what: "Đối tượng giữ trạng thái riêng của một luồng video: lịch sử frame, landmarker MediaPipe, nhãn gần đây.",
+    why: "Hai camera dùng chung trạng thái sẽ trộn frame của nhau và làm timestamp MediaPipe không còn tăng dần.",
+    proj: "`predictor.open_stream(StreamConfig(...))` → `VSLStreamSession`; mỗi client một phiên, đóng khi xong." },
+  { id: "l2-normalize", en: "L2 normalization (of embeddings)", vi: "Chuẩn hoá L2", s: "realtime",
+    what: "Chia vector cho độ dài của nó để vector dài 1. Khi đó tích vô hướng chính là cosine.",
+    proj: "`F.normalize(emb, dim=-1)` trong `logits_and_embedding`." },
+  { id: "exemplar-memory", en: "Exemplar memory (few-shot)", vi: "Bộ nhớ mẫu cá nhân", s: "realtime",
+    what: "Người dùng ký mẫu vài từ; không train lại. Khi dự đoán, lớp nào có mẫu giống clip hiện tại thì được cộng thêm logit.",
+    ex: "cos = 0,9 → exp(−0,6) = 0,55 của mức thưởng tối đa; cos = 0,5 → 0,05.",
+    why: "Thích nghi với cách ký riêng của từng người chỉ từ 1–5 mẫu mỗi lớp. Lấy max (không cộng dồn) để lớp có 5 mẫu không thắng chỉ vì nhiều mẫu.",
+    proj: "`src/model/memory.py`: tối đa 5 mẫu mỗi lớp, 240 mẫu tổng; dữ liệu mẫu nằm phía trình duyệt." },
+  { id: "metric-learning", en: "Metric learning (triplet / contrastive)", vi: "Học khoảng cách", s: "realtime",
+    what: "Huấn luyện embedding trực tiếp sao cho mẫu cùng lớp gần nhau, khác lớp xa nhau.",
+    why: "Nếu muốn bộ nhớ cá nhân mạnh hơn, đây là hướng train embedding chuyên dụng.",
+    proj: "Chưa dùng; dự án lấy embedding sẵn từ đầu phân lớp.", tt: "triplet-loss" },
+];
+
+/* Công thức (TeX, vẽ bằng MathJax) và chỗ công thức nằm trong code của dự án.
+   f: TeX hiển thị dạng khối. c: [["file:dòng" hoặc "file:đầu-cuối", "đoạn code thật"], …] */
+const MATH = {
+  // ---------- 0 ----------
+  "deep-learning": { f: String.raw`\hat{y} = f_L\Big(\cdots f_2\big(f_1(x;\,\theta_1);\,\theta_2\big)\cdots;\,\theta_L\Big)`,
+    c: [["training.py:469-470", String.raw`def forward(self, x):  # (B, T, D) -> logits (B, C); chạy được với mọi T
+    return self.head(self.drop(self.norm(self.pool(x))))`]] },
+
+  "feature": { f: String.raw`\phi : \text{(pose, tay)} \mapsto x_t \in \mathbb{R}^{367}, \qquad \text{process_sequence} : (x_1, \dots, x_{T'}) \mapsto X \in \mathbb{R}^{30 \times 418}`,
+    c: [["extract.py:400", String.raw`def extract(pose_res: PoseLandmarkerResult, hand_res: HandLandmarkerResult) -> np.ndarray:`]] },
+  "train-infer": { c: [["training.py:724-725", String.raw`model.eval()
+return torch.cat([model(X[i:i + bs]) for i in range(0, len(X), bs)])`]] },
+  "checkpoint": { c: [["training.py:1098-1101", String.raw`torch.save({"cfg": asdict(cfg), "feature_version": FEATURE_VERSION, "groups": groups, "classes": classes,
+            "means": np.stack([n.mean for n in norms]), "stds": np.stack([n.std for n in norms]),
+            "temperature": temperature, "reject_threshold": reject_thr, "in_shape": in_shape,
+            "state_dicts": [m.cpu().state_dict() for m in models]}, path)`]] },
+
+  // ---------- 1 ----------
+  "tensor": { f: String.raw`X \in \mathbb{R}^{N \times T \times D} = \mathbb{R}^{1395 \times 30 \times 418}, \qquad y \in \{0, 1, \dots, 30\}^{N}`,
+    c: [["training.py:134", String.raw`X = d["X"].astype(np.float32)`]] },
+  "shape-axis": { f: String.raw`x \in \mathbb{R}^{B \times T \times D}, \qquad \bar{x}_{b,d} = \frac{1}{T} \sum_{t=1}^{T} x_{b,t,d} \;\in\; \mathbb{R}^{B \times D}`,
+    c: [["training.py:464", String.raw`h = self.blocks(h.transpose(1, 2)).transpose(1, 2)`],
+        ["training.py:467", String.raw`return torch.cat([(w * h).sum(1), h.mean(1), h.amax(1)], dim=-1)`]] },
+  "batch": { f: String.raw`bs = \operatorname{clip}\!\Big(\Big\lfloor \frac{n}{20} \Big\rfloor,\ 16,\ 64\Big), \qquad \text{steps/epoch} = \Big\lfloor \frac{n}{bs} \Big\rfloor`,
+    c: [["training.py:810", String.raw`bs = cfg.batch_size or int(np.clip(n // 20, 16, 64))`],
+        ["training.py:817", String.raw`steps_per_epoch = max(1, n_epoch // bs)`]] },
+  "parameter": { f: String.raw`|\theta_{\text{Linear}}| = d_{\text{in}} \cdot d_{\text{out}} + d_{\text{out}} = 576 \cdot 31 + 31 = 17\,887`,
+    c: [["training.py:460", String.raw`self.head = CosineHead(6 * h, n_classes) if cfg.head == "cosine" else nn.Linear(6 * h, n_classes)`]] },
+  "hyperparameter": { c: [["training.py:51", String.raw`class Config:`]] },
+  "forward": { f: String.raw`\text{logits} = f_\theta(x), \qquad f_\theta : \mathbb{R}^{B \times 30 \times 418} \to \mathbb{R}^{B \times 31}`,
+    c: [["training.py:900", String.raw`both = model(inp).float()`]] },
+  "logits": { f: String.raw`z = h\,W^{\top} + b \;\in\; \mathbb{R}^{C}, \qquad z_c \in (-\infty, +\infty)`,
+    c: [["training.py:460", String.raw`self.head = CosineHead(6 * h, n_classes) if cfg.head == "cosine" else nn.Linear(6 * h, n_classes)`],
+        ["training.py:1304", String.raw`oof[va] = info["val_logits"].numpy()`]] },
+  "softmax": { f: String.raw`p_i = \operatorname{softmax}(z)_i = \frac{e^{\,z_i - \max_k z_k}}{\sum_{j=1}^{C} e^{\,z_j - \max_k z_k}}, \qquad \sum_{i} p_i = 1`,
+    c: [["training.py:1016", String.raw`probs.append(torch.softmax(m(z) / self.temperature, dim=-1))`],
+        ["training.py:466", String.raw`w = torch.softmax(self.attn(h), dim=1)`]] },
+  "argmax": { f: String.raw`\hat{y} = \arg\max_{c \in \{1..C\}} p_c`,
+    c: [["training.py:730", String.raw`acc = (logits.argmax(1) == y).float().mean().item()`]] },
+  "one-hot": { f: String.raw`\mathbf{e}_c \in \{0, 1\}^{C}, \qquad (\mathbf{e}_c)_j = \begin{cases} 1 & j = c \\ 0 & j \ne c \end{cases}`,
+    c: [["training.py:741", String.raw`competing = logits.masked_fill(F.one_hot(target, logits.shape[1]).bool(), -torch.inf).max(dim=1).values`]] },
+  "loss": { f: String.raw`\theta^{*} = \arg\min_{\theta} \; \frac{1}{N} \sum_{i=1}^{N} \mathcal{L}\big(f_\theta(x_i),\, y_i\big)`,
+    c: [["training.py:909", String.raw`loss = F.cross_entropy(out, y, weight=cw, label_smoothing=cfg.label_smoothing)`]] },
+  "gradient": { f: String.raw`\nabla_{\theta} \mathcal{L} = \left( \frac{\partial \mathcal{L}}{\partial \theta_1},\ \frac{\partial \mathcal{L}}{\partial \theta_2},\ \dots,\ \frac{\partial \mathcal{L}}{\partial \theta_n} \right)`,
+    c: [["training.py:930", String.raw`nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)`]] },
+  "backprop": { f: String.raw`\frac{\partial \mathcal{L}}{\partial x} = \frac{\partial \mathcal{L}}{\partial y} \cdot \frac{\partial y}{\partial x} \qquad (\text{quy tắc dây chuyền})`,
+    c: [["training.py:927-928", String.raw`opt.zero_grad(set_to_none=True)
+scaler.scale(loss).backward()`]] },
+  "epoch-step": { f: String.raw`\text{tổng số step} = \text{số epoch} \times \Big\lfloor \frac{n_{\text{train}}}{bs} \Big\rfloor`,
+    c: [["training.py:853", String.raw`for ep in range(total_epochs):`], ["training.py:864", String.raw`for i in range(steps_per_epoch):`]] },
+  "device": { c: [["training.py:108-113", String.raw`def get_device() -> torch.device:
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")`]] },
+
+  // ---------- 2 ----------
+  "vector": { f: String.raw`\vec{v} = B - A = (B_x - A_x,\; B_y - A_y,\; B_z - A_z)`,
+    c: [["extract.py:346", String.raw`palm_dir = _unit_vector(local[9] - local[0])`]] },
+  "norm": { f: String.raw`\lVert v \rVert_2 = \sqrt{v_x^2 + v_y^2 + v_z^2}, \qquad d(A, B) = \lVert A - B \rVert_2`,
+    c: [["extract.py:343", String.raw`palm_size = np.linalg.norm(local[9] - local[0]) + 1e-6`],
+        ["extract.py:249", String.raw`return float(bones.mean() / max(shoulder_width, 1e-6))`]] },
+  "unit-vector": { f: String.raw`\hat{u} = \frac{v}{\lVert v \rVert + \varepsilon}, \qquad \varepsilon = 10^{-6}`,
+    c: [["extract.py:201-203", String.raw`def _unit_vector(v: np.ndarray, eps: float = 1e-6) -> np.ndarray:
+    norm = np.linalg.norm(v, axis=-1, keepdims=True)
+    return v / (norm + eps)`]] },
+  "dot": { f: String.raw`a \cdot b = \sum_{i \in \{x,y,z\}} a_i b_i = \lVert a \rVert \, \lVert b \rVert \cos\theta`,
+    c: [["extract.py:353-355", String.raw`v1 = _unit_vector(local[_JOINTS] - local[_PARENTS])
+v2 = _unit_vector(local[_CHILDS] - local[_JOINTS])
+joint_cos = np.sum(v1 * v2, axis=-1)                                   # 15`],
+        ["extract.py:360", String.raw`spread = np.sum(f_dir[:-1] * f_dir[1:], axis=-1)                        # 4 (độ xòe)`]] },
+  "cross": { f: String.raw`a \times b = \begin{pmatrix} a_y b_z - a_z b_y \\ a_z b_x - a_x b_z \\ a_x b_y - a_y b_x \end{pmatrix}, \qquad \lVert a \times b \rVert = \lVert a \rVert \lVert b \rVert \sin\theta`,
+    c: [["extract.py:347-349", String.raw`palm_normal = _unit_vector(np.cross(local[5] - local[0], local[17] - local[0]))
+if is_left:                      # đối xứng gương giữa hai tay
+    palm_normal = -palm_normal`]] },
+  "atan2": { f: String.raw`\theta = \operatorname{atan2}\big(\lVert a \times b \rVert,\; a \cdot b\big) \quad \text{thay cho} \quad \arccos\frac{a \cdot b}{\lVert a \rVert \lVert b \rVert}`,
+    c: [["extract.py:269", String.raw`angles = np.arctan2(np.linalg.norm(np.cross(a, b), axis=-1), np.sum(a * b, axis=-1))   # (5, 3)`],
+        ["extract.py:272-273", String.raw`chord = np.linalg.norm(pts[_FINGER_CHAINS[:, 4]] - pts[_FINGER_CHAINS[:, 1]], axis=-1)
+straight = chord / (lengths[:, 1:].sum(axis=1) + 1e-9)`]] },
+  "basis": { f: String.raw`p' = \frac{(P - O)\,\big[\, e_1 \;\; e_2 \;\; n \,\big]}{s_{\text{palm}}}, \qquad s_{\text{palm}} = \lVert P_9 - P_0 \rVert`,
+    c: [["extract.py:384", String.raw`hand_local = ((local[1:] - local[0]) @ np.stack([e1, e2, palm_normal], axis=1) / palm_size).ravel()  # 60`]] },
+  "invariance": { f: String.raw`f\big(\mathcal{T}(x)\big) = f(x) \qquad \text{với mọi phép dịch, xoay, co giãn } \mathcal{T}` },
+  "mirror": { f: String.raw`f(Mx) = M' f(x), \qquad M : (x, y, z) \mapsto (-x, y, z)`,
+    c: [["training.py:590", String.raw`perm, sign = LEFT_MIRROR[0][:n], LEFT_MIRROR[1][:n]`],
+        ["training.py:627", String.raw`other = torch.stack([x[..., self.left_idx] * self.left_sign, x[..., self.right_idx]], dim=2)`]] },
+  "rbf": { f: String.raw`k(d) = e^{-\gamma d^{2}}, \qquad d = \big\lVert (\Delta x,\ \Delta y,\ 0.25\,\Delta z) \big\rVert`,
+    c: [["extract.py:206-208", String.raw`def _contact_kernel(dist: np.ndarray, gamma) -> np.ndarray:
+    """exp(-gamma d^2): ~1 khi chạm, ~0 khi xa -> phóng đại thay đổi nhỏ ở gần, triệt jitter ở xa."""
+    return np.exp(-gamma * (dist ** 2))`],
+        ["extract.py:237-238", String.raw`diff[..., 2] *= CONTACT_Z
+d = np.linalg.norm(diff, axis=-1)  # (6, 11)`]] },
+  "rotation": { f: String.raw`R_z(\theta) = \begin{pmatrix} \cos\theta & -\sin\theta & 0 \\ \sin\theta & \cos\theta & 0 \\ 0 & 0 & 1 \end{pmatrix}, \qquad R = R_z(\text{roll})\, R_x(\text{pitch})\, R_y(\text{yaw}), \qquad p' = R\,p`,
+    c: [["view.py:79-80", String.raw`rz = np.array([[np.cos(r), -np.sin(r), 0], [np.sin(r), np.cos(r), 0], [0, 0, 1]])
+return rz @ rx @ ry`],
+        ["view.py:177", String.raw`P = np.column_stack([u * ((f + d) / f)[:, None], d]) @ R.T`]] },
+  "euler": { f: String.raw`\text{pitch } \varphi:\quad y' = y\cos\varphi + z\sin\varphi, \qquad z' = -y\sin\varphi + z\cos\varphi`,
+    c: [["extract.py:176-177", String.raw`out[..., starts + 1] = y * c + z * s
+out[..., starts + 2] = (z * c - y * s) * z_scale`]] },
+  "world-landmark": { c: [["extract.py:288-289", String.raw`i_ang, i_total, i_hook, i_straight = _curl_stats(img)
+_, w_total, w_hook, w_straight = _curl_stats(world)`]] },
+
+  // ---------- 3 ----------
+  "time-series": { f: String.raw`x_{1:T} = (x_1, x_2, \dots, x_T), \qquad T = 30` },
+  "fps": { f: String.raw`\Delta t = \frac{1}{\text{fps}} = \frac{1}{15} \approx 0.067\ \text{s}`,
+    c: [["predict.py:212", String.raw`if fps and self.last_state is not None and now - self.last_processed < 1.0 / fps - 1e-3:`]] },
+  "nan": { c: [["training.py:232", String.raw`z = torch.nan_to_num(((x - mean) / std).clamp(-8.0, 8.0), nan=0.0)   # NaN -> giá trị trung bình`]] },
+  "interp": { f: String.raw`x(t) = x_0 + (x_1 - x_0)\,\frac{t - t_0}{t_1 - t_0}, \qquad t_0 \le t \le t_1`,
+    c: [["extract.py:536", String.raw`out[i:j] = np.interp(np.arange(i, j), [left, right], [col[left], col[right]])`]] },
+  "resample": { f: String.raw`t^{\text{cũ}}_i = \frac{i}{T_{\text{cũ}} - 1}, \qquad t^{\text{mới}}_j = \frac{j}{29}, \quad j = 0, \dots, 29`,
+    c: [["extract.py:661-663", String.raw`old_time = np.linspace(0.0, 1.0, num_frames)
+new_time = np.linspace(0.0, 1.0, target_len)
+seq = interp1d(old_time, seq, axis=0, kind="linear")(new_time).astype(np.float32)`]] },
+  "spike": { f: String.raw`\begin{aligned} a &= x_t - x_{t-1}, \quad b = x_t - x_{t+1}, \quad m = \min(|a|, |b|) \\ \text{gai} &\iff a\,b > 0 \;\wedge\; m > \tau \;\wedge\; |x_{t+1} - x_{t-1}| < 0.5\,m \\ x_t &\leftarrow \tfrac{1}{2}(x_{t-1} + x_{t+1}) \end{aligned}`,
+    c: [["extract.py:650-652", String.raw`is_spike = (prev_diff * next_diff > 0) & (mag > thr) & (neighbor_gap < 0.5 * mag)
+midpoint = 0.5 * (seq[:-2] + seq[2:])
+seq[1:-1] = np.where(is_spike, midpoint, seq[1:-1])`]] },
+  "smoothing": { f: String.raw`y_t = \tfrac{1}{4}\,x_{t-1} + \tfrac{1}{2}\,x_t + \tfrac{1}{4}\,x_{t+1}`,
+    c: [["extract.py:675", String.raw`src = 0.25 * pad[:-2] + 0.5 * pad[1:-1] + 0.25 * pad[2:]`],
+        ["training.py:275", String.raw`src = 0.25 * pad[:, :-2] + 0.5 * pad[:, 1:-1] + 0.25 * pad[:, 2:]`]] },
+  "finite-diff": { f: String.raw`v_t = \frac{x_{t+1} - x_{t-1}}{2} \cdot (T - 1)`,
+    c: [["extract.py:676", String.raw`motion = (np.gradient(src, axis=0) * (target_len - 1)).astype(np.float32)`],
+        ["training.py:278-279", String.raw`grad = torch.cat([src[:, 1:2] - src[:, :1], 0.5 * (src[:, 2:] - src[:, :-2]), src[:, -1:] - src[:, -2:-1]], 1)
+return grad * (T - 1)`]] },
+  "stroke": { f: String.raw`t^{*} = \arg\max_{t} \big\lVert (I_{t+5} - I_t) \odot (1,\ 1,\ 0.25) \big\rVert, \qquad \text{nét} = \big(I_{t^*+5} - I_{t^*},\ P_{t^*+5} - P_{t^*}\big)`,
+    c: [["extract.py:603-608", String.raw`d_tip = pos[lag:, tip:tip + 3] - pos[:-lag, tip:tip + 3]
+# Chọn đoạn theo xy: z pose của tay nhiễu (ký hiệu tĩnh |Δz| ~0.3 vai, |Δxy| chỉ ~0.05)
+score = np.where(ok, np.linalg.norm(d_tip * np.array([1.0, 1.0, CONTACT_Z]), axis=1), -1.0)
+t = int(np.argmax(score))
+out[side * half: side * half + 3] = d_tip[t]
+out[side * half + 3: (side + 1) * half] = pos[t + lag, palm:palm + 3] - pos[t, palm:palm + 3]`]] },
+  "rest-hand": { f: String.raw`\operatorname{median}_t\big(y^{\text{palm}}_t\big) > 0.9 \;\Rightarrow\; \text{bỏ tay}`,
+    c: [["extract.py:567-568", String.raw`if palm_y.size and np.median(palm_y) > REST_Y:
+    seq[:, _side_raw_cols(side)] = np.nan`]] },
+
+  // ---------- 4 ----------
+  "mean-std": { f: String.raw`\mu = \frac{1}{n} \sum_{i=1}^{n} x_i, \qquad \sigma = \sqrt{\frac{1}{n} \sum_{i=1}^{n} (x_i - \mu)^2}`,
+    c: [["training.py:253-254", String.raw`self.mean = flat.mean(0).astype(np.float32)
+self.std = np.maximum(flat.std(0), 1e-3).astype(np.float32)`]] },
+  "normalization": { c: [["training.py:1298", String.raw`norm_f = Normalizer(X[tr], cfg.presence_norm)  # thống kê CHỈ từ tập train của fold này`]] },
+  "zscore": { f: String.raw`z = \operatorname{clamp}\!\left( \frac{x - \mu}{\max(\sigma,\ 10^{-3})},\ -8,\ 8 \right)`,
+    c: [["training.py:232", String.raw`z = torch.nan_to_num(((x - mean) / std).clamp(-8.0, 8.0), nan=0.0)   # NaN -> giá trị trung bình`]] },
+  "clamp": { f: String.raw`\operatorname{clamp}(x, a, b) = \min\big(\max(x, a),\ b\big)`,
+    c: [["training.py:232", String.raw`z = torch.nan_to_num(((x - mean) / std).clamp(-8.0, 8.0), nan=0.0)   # NaN -> giá trị trung bình`]] },
+  "mask": { f: String.raw`\mu_{\text{mask}} = \frac{\sum_i m_i\, x_i}{\sum_i m_i}, \qquad m_i \in \{0, 1\}`,
+    c: [["training.py:258-261", String.raw`for rows, c in ((v[:, 0], cols[0]), (v[:, 1], cols[1]), (v[:, 0] & v[:, 1], cols[2])):
+    if rows.sum() >= 2:
+        self.mean[c] = flat[rows][:, c].mean(0)
+        self.std[c] = np.maximum(flat[rows][:, c].std(0), 1e-3)`],
+        ["training.py:238-239", String.raw`keep = (1.0 - m.sum(0)) + vl * m[0] + vr * m[1] + vl * vr * m[2]
+z = z * keep`]] },
+  "leakage": { c: [["training.py:1298", String.raw`norm_f = Normalizer(X[tr], cfg.presence_norm)  # thống kê CHỈ từ tập train của fold này`]] },
+
+  // ---------- 5 ----------
+  "overfit": { f: String.raw`\text{gap} = \operatorname{acc}_{\text{train sạch}} - \operatorname{acc}_{\text{val}}`,
+    c: [["training.py:942", String.raw`ctrl.update(ep, aug_acc, tr_clean - va_acc)`]] },
+  "cv": { f: String.raw`\bar{a} = \frac{1}{K} \sum_{k=1}^{K} a_k, \qquad s = \sqrt{\frac{1}{K} \sum_{k=1}^{K} (a_k - \bar{a})^2}`,
+    c: [["training.py:1311", String.raw`print(f"\nCV acc: {np.mean(accs):.4f} ± {np.std(accs):.4f} | "`]] },
+  "kfold": { f: String.raw`\mathcal{D} = \bigcup_{k=1}^{K} \mathcal{D}_k, \qquad \text{train}_k = \mathcal{D} \setminus \mathcal{D}_k, \qquad \text{val}_k = \mathcal{D}_k`,
+    c: [["training.py:186-188", String.raw`splitter = StratifiedGroupKFold(n_splits=k, shuffle=True, random_state=seed)
+for fold, (_, validation) in enumerate(splitter.split(np.zeros(len(y)), y, g_all)):
+    fold_of[validation] = fold`]] },
+  "stratified": { f: String.raw`\frac{|\{ i \in \mathcal{D}_k : y_i = c \}|}{|\mathcal{D}_k|} \approx \frac{|\{ i : y_i = c \}|}{N} \qquad \forall\, c`,
+    c: [["training.py:186", String.raw`splitter = StratifiedGroupKFold(n_splits=k, shuffle=True, random_state=seed)`]] },
+  "group-split": { f: String.raw`g(i) = g(j) \;\Rightarrow\; \text{fold}(i) = \text{fold}(j)`,
+    c: [["training.py:1283-1284", String.raw`original_folds = make_folds(y[validation_mask], k, group_ids[validation_mask], cfg.seed)
+fold_by_group = dict(zip(group_ids[validation_mask], original_folds))`]] },
+  "oof": { f: String.raw`\hat{z}^{\text{OOF}}_i = f_{\text{fold}(i)}(x_i), \qquad i \notin \text{train}_{\text{fold}(i)}`,
+    c: [["training.py:1304", String.raw`oof[va] = info["val_logits"].numpy()`]] },
+  "shift": { f: String.raw`P_{\text{train}}(x) \neq P_{\text{dùng thật}}(x)` },
+
+  // ---------- 6 ----------
+  "augmentation": { f: String.raw`\tilde{x} = \mathcal{T}(x), \qquad \tilde{y} = y` },
+  "view-aug": { f: String.raw`P' = R \cdot \big(u \cdot \tfrac{f + d}{f},\ d\big), \qquad u' = \frac{f \cdot P'_{xy}}{f\,r + P'_z}`,
+    c: [["view.py:177-179", String.raw`P = np.column_stack([u * ((f + d) / f)[:, None], d]) @ R.T
+z = np.maximum(P[:, 2], -0.8 * f * r)
+proj = f / (f * r + z)`]] },
+  "adaptive-ctrl": { f: String.raw`s \leftarrow \begin{cases} \max(0.1,\ s - 0.1) & \text{nếu } \operatorname{acc}_{\text{aug}} < 0.75 \\ \min(1,\ s + 0.1) & \text{nếu gap} > 0.12 \text{ và } \operatorname{acc}_{\text{aug}} > 0.85 \\ s & \text{còn lại} \end{cases}`,
+    c: [["training.py:713-716", String.raw`if recent < 0.75:
+    self.s = max(0.1, self.s - 0.1)
+elif gap > 0.12 and recent > 0.85:
+    self.s = min(1.0, self.s + 0.1)`]] },
+  "dropout": { f: String.raw`y = \frac{x \odot m}{1 - p}, \quad m_i \sim \operatorname{Bernoulli}(1 - p), \qquad p = \operatorname{clip}\big(0.2\,(0.5 + s),\ 0.05,\ 0.5\big)`,
+    c: [["training.py:697", String.raw`return float(np.clip(self.cfg.base_dropout * (0.5 + self.s), 0.05, 0.5))`],
+        ["training.py:855", String.raw`set_dropout(model, ctrl.dropout)`]] },
+  "group-drop": { f: String.raw`h_g \leftarrow h_g \cdot m_g, \qquad m_g \sim \operatorname{Bernoulli}(1 - 0.12\,s)`,
+    c: [["training.py:410-411", String.raw`if self.training and self.group_drop > 0 and len(outs) > 1:
+    keep = (torch.rand(x.shape[0], len(outs), device=x.device) >= self.group_drop).float()`]] },
+  "time-warp": { f: String.raw`\begin{aligned} \delta_t &= \max\big(0.2,\ 1 + 0.5\,s\,\epsilon_t\big), \quad \epsilon_t \sim \mathcal{N}(0, 1) \\ c_t &= \frac{\sum_{\tau \le t} \delta_\tau - \delta_1}{\sum_{\tau} \delta_\tau - \delta_1} \\ t'_t &= lo + (hi - lo)\, c_t, \quad lo \in [0,\ 0.12 s],\ hi \in [1 - 0.12 s,\ 1] \end{aligned}`,
+    c: [["training.py:345-350", String.raw`inc = (1.0 + 0.5 * s * torch.randn(B, T, device=dev)).clamp(min=0.2)
+cum = torch.cumsum(inc, dim=1)
+cum = (cum - cum[:, :1]) / (cum[:, -1:] - cum[:, :1] + 1e-6)          # [0,1] đơn điệu
+lo = torch.rand(B, 1, device=dev) * 0.12 * s
+hi = 1.0 - torch.rand(B, 1, device=dev) * 0.12 * s
+t_new = lo + (hi - lo) * cum`]] },
+  "bilinear": { f: String.raw`x(t') = (1 - \alpha)\, x_{\lfloor t' \rfloor} + \alpha\, x_{\lfloor t' \rfloor + 1}, \qquad \alpha = t' - \lfloor t' \rfloor`,
+    c: [["training.py:353-354", String.raw`x = F.grid_sample(img, grid, mode="bilinear", padding_mode="border",
+                  align_corners=True).squeeze(2).permute(0, 2, 1)`]] },
+  "noise": { f: String.raw`x \leftarrow \big(x + \epsilon\big) \odot \big(1 + 0.08\,s\,\eta\big), \qquad \epsilon \sim \mathcal{N}\big(0,\ (0.08 s)^2\big),\ \eta \sim \mathcal{N}(0, 1)`,
+    c: [["training.py:356-360", String.raw`x = x + torch.randn_like(x) * (0.08 * s)
+x = x * (1.0 + 0.08 * s * torch.randn(B, 1, D, device=dev))
+# 3) Che ngẫu nhiên vài frame (mất detect thoáng qua)
+mask = (torch.rand(B, T, 1, device=dev) < 0.06 * s).float()
+x = x * (1.0 - mask)`]] },
+  "mixup": { f: String.raw`\tilde{x} = \lambda x_i + (1 - \lambda) x_j, \qquad \mathcal{L} = \lambda\, \operatorname{CE}(z, y_i) + (1 - \lambda)\, \operatorname{CE}(z, y_j), \qquad \lambda \sim \operatorname{Beta}(\alpha, \alpha)`,
+    c: [["training.py:874-876", String.raw`lam = float(np.random.beta(cfg.mixup_alpha, cfg.mixup_alpha))
+j = torch.randperm(len(x), device=device)
+x = lam * x + (1 - lam) * x[j]`]] },
+  "distractor": { c: [["training.py:366", String.raw`chosen = one_hand & (torch.rand(B, device=dev) < extra_hand_probability)`],
+        ["training.py:377", String.raw`augmented[selected] = add_distractor_hand_features(x[selected], donors, side, norm_stats)`]] },
+
+  // ---------- 7 ----------
+  "layer": { c: [["training.py:384", String.raw`class GroupStem(nn.Module):`]] },
+  "linear": { f: String.raw`y = x\,W^{\top} + b, \qquad W \in \mathbb{R}^{d_{\text{out}} \times d_{\text{in}}},\ b \in \mathbb{R}^{d_{\text{out}}}`,
+    c: [["training.py:396", String.raw`self.enc.append(nn.Sequential(nn.Linear(b - a, h), nn.LayerNorm(h), nn.GELU()))`]] },
+  "activation": { f: String.raw`W_2 (W_1 x) = (W_2 W_1)\, x \quad\Rightarrow\quad \text{cần } \phi:\ y = W_2\, \phi(W_1 x)` },
+  "relu-gelu": { f: String.raw`\operatorname{ReLU}(x) = \max(0, x), \qquad \operatorname{GELU}(x) = x\,\Phi(x) \approx \tfrac{1}{2} x \Big(1 + \tanh\!\Big[\sqrt{2/\pi}\,\big(x + 0.044715\,x^3\big)\Big]\Big)`,
+    c: [["training.py:396", String.raw`self.enc.append(nn.Sequential(nn.Linear(b - a, h), nn.LayerNorm(h), nn.GELU()))`]] },
+  "sigmoid-tanh": { f: String.raw`\sigma(x) = \frac{1}{1 + e^{-x}} \in (0, 1), \qquad \tanh(x) = \frac{e^{x} - e^{-x}}{e^{x} + e^{-x}} \in (-1, 1)`,
+    c: [["training.py:1046", String.raw`return torch.exp(lo + (hi - lo) * torch.sigmoid(u))`]] },
+  "layernorm": { f: String.raw`\mu = \frac{1}{D} \sum_{d=1}^{D} x_d, \quad \sigma^2 = \frac{1}{D} \sum_{d=1}^{D} (x_d - \mu)^2, \qquad y = \gamma \odot \frac{x - \mu}{\sqrt{\sigma^2 + \varepsilon}} + \beta`,
+    c: [["training.py:396", String.raw`self.enc.append(nn.Sequential(nn.Linear(b - a, h), nn.LayerNorm(h), nn.GELU()))`],
+        ["training.py:458", String.raw`self.norm = nn.LayerNorm(6 * h)`]] },
+  "batchnorm": { f: String.raw`\mu_c = \frac{1}{B T} \sum_{b,t} x_{b,c,t}, \quad \sigma_c^2 = \frac{1}{B T} \sum_{b,t} (x_{b,c,t} - \mu_c)^2, \qquad y = \gamma_c \frac{x - \mu_c}{\sqrt{\sigma_c^2 + \varepsilon}} + \beta_c`,
+    c: [["training.py:427", String.raw`self.bn = nn.BatchNorm1d(d)`],
+        ["training.py:433", String.raw`return x + self.drop(self.act(self.bn(self.pw(y))))`]] },
+  "conv1d": { f: String.raw`y_t = \sum_{i=0}^{k-1} w_i\, x_{t + i - \lfloor k/2 \rfloor} + b`,
+    c: [["training.py:425", String.raw`self.dw = nn.ModuleList([nn.Conv1d(d, d, k, padding=k // 2, groups=d) for k in kernels])`]] },
+  "channel-kernel": { c: [["training.py:425", String.raw`self.dw = nn.ModuleList([nn.Conv1d(d, d, k, padding=k // 2, groups=d) for k in kernels])`]] },
+  "depthwise": { f: String.raw`\underbrace{C_{\text{in}} \cdot C_{\text{out}} \cdot k}_{\text{conv thường}} \quad \text{so với} \quad \underbrace{C \cdot k}_{\text{depthwise}} + \underbrace{C_{\text{in}} \cdot C_{\text{out}}}_{\text{pointwise}}`,
+    c: [["training.py:425-426", String.raw`self.dw = nn.ModuleList([nn.Conv1d(d, d, k, padding=k // 2, groups=d) for k in kernels])
+self.pw = nn.Conv1d(d * len(kernels), d, 1)`],
+        ["training.py:432", String.raw`y = torch.cat([c(x) for c in self.dw], dim=1)`]] },
+  "receptive": { f: String.raw`\text{RF} = 1 + L\,(k - 1) = 1 + 2 \cdot (9 - 1) = 17\ \text{frame}`,
+    c: [["training.py:454-455", String.raw`self.blocks = nn.Sequential(*[MultiScaleBlock(d, cfg.kernels, cfg.base_dropout)
+                              for _ in range(cfg.n_blocks)])`]] },
+  "residual": { f: String.raw`y = x + F(x), \qquad \frac{\partial y}{\partial x} = I + \frac{\partial F}{\partial x}`,
+    c: [["training.py:433", String.raw`return x + self.drop(self.act(self.bn(self.pw(y))))`],
+        ["training.py:547-548", String.raw`x = x + self._path(self.drop(self.attn(h, h, h, need_weights=False)[0]))
+return x + self._path(self.drop(self.ff(self.n2(x))))`]] },
+  "rnn": { f: String.raw`h_t = \tanh\big(W x_t + U h_{t-1} + b\big)` },
+  "gru": { f: String.raw`\begin{aligned} r_t &= \sigma(W_{ir} x_t + b_{ir} + W_{hr} h_{t-1} + b_{hr}) \\ z_t &= \sigma(W_{iz} x_t + b_{iz} + W_{hz} h_{t-1} + b_{hz}) \\ n_t &= \tanh\big(W_{in} x_t + b_{in} + r_t \odot (W_{hn} h_{t-1} + b_{hn})\big) \\ h_t &= (1 - z_t) \odot n_t + z_t \odot h_{t-1} \end{aligned}`,
+    c: [["training.py:456", String.raw`self.gru = nn.GRU(d, h, batch_first=True, bidirectional=True)`],
+        ["training.py:465", String.raw`h, _ = self.gru(h)`]] },
+  "bidir": { f: String.raw`h_t = \big[\, \overrightarrow{h}_t \,;\, \overleftarrow{h}_t \,\big] \in \mathbb{R}^{96 + 96 = 192}`,
+    c: [["training.py:456", String.raw`self.gru = nn.GRU(d, h, batch_first=True, bidirectional=True)`]] },
+  "pooling": { f: String.raw`\text{mean} = \frac{1}{T} \sum_{t=1}^{T} h_t, \qquad \text{max}_d = \max_{t} h_{t,d}`,
+    c: [["training.py:467", String.raw`return torch.cat([(w * h).sum(1), h.mean(1), h.amax(1)], dim=-1)`]] },
+  "attention": { f: String.raw`w = \operatorname{softmax}(s_1, \dots, s_T), \qquad \text{kết quả} = \sum_{t=1}^{T} w_t\, h_t` },
+  "attn-pool": { f: String.raw`s_t = h_t^{\top} a + b, \qquad w = \operatorname{softmax}(s), \qquad \text{ctx} = \sum_{t=1}^{30} w_t\, h_t`,
+    c: [["training.py:457", String.raw`self.attn = nn.Linear(2 * h, 1)`],
+        ["training.py:466-467", String.raw`w = torch.softmax(self.attn(h), dim=1)
+return torch.cat([(w * h).sum(1), h.mean(1), h.amax(1)], dim=-1)`]] },
+  "qkv": { f: String.raw`Q = X W_Q,\ K = X W_K,\ V = X W_V, \qquad \operatorname{Attention}(Q, K, V) = \operatorname{softmax}\!\left( \frac{Q K^{\top}}{\sqrt{d_k}} \right) V`,
+    c: [["training.py:534", String.raw`self.attn = nn.MultiheadAttention(d, heads, dropout=dropout, batch_first=True)`],
+        ["training.py:547", String.raw`x = x + self._path(self.drop(self.attn(h, h, h, need_weights=False)[0]))`]] },
+  "multihead": { f: String.raw`\operatorname{head}_i = \operatorname{Attention}(Q W_i^{Q}, K W_i^{K}, V W_i^{V}), \qquad \operatorname{MHA} = [\operatorname{head}_1; \dots; \operatorname{head}_h]\, W^{O}`,
+    c: [["training.py:534", String.raw`self.attn = nn.MultiheadAttention(d, heads, dropout=dropout, batch_first=True)`]] },
+  "transformer": { f: String.raw`\begin{aligned} x &\leftarrow x + \operatorname{Attn}\big(\operatorname{LN}(x)\big) \\ x &\leftarrow x + \operatorname{FFN}\big(\operatorname{LN}(x)\big), \qquad \operatorname{FFN}(u) = W_2\, \operatorname{GELU}(W_1 u) \end{aligned}`,
+    c: [["training.py:546-548", String.raw`h = self.n1(x)
+x = x + self._path(self.drop(self.attn(h, h, h, need_weights=False)[0]))
+return x + self._path(self.drop(self.ff(self.n2(x))))`]] },
+  "posenc": { f: String.raw`PE_{(t,\,2i)} = \sin\!\left( \frac{t}{10000^{2i/d}} \right), \qquad PE_{(t,\,2i+1)} = \cos\!\left( \frac{t}{10000^{2i/d}} \right)`,
+    c: [["training.py:553-555", String.raw`freq = torch.exp(torch.arange(0, d, 2, device=device, dtype=torch.float32) * (-np.log(10000.0) / d))
+pe = torch.zeros(T, d, device=device)
+pe[:, 0::2], pe[:, 1::2] = torch.sin(pos * freq), torch.cos(pos * freq)`]] },
+  "embedding": { f: String.raw`e = \frac{\operatorname{LN}(\operatorname{pool}(x))}{\lVert \operatorname{LN}(\operatorname{pool}(x)) \rVert} \in \mathbb{R}^{576}`,
+    c: [["training.py:991-994", String.raw`h = model.norm(model.pool(z))
+logits = model.head(model.drop(h))
+emb = model.head.emb(h) if isinstance(model.head, CosineHead) else h
+return logits, F.normalize(emb, dim=-1)`]] },
+  "cosine-sim": { f: String.raw`\cos(a, b) = \frac{a \cdot b}{\lVert a \rVert\, \lVert b \rVert} \in [-1, 1]`,
+    c: [["training.py:446", String.raw`return self.scale * F.normalize(self.emb(z), dim=-1) @ F.normalize(self.W, dim=-1).t()`],
+        ["memory.py:105", String.raw`sim = torch.einsum("kbe,kne->kbn", emb, self.keys)                         # (K, B, N)`]] },
+  "head": { f: String.raw`\text{Linear: } z = h W^{\top} + b, \qquad \text{Cosine: } z_c = s \cdot \cos\big(E h,\ W_c\big)`,
+    c: [["training.py:446", String.raw`return self.scale * F.normalize(self.emb(z), dim=-1) @ F.normalize(self.W, dim=-1).t()`],
+        ["training.py:460", String.raw`self.head = CosineHead(6 * h, n_classes) if cfg.head == "cosine" else nn.Linear(6 * h, n_classes)`]] },
+  "weight-sharing": { c: [["training.py:627-628", String.raw`other = torch.stack([x[..., self.left_idx] * self.left_sign, x[..., self.right_idx]], dim=2)
+h = self.hand_norm(self.fuse(torch.cat([shape, self.other(other)], dim=-1)) + self.side)`]] },
+  "learned-token": { f: String.raw`h = p \cdot h_{\text{tay}} + (1 - p) \cdot a_{\text{vắng}}, \qquad p \in \{0, 1\}`,
+    c: [["training.py:629", String.raw`h = p * h + (1 - p) * self.absent                                        # (B,T,2,d_hand)`]] },
+  "drop-path": { f: String.raw`y = x + F(x) \cdot \frac{m}{1 - p}, \qquad m \sim \operatorname{Bernoulli}(1 - p)\ \text{(một giá trị cho mỗi mẫu)}`,
+    c: [["training.py:542-543", String.raw`keep = (torch.rand(y.shape[0], *([1] * (y.dim() - 1)), device=y.device) >= self.drop_path)
+return y * keep.to(y.dtype) / (1.0 - self.drop_path)`]] },
+  "group-stem": { f: String.raw`h_g = \min\!\big(64,\ \max(8,\ \operatorname{round}(0.5 \cdot |g|))\big), \qquad \sum_g h_g = 218 \xrightarrow{\ \text{Linear}\ } 128`,
+    c: [["training.py:395-396", String.raw`h = int(min(64, max(8, round(0.5 * (b - a)))))
+self.enc.append(nn.Sequential(nn.Linear(b - a, h), nn.LayerNorm(h), nn.GELU()))`],
+        ["training.py:407-408", String.raw`if (a, b) == (PRESENCE_SLICE.start, PRESENCE_SLICE.stop):
+    encoded = encoded * self.presence_scale`]] },
+
+  // ---------- 8 ----------
+  "cross-entropy": { f: String.raw`\operatorname{CE} = -\sum_{c=1}^{C} y_c \log p_c = -\log p_{y} = -z_{y} + \log \sum_{j=1}^{C} e^{z_j}`,
+    c: [["training.py:909", String.raw`loss = F.cross_entropy(out, y, weight=cw, label_smoothing=cfg.label_smoothing)`]] },
+  "logsumexp": { f: String.raw`\log \sum_{j} e^{z_j} = m + \log \sum_{j} e^{z_j - m}, \quad m = \max_j z_j, \qquad \log p_i = z_i - \log \sum_j e^{z_j}`,
+    c: [["training.py:923-924", String.raw`loss = loss + cfg.hand_consistency * F.kl_div(
+    F.log_softmax(extra_out, dim=-1), teacher, reduction="batchmean"`]] },
+  "softmax-ce-grad": { f: String.raw`\frac{\partial\, \operatorname{CE}}{\partial z_i} = p_i - y_i \qquad \Rightarrow \qquad \nabla_z \operatorname{CE} = p - \mathbf{e}_y`,
+    c: [["training.py:928", String.raw`scaler.scale(loss).backward()`]] },
+  "label-smoothing": { f: String.raw`y^{\text{mềm}} = (1 - \varepsilon)\, \mathbf{e}_y + \frac{\varepsilon}{C}, \qquad \varepsilon = 0.1,\ C = 31`,
+    c: [["training.py:909", String.raw`loss = F.cross_entropy(out, y, weight=cw, label_smoothing=cfg.label_smoothing)`]] },
+  "class-weight": { f: String.raw`w_c = \sqrt{\frac{N}{C \cdot n_c}}, \qquad \mathcal{L} = \frac{\sum_i w_{y_i}\, \operatorname{CE}_i}{\sum_i w_{y_i}}`,
+    c: [["training.py:825-826", String.raw`if (counts.max() / counts.min()) > 1.5:       # lệch lớp -> trọng số căn bậc hai nghịch đảo
+    cw = ((counts.sum() / (n_classes * counts)) ** 0.5).to(device)`]] },
+  "margin": { f: String.raw`\mathcal{L}_{\text{margin}} = \max\!\Big(0,\ m + \max_{j \neq y} z_j - z_y\Big), \qquad m = 0.8`,
+    c: [["training.py:740-742", String.raw`true_logits = logits.gather(1, target[:, None]).squeeze(1)
+competing = logits.masked_fill(F.one_hot(target, logits.shape[1]).bool(), -torch.inf).max(dim=1).values
+return F.relu(margin + competing - true_logits).mean()`]] },
+  "hard-negative": { f: String.raw`j^{*} = \arg\max_{j \neq y} z_j`,
+    c: [["training.py:741", String.raw`competing = logits.masked_fill(F.one_hot(target, logits.shape[1]).bool(), -torch.inf).max(dim=1).values`]] },
+  "kl": { f: String.raw`\operatorname{KL}(p \,\|\, q) = \sum_{i} p_i \log \frac{p_i}{q_i} \ \ge 0, \qquad \operatorname{KL}(p \,\|\, q) = 0 \iff p = q`,
+    c: [["training.py:922-924", String.raw`teacher = torch.softmax(out.detach(), dim=-1)
+loss = loss + cfg.hand_consistency * F.kl_div(
+    F.log_softmax(extra_out, dim=-1), teacher, reduction="batchmean"`]] },
+  "detach": { f: String.raw`\operatorname{sg}(u) = u, \qquad \frac{\partial\, \operatorname{sg}(u)}{\partial u} = 0`,
+    c: [["training.py:922", String.raw`teacher = torch.softmax(out.detach(), dim=-1)`]] },
+  "multi-loss": { f: String.raw`\mathcal{L} = \mathcal{L}_{\text{CE}} + 0.25\, \mathcal{L}_{\text{margin}} + 0.5\, \mathcal{L}_{\text{CE}}^{\text{tay phụ}} + 0.12\, \operatorname{KL}`,
+    c: [["training.py:913-918", String.raw`elif cfg.hard_negative_weight > 0:
+    loss = loss + cfg.hard_negative_weight * hard_negative_margin_loss(
+        out, y, cfg.hard_negative_margin
+    )
+if extra_out is not None:
+    loss = loss + cfg.extra_hand_loss * F.cross_entropy(`]] },
+
+  // ---------- 9 ----------
+  "gd": { f: String.raw`\theta_{t+1} = \theta_t - \eta\, \nabla_{\theta} \mathcal{L}(\theta_t)`,
+    c: [["training.py:931", String.raw`scaler.step(opt)`]] },
+  "lr": { f: String.raw`\eta_{\max} = 2 \times 10^{-3}, \qquad \eta_{\min} = 10^{-5}`,
+    c: [["training.py:885-886", String.raw`for g in opt.param_groups:
+    g["lr"] = lr`]] },
+  "optimizer": { c: [["training.py:805", String.raw`opt = torch.optim.AdamW([{"params": decay, "weight_decay": cfg.weight_decay},`]] },
+  "adam": { f: String.raw`\begin{aligned} m_t &= \beta_1 m_{t-1} + (1 - \beta_1)\, g_t, & v_t &= \beta_2 v_{t-1} + (1 - \beta_2)\, g_t^2 \\ \hat{m}_t &= \frac{m_t}{1 - \beta_1^t}, & \hat{v}_t &= \frac{v_t}{1 - \beta_2^t} \\ \theta_t &= \theta_{t-1} - \eta\, \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \varepsilon}, & \beta_1 &= 0.9,\ \beta_2 = 0.999 \end{aligned}`,
+    c: [["training.py:805-807", String.raw`opt = torch.optim.AdamW([{"params": decay, "weight_decay": cfg.weight_decay},
+                         {"params": no_decay, "weight_decay": 0.0}], lr=cfg.lr,
+                        fused=device.type in ("cuda", "mps"))   # gộp kernel: ít overhead mỗi bước`]] },
+  "adamw": { f: String.raw`\theta_t = \theta_{t-1} - \eta \left( \frac{\hat{m}_t}{\sqrt{\hat{v}_t} + \varepsilon} + \lambda\, \theta_{t-1} \right), \qquad \lambda = 0.05`,
+    c: [["training.py:803-804", String.raw`decay = [p for p in model.parameters() if p.ndim >= 2]
+no_decay = [p for p in model.parameters() if p.ndim < 2]`]] },
+  "warmup": { f: String.raw`\eta(\text{step}) = \eta_{\max} \cdot \frac{\text{step} + 1}{\text{warm_steps}}, \qquad \text{step} < \text{warm_steps}`,
+    c: [["training.py:880-881", String.raw`if step < warm_steps:
+    lr = cfg.lr * (step + 1) / warm_steps`]] },
+  "cosine-lr": { f: String.raw`\eta = \Big[\eta_{\min} + (\eta_{\max} - \eta_{\min}) \cdot \tfrac{1}{2}\big(1 + \cos(\pi \rho)\big)\Big] \cdot \text{lr_scale}, \qquad \rho = \frac{\text{step} - \text{warm}}{\text{total} - \text{warm}}`,
+    c: [["training.py:882-884", String.raw`else:
+    prog = (step - warm_steps) / max(1, total_steps - warm_steps)
+    lr = (cfg.min_lr + (cfg.lr - cfg.min_lr) * 0.5 * (1 + math.cos(math.pi * min(1.0, prog)))) * lr_scale`]] },
+  "plateau": { f: String.raw`\text{lr_target} \leftarrow \max(0.1,\ 0.5 \cdot \text{lr_target}), \qquad \text{lr_scale} \leftarrow \text{lr_scale} + 0.05\,(\text{lr_target} - \text{lr_scale})`,
+    c: [["training.py:879", String.raw`lr_scale += 0.05 * (lr_target - lr_scale)`],
+        ["training.py:954-955", String.raw`if plateau >= cfg.lr_patience:
+    lr_target, plateau = max(0.1, lr_target * 0.5), 0`]] },
+  "grad-clip": { f: String.raw`g \leftarrow g \cdot \min\!\left(1,\ \frac{c}{\lVert g \rVert_2}\right), \qquad c = 1.0`,
+    c: [["training.py:929-930", String.raw`scaler.unscale_(opt)
+nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)`]] },
+  "ema": { f: String.raw`\theta_{\text{ema}} \leftarrow d\, \theta_{\text{ema}} + (1 - d)\, \theta, \qquad d = \min\!\left(0.99,\ \frac{1 + \text{step}}{10 + \text{step}}\right)`,
+    c: [["training.py:671-674", String.raw`d = min(self.decay, (1 + step) / (10 + step))
+e, m = self._float
+torch._foreach_mul_(e, d)
+torch._foreach_add_(e, m, alpha=1 - d)`]] },
+  "early-stop": { f: String.raw`\text{dừng khi}\quad \text{ep} + 1 \ge 15 \;\wedge\; \text{ep} - \text{ep}_{\text{best}} \ge 10`,
+    c: [["training.py:961-963", String.raw`if (best["state"] is not None and ep + 1 >= cfg.min_epochs
+        and ep - best["epoch"] >= cfg.patience):
+    print(f"  {tag} early stop @ {ep+1}")`]] },
+  "full-model": { f: String.raw`E_{\text{full}} = \max\big(\lfloor 1.15 \cdot \operatorname{median}(E_{\text{best}}) \rfloor + 1,\ \ E_{\text{warmup}} + 20\big)`,
+    c: [["training.py:1032", String.raw`return max(int(np.median(best_epochs) * 1.15) + 1, cfg.warmup_epochs + 20)`]] },
+  "seed": { c: [["training.py:101-105", String.raw`def set_seed(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)`]] },
+  "finetune": { c: [["training.py:791-792", String.raw`if init_state is not None:
+    model.load_state_dict(init_state)`]] },
+
+  // ---------- 10 ----------
+  "ensemble": { f: String.raw`p(y \mid x) = \frac{1}{K} \sum_{k=1}^{K} \operatorname{softmax}\!\left( \frac{f_k\big(\tfrac{x - \mu_k}{\sigma_k}\big)}{T} \right), \qquad K = 6`,
+    c: [["training.py:1014-1017", String.raw`for k, m in enumerate(self.models):
+    z = normalize_features(x, self.means[k], self.stds[k], self.presence_aware)
+    probs.append(torch.softmax(m(z) / self.temperature, dim=-1))
+return torch.stack(probs).mean(0)`]] },
+  "confidence": { f: String.raw`\text{conf} = \max_{c} p_c`,
+    c: [["predict.py:108", String.raw`confidence = float(candidates[0][1])`]] },
+  "calibration": { f: String.raw`P\big(\hat{y} = y \;\big|\; \text{conf} = c\big) = c \qquad \forall\, c \in [0, 1]` },
+  "temperature": { f: String.raw`p = \operatorname{softmax}(z / T), \qquad T^{*} = \arg\min_{T \in [1, 10]} \ \operatorname{CE}\big(\operatorname{softmax}(z^{\text{OOF}} / T),\ y^{\text{OOF}}\big)`,
+    c: [["training.py:1045-1046", String.raw`def temp():
+    return torch.exp(lo + (hi - lo) * torch.sigmoid(u))`],
+        ["training.py:1052", String.raw`loss = F.cross_entropy(logits / temp(), y)`]] },
+  "ece": { f: String.raw`\operatorname{ECE} = \sum_{b=1}^{B} \frac{n_b}{N}\, \big| \operatorname{acc}_b - \operatorname{conf}_b \big|` },
+  "lbfgs": { f: String.raw`T = \exp\!\big(\log 1 + (\log 10 - \log 1)\, \sigma(u)\big), \qquad u^{*} = \arg\min_u \operatorname{CE}(z / T(u),\ y)`,
+    c: [["training.py:1048", String.raw`opt = torch.optim.LBFGS([u], lr=0.5, max_iter=50, line_search_fn="strong_wolfe")`]] },
+  "reject": { f: String.raw`\tau^{*} = \min \big\{ \tau \in \{0.20, 0.25, \dots, 0.95\} :\ \operatorname{acc}(\tau) \ge 0.95 \;\wedge\; \operatorname{cov}(\tau) \ge 0.5 \big\}, \qquad \operatorname{cov}(\tau) = \frac{|\{ i : \text{conf}_i \ge \tau \}|}{N}`,
+    c: [["training.py:1084-1087", String.raw`for thr in np.arange(0.2, 0.96, 0.05):
+    sel = conf >= thr
+    cov = float(sel.mean())
+    acc = float(ok[sel].mean()) if sel.any() else 0.0`],
+        ["predict.py:82", String.raw`self.threshold = max(float(self.checkpoint["reject_threshold"]), min_confidence)`]] },
+  "prob-gap": { f: String.raw`\text{gap} = p_{(1)} - p_{(2)}, \qquad \text{chấp nhận} \iff p_{(1)} \ge 0.65 \;\wedge\; \text{gap} \ge 0.08`,
+    c: [["predict.py:109-110", String.raw`gap = confidence - float(candidates[1][1]) if len(candidates) > 1 else 1.0
+accepted = confident and gap >= self.min_probability_gap`]] },
+  "onnx": { c: [["training.py:1143", String.raw`torch.onnx.export(ens, dummy, path, dynamo=False, **kw)`]] },
+
+  // ---------- 11 ----------
+  "accuracy": { f: String.raw`\operatorname{acc} = \frac{1}{N} \sum_{i=1}^{N} \mathbb{1}\big[\hat{y}_i = y_i\big]`,
+    c: [["training.py:730", String.raw`acc = (logits.argmax(1) == y).float().mean().item()`]] },
+  "tp-fp": { f: String.raw`\text{TP}_c = M_{cc}, \qquad \text{FP}_c = \sum_{i \ne c} M_{ic}, \qquad \text{FN}_c = \sum_{j \ne c} M_{cj}`,
+    c: [["evaluation.py:29-31", String.raw`tp = np.diag(cm).astype(np.float64)
+support = cm.sum(axis=1).astype(np.float64)
+predicted = cm.sum(axis=0).astype(np.float64)`]] },
+  "precision-recall": { f: String.raw`\text{precision}_c = \frac{\text{TP}_c}{\text{TP}_c + \text{FP}_c}, \qquad \text{recall}_c = \frac{\text{TP}_c}{\text{TP}_c + \text{FN}_c}`,
+    c: [["evaluation.py:32-33", String.raw`precision = np.divide(tp, predicted, out=np.zeros(n), where=predicted > 0)
+recall = np.divide(tp, support, out=np.zeros(n), where=support > 0)`]] },
+  "f1": { f: String.raw`F_1 = \frac{2\, P\, R}{P + R}, \qquad \text{Macro-}F_1 = \frac{1}{C} \sum_{c=1}^{C} F_{1,c}`,
+    c: [["evaluation.py:35", String.raw`f1 = np.divide(2 * precision * recall, denom, out=np.zeros(n), where=denom > 0)`],
+        ["evaluation.py:40", String.raw`return float(_precision_recall_f1(cm)[2].mean())`]] },
+  "confusion": { f: String.raw`M_{ij} = \big| \{ n :\ y_n = i,\ \hat{y}_n = j \} \big|`,
+    c: [["evaluation.py:21-23", String.raw`cm = np.zeros((n_classes, n_classes), dtype=np.int64)
+for t, p in zip(y_true, y_pred):
+    cm[t, p] += 1`]] },
+  "topk-acc": { f: String.raw`\operatorname{acc@}k = \frac{1}{N} \sum_{i} \mathbb{1}\big[ y_i \in \operatorname{top}_k(p_i) \big]`,
+    c: [["evaluation.py:45-46", String.raw`top = np.argsort(-logits, axis=1)[:, :k]
+return float(np.mean([y[i] in top[i] for i in range(len(y))]))`]] },
+  "rival": { f: String.raw`\operatorname{rival}(c) = \arg\max_{j \ne c} \ \frac{1}{|\{i : y_i = c\}|} \sum_{i : y_i = c} p_{i,j}`,
+    c: [["training.py:1191-1193", String.raw`mean_scores = rows.mean(axis=0).copy()
+mean_scores[class_index] = -np.inf
+rival_index = int(np.argmax(mean_scores))`]] },
+  "bootstrap": { f: String.raw`\text{CI}_{95\%} = \Big[\, Q_{2.5\%}\big(\{\operatorname{acc}^{(b)}\}_{b=1}^{1000}\big),\ \ Q_{97.5\%}\big(\{\operatorname{acc}^{(b)}\}_{b=1}^{1000}\big) \,\Big]`,
+    c: [["evaluation.py:94", String.raw`chosen = rng.choice(unique_groups, size=len(unique_groups), replace=True)`],
+        ["evaluation.py:108", String.raw`"accuracy": [float(np.percentile(accs, 2.5)), float(np.percentile(accs, 97.5))],`]] },
+
+  // ---------- 12 ----------
+  "sliding-window": { f: String.raw`\mathcal{W}(t) = \{ x_\tau :\ t - 2.0 < \tau \le t \}`,
+    c: [["predict.py:245-246", String.raw`while self.history and now - self.history[0][0] > self.config.window_seconds:
+    self.history.popleft()`]] },
+  "latency": { f: String.raw`\text{độ trễ} \gtrsim 1.5\ \text{s} + 3 \times \frac{3\ \text{frame}}{15\ \text{fps}} = 1.5 + 0.6\ \text{s}` },
+  "debounce": { f: String.raw`\text{nhãn ổn định} = \ell \iff \hat{y}_{n-2} = \hat{y}_{n-1} = \hat{y}_{n} = \ell`,
+    c: [["predict.py:255", String.raw`if ready and self.frame_count % self.config.predict_every == 0:`],
+        ["predict.py:259-261", String.raw`self.recent_labels.append(label)
+self.stable_label = label if label and len(self.recent_labels) == self.config.stability_frames \
+    and all(candidate == label for candidate in self.recent_labels) else None`]] },
+  "session": { c: [["predict.py:156-157", String.raw`def open_stream(self, config: StreamConfig | None = None, *, memory=None) -> VSLStreamSession:
+    session = VSLStreamSession(self, config=config)`]] },
+  "l2-normalize": { f: String.raw`\hat{e} = \frac{e}{\lVert e \rVert_2}, \qquad \cos(a, b) = \hat{a} \cdot \hat{b}`,
+    c: [["training.py:994", String.raw`return logits, F.normalize(emb, dim=-1)`]] },
+  "exemplar-memory": { f: String.raw`z'_c = z_c + \alpha \cdot \max_{i \in \mathcal{M}_c} \exp\!\big(-6\,(1 - \cos(e, e_i))\big), \qquad \alpha = 10 \cdot \text{strength}`,
+    c: [["memory.py:115-116", String.raw`bonus = torch.where(sim > -1, torch.exp(-self.sharpness * (1 - sim)), torch.zeros_like(sim))
+probs = torch.softmax(logits + self.alpha * bonus, -1).mean(0)`]] },
+  "metric-learning": { f: String.raw`\mathcal{L}_{\text{triplet}} = \max\big(0,\ \lVert a - p \rVert - \lVert a - n \rVert + m\big)` },
+};
+
+const FEATURES = [
+  ["hand_pos", 18, "pos", "Tâm lòng bàn tay, đầu ngón cái, đầu ngón trỏ của mỗi tay", "Hệ trục thân, đơn vị độ rộng vai"],
+  ["inter_hand_vec", 3, "pos", "Vector tâm bàn tay trái − phải", "Hiệu vector"],
+  ["body_contact", 22, "pos", "Độ gần tới 11 vùng cơ thể, mỗi tay", "exp(−γd²), z giảm trọng số 0,25"],
+  ["hand_contact", 4, "pos", "Lòng−lòng, cái−cái, trỏ−trỏ, cặp gần nhất", "Kernel khoảng cách"],
+  ["face_vec", 12, "pos", "Tâm bàn tay và đầu ngón trỏ trừ mũi", "Hiệu vector"],
+  ["hand_scale", 2, "pos", "Cỡ lòng bàn tay / độ rộng vai: tay gần hay xa camera", "Trung bình độ dài xương"],
+  ["handshape", 76, "shape", "15 cos khớp, độ duỗi, độ xoè, tiếp xúc đầu ngón, vị trí ngón cái, thứ tự đầu ngón", "Tích vô hướng, chiếu lên trục"],
+  ["hand_local", 120, "shape", "20 điểm tay trong hệ trục lòng bàn tay", "Đổi hệ trục, chia tỉ lệ"],
+  ["finger_curl", 90, "shape", "Góc khớp, tổng gập, gập PIP+DIP, độ thẳng; đo trên ảnh và hand_world", "atan2, tỉ số độ dài"],
+  ["orientation", 18, "ori", "palm_dir, palm_normal, 3 góc cổ tay so với cẳng tay", "Tích có hướng"],
+  ["presence", 2, "pres", "Tay trái, tay phải có mặt hay không", "Cờ 0/1"],
+  ["motion", 39, "mot", "Vận tốc của hand_pos, inter_hand_vec, orientation", "Làm mượt + sai phân trung tâm"],
+  ["stroke", 12, "mot", "Độ dời lớn nhất trong 5 frame của đầu ngón trỏ và lòng bàn tay", "Cửa sổ trượt, argmax"],
+];
+const FCOLOR = { pos: "var(--f-pos)", shape: "var(--f-shape)", ori: "var(--f-ori)", pres: "var(--f-pres)", mot: "var(--f-mot)" };
+
+function el(tag, attrs, text) {
+  const e = document.createElement(tag);
+  for (const k in attrs || {}) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  return e;
+}
+function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function rich(s) { return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>"); }
+function plain(s) { return s.replace(/`/g, "").replace(/\*\*/g, ""); }
+
+// Thẻ thuật ngữ
+// Thứ tự mục trong thẻ; "f" và "c" lấy từ MATH (công thức TeX và đoạn code thật).
+const FIELDS = [["what", "Là gì", ""], ["f", "Công thức", "f"], ["c", "Trong code", "c"], ["ex", "Ví dụ", "x"], ["why", "Để làm gì", ""], ["proj", "Trong dự án", "p"]];
+function codeRefs(refs) {
+  const wrap = el("div", { class: "code-refs" });
+  for (const [ref, code] of refs) {
+    const item = el("div", { class: "code-ref" });
+    const pre = el("pre"); pre.appendChild(el("code", {}, code));
+    item.append(el("span", { class: "ref" }, "src/" + ({ "training.py": "model/", "predict.py": "model/", "memory.py": "model/", "evaluation.py": "model/", "extract.py": "features/", "view.py": "features/" }[ref.split(":")[0]] || "") + ref), pre);
+    wrap.appendChild(item);
+  }
+  return wrap;
+}
+document.querySelectorAll(".terms[data-sec]").forEach(box => {
+  const list = TERMS.filter(t => t.s === box.dataset.sec);
+  const cnt = document.querySelector(`[data-count="${box.dataset.sec}"]`);
+  if (cnt) cnt.textContent = `· ${list.length}`;
+  for (const t0 of list) {
+    const t = { ...t0, ...(MATH[t0.id] || {}) };
+    const card = el("article", { class: "term", id: "t-" + t.id });
+    const head = el("div", { class: "term-head" });
+    head.append(el("h3", {}, t.en), el("span", { class: "vi" }, t.vi));
+    const dl = el("dl");
+    for (const [key, label, kind] of FIELDS) {
+      if (!t[key] || (Array.isArray(t[key]) && !t[key].length)) continue;
+      const dt = el("dt", kind === "p" ? { class: "p" } : kind === "c" ? { class: "c" } : {}, label);
+      const dd = el("dd", kind === "f" ? { class: "f" } : kind === "x" ? { class: "x" } : {});
+      if (kind === "f") dd.textContent = "\\[" + t.f + "\\]";
+      else if (kind === "c") dd.appendChild(codeRefs(t.c));
+      else dd.innerHTML = rich(t[key]);
+      dl.append(dt, dd);
+    }
+    card.append(head, dl);
+    if (t.tt && PROB[t.tt]) {
+      const p = PROB[t.tt];
+      const tt = el("div", { class: "tt-mini" });
+      tt.append(document.createTextNode("Luyện: "), el("a", { href: TT + p[0], target: "_blank", rel: "noopener" }, p[1]), document.createTextNode(" · " + p[2]));
+      card.appendChild(tt);
+    }
+    box.appendChild(card);
+  }
+});
+document.getElementById("term-total").textContent = String(TERMS.length);
+
+const FLOW = [
+ {
+  "n": 1,
+  "title": "Chuẩn hoá z-score theo model",
+  "io": "(30, 418) → (30, 418)",
+  "params": "0 (μ, σ không học)",
+  "what": "Đưa mọi cột về cùng thang đo bằng μ, σ của model k. Cột của tay vắng bị nhân 0, hai cột hiện diện thay bằng cờ 0/1 (tay đó có hình học hay không).",
+  "f": "\\begin{aligned}\n\\tilde x_{t,j} &= \\operatorname{clip}\\!\\Big(\\frac{x_{t,j} - \\mu_{k,j}}{\\sigma_{k,j}},\\ -8,\\ 8\\Big) \\cdot \\kappa_{t,j} \\qquad (\\text{NaN} \\to 0) \\\\\n\\kappa_{t,j} &= \\begin{cases} 1 & \\text{cột không thuộc tay nào} \\\\ v^{L}_t & \\text{cột của tay trái} \\\\ v^{R}_t & \\text{cột của tay phải} \\\\ v^{L}_t\\, v^{R}_t & \\text{cột tay–tay} \\end{cases} \\\\\n\\tilde x_{t,365} &= v^{L}_t, \\qquad \\tilde x_{t,366} = v^{R}_t\n\\end{aligned}",
+  "w": [
+   [
+    "means[k]",
+    "(418,)",
+    "\\(\\mu_k\\)",
+    "hàng k của khoá means"
+   ],
+   [
+    "stds[k]",
+    "(418,)",
+    "\\(\\sigma_k\\)",
+    "hàng k của khoá stds, tối thiểu 0,001"
+   ]
+  ],
+  "c": [
+   [
+    "training.py:232",
+    "z = torch.nan_to_num(((x - mean) / std).clamp(-8.0, 8.0), nan=0.0)   # NaN -> giá trị trung bình"
+   ],
+   [
+    "training.py:238",
+    "keep = (1.0 - m.sum(0)) + vl * m[0] + vr * m[1] + vl * vr * m[2]"
+   ],
+   [
+    "training.py:240",
+    "return torch.cat([z[..., :PRESENCE_SLICE.start], v, z[..., PRESENCE_SLICE.stop:]], dim=-1)"
+   ]
+  ],
+  "note": "v^L_t, v^R_t ∈ {0, 1}: tay trái/phải có vị trí khác 0 ở frame t (hand_validity, training.py:205)."
+ },
+ {
+  "n": 2,
+  "title": "GroupStem: mã hoá riêng 8 nhóm cột",
+  "io": "(30, 418) → 8 vector, tổng (30, 218)",
+  "params": "17 676",
+  "what": "Mỗi nhóm cột g (từ cột a_g đến b_g) có một lớp Linear riêng, rồi LayerNorm và GELU. Áp cho từng frame t độc lập, cùng trọng số cho mọi frame.",
+  "f": "\\begin{aligned}\nu^{(g)}_t &= \\operatorname{GELU}\\!\\Big(\\operatorname{LN}\\big(W_g\\, \\tilde x_t[a_g{:}b_g] + b_g;\\ \\gamma_g, \\beta_g\\big)\\Big) \\in \\mathbb{R}^{h_g}, \\qquad g = 0, \\dots, 7 \\\\\nu^{(5)}_t &\\leftarrow 0.25\\, u^{(5)}_t \\qquad \\text{(nhóm hiện diện)} \\\\\n\\operatorname{LN}(v; \\gamma, \\beta) &= \\gamma \\odot \\frac{v - \\bar v}{\\sqrt{\\tfrac{1}{n}\\sum_i (v_i - \\bar v)^2 + 10^{-5}}} + \\beta \\\\\n\\operatorname{GELU}(v) &= v \\cdot \\tfrac{1}{2}\\Big(1 + \\operatorname{erf}\\big(v / \\sqrt 2\\big)\\Big)\n\\end{aligned}",
+  "w": [
+   [
+    "stem.enc.{g}.0.weight",
+    "(h_g, d_g)",
+    "\\(W_g\\)",
+    "ví dụ g = 0: (30, 61)"
+   ],
+   [
+    "stem.enc.{g}.0.bias",
+    "(h_g,)",
+    "\\(b_g\\)",
+    ""
+   ],
+   [
+    "stem.enc.{g}.1.weight",
+    "(h_g,)",
+    "\\(\\gamma_g\\)",
+    "hệ số co giãn của LayerNorm"
+   ],
+   [
+    "stem.enc.{g}.1.bias",
+    "(h_g,)",
+    "\\(\\beta_g\\)",
+    "độ dời của LayerNorm"
+   ]
+  ],
+  "groups": [
+   [
+    0,
+    "0–61",
+    "vị trí",
+    61,
+    30,
+    1920
+   ],
+   [
+    1,
+    "61–137",
+    "thủ hình",
+    76,
+    38,
+    3002
+   ],
+   [
+    2,
+    "137–257",
+    "điểm bàn tay",
+    120,
+    60,
+    7380
+   ],
+   [
+    3,
+    "257–347",
+    "độ cong ngón",
+    90,
+    45,
+    4185
+   ],
+   [
+    4,
+    "347–365",
+    "hướng",
+    18,
+    9,
+    189
+   ],
+   [
+    5,
+    "365–367",
+    "hiện diện",
+    2,
+    8,
+    40
+   ],
+   [
+    6,
+    "367–406",
+    "vận tốc",
+    39,
+    20,
+    840
+   ],
+   [
+    7,
+    "406–418",
+    "nét",
+    12,
+    8,
+    120
+   ]
+  ],
+  "c": [
+   [
+    "training.py:396",
+    "self.enc.append(nn.Sequential(nn.Linear(b - a, h), nn.LayerNorm(h), nn.GELU()))"
+   ],
+   [
+    "training.py:404",
+    "encoded = encoder(x[..., a:b])"
+   ],
+   [
+    "training.py:407-408",
+    "if (a, b) == (PRESENCE_SLICE.start, PRESENCE_SLICE.stop):\n    encoded = encoded * self.presence_scale"
+   ]
+  ],
+  "note": "h_g = min(64, max(8, round(d_g / 2))): nhóm càng nhiều cột thì vector mã hoá càng dài."
+ },
+ {
+  "n": 3,
+  "title": "Ghép 8 nhóm và chiếu về 128 chiều",
+  "io": "(30, 218) → (30, 128)",
+  "params": "28 288",
+  "what": "Nối 8 vector u thành một vector 218 chiều rồi trộn chúng bằng một Linear chung. Từ đây thông tin các nhóm mới gặp nhau.",
+  "f": "h_t = \\operatorname{GELU}\\!\\Big(\\operatorname{LN}\\big(W_p \\big[u^{(0)}_t; u^{(1)}_t; \\dots; u^{(7)}_t\\big] + b_p;\\ \\gamma_p, \\beta_p\\big)\\Big) \\in \\mathbb{R}^{128}",
+  "w": [
+   [
+    "stem.proj.0.weight",
+    "(128, 218)",
+    "\\(W_p\\)",
+    "218 = 30+38+60+45+9+8+20+8"
+   ],
+   [
+    "stem.proj.0.bias",
+    "(128)",
+    "\\(b_p\\)",
+    ""
+   ],
+   [
+    "stem.proj.1.weight",
+    "(128)",
+    "\\(\\gamma_p\\)",
+    ""
+   ],
+   [
+    "stem.proj.1.bias",
+    "(128)",
+    "\\(\\beta_p\\)",
+    ""
+   ]
+  ],
+  "c": [
+   [
+    "training.py:398-399",
+    "self.proj = nn.Sequential(nn.Linear(total, d_model), nn.LayerNorm(d_model),\n                          nn.GELU(), nn.Dropout(dropout))"
+   ],
+   [
+    "training.py:417",
+    "return self.proj(torch.cat(outs, dim=-1))"
+   ]
+  ]
+ },
+ {
+  "n": 4,
+  "title": "MultiScaleBlock × 2: tích chập theo thời gian",
+  "io": "(30, 128) → (30, 128)",
+  "params": "104 192 (2 khối)",
+  "what": "Mỗi kênh c được lọc theo thời gian bằng 3 bộ lọc dài 3, 5 và 9 frame (bắt cử động nhanh và chậm). Conv 1×1 trộn 384 kênh về 128, BatchNorm, GELU, rồi cộng lại vào đầu vào (residual). Chạy 2 lần với 2 bộ trọng số j = 0, 1.",
+  "f": "\\begin{aligned}\ny^{(\\ell)}_{t,c} &= b^{(\\ell)}_c + \\sum_{i=-r_\\ell}^{r_\\ell} w^{(\\ell)}_{c,\\ i + r_\\ell}\\ h_{t+i,\\,c}, \\qquad \\ell \\in \\{3, 5, 9\\},\\ \\ r_\\ell = \\lfloor \\ell/2 \\rfloor \\\\\nq_t &= W_{pw} \\big[y^{(3)}_t; y^{(5)}_t; y^{(9)}_t\\big] + b_{pw} \\in \\mathbb{R}^{128} \\\\\n\\hat q_t &= \\gamma \\odot \\frac{q_t - \\mu_{\\text{run}}}{\\sqrt{\\sigma^2_{\\text{run}} + 10^{-5}}} + \\beta \\\\\nh_t &\\leftarrow h_t + \\operatorname{GELU}(\\hat q_t)\n\\end{aligned}",
+  "w": [
+   [
+    "blocks.0.dw.0.weight",
+    "(128, 1, 3)",
+    "\\(w^{(3)}\\)",
+    "depthwise: mỗi kênh 1 bộ lọc dài 3"
+   ],
+   [
+    "blocks.0.dw.1.weight",
+    "(128, 1, 5)",
+    "\\(w^{(5)}\\)",
+    "bộ lọc dài 5"
+   ],
+   [
+    "blocks.0.dw.2.weight",
+    "(128, 1, 9)",
+    "\\(w^{(9)}\\)",
+    "bộ lọc dài 9"
+   ],
+   [
+    "blocks.{j}.dw.{0,1,2}.bias",
+    "(128,)",
+    "\\(b^{(\\ell)}\\)",
+    ""
+   ],
+   [
+    "blocks.0.pw.weight",
+    "(128, 384, 1)",
+    "\\(W_{pw}\\)",
+    "conv 1×1 = Linear 384→128 áp cho từng frame"
+   ],
+   [
+    "blocks.0.pw.bias",
+    "(128)",
+    "\\(b_{pw}\\)",
+    ""
+   ],
+   [
+    "blocks.0.bn.weight",
+    "(128)",
+    "\\(\\gamma\\)",
+    ""
+   ],
+   [
+    "blocks.0.bn.bias",
+    "(128)",
+    "\\(\\beta\\)",
+    ""
+   ],
+   [
+    "blocks.0.bn.running_mean",
+    "(128)",
+    "\\(\\mu_{\\text{run}}\\)",
+    "không học bằng gradient: trung bình trượt của batch khi train"
+   ],
+   [
+    "blocks.0.bn.running_var",
+    "(128)",
+    "\\(\\sigma^2_{\\text{run}}\\)",
+    "như trên, cho phương sai"
+   ]
+  ],
+  "c": [
+   [
+    "training.py:425-427",
+    "self.dw = nn.ModuleList([nn.Conv1d(d, d, k, padding=k // 2, groups=d) for k in kernels])\nself.pw = nn.Conv1d(d * len(kernels), d, 1)\nself.bn = nn.BatchNorm1d(d)"
+   ],
+   [
+    "training.py:432-433",
+    "y = torch.cat([c(x) for c in self.dw], dim=1)\nreturn x + self.drop(self.act(self.bn(self.pw(y))))"
+   ]
+  ],
+  "note": "Bảng ghi tên của khối j = 0; khối j = 1 có đúng các khoá đó với tiền tố blocks.1. PyTorch Conv1d tính tương quan chéo (không lật bộ lọc), đúng như tổng ở dòng đầu."
+ },
+ {
+  "n": 5,
+  "title": "GRU hai chiều",
+  "io": "(30, 128) → (30, 192)",
+  "params": "130 176",
+  "what": "Đọc 30 frame lần lượt, mang theo trạng thái s_t (96 số) tóm tắt những gì đã thấy. Chiều xuôi đi t = 1 → 30, chiều ngược đi t = 30 → 1 với bộ trọng số riêng; nối hai trạng thái ở mỗi frame.",
+  "f": "\\begin{aligned}\nr_t &= \\sigma\\big(W_{ir} h_t + b_{ir} + W_{hr} s_{t-1} + b_{hr}\\big) && \\text{cổng reset} \\\\\nu_t &= \\sigma\\big(W_{iu} h_t + b_{iu} + W_{hu} s_{t-1} + b_{hu}\\big) && \\text{cổng cập nhật} \\\\\nn_t &= \\tanh\\big(W_{in} h_t + b_{in} + r_t \\odot (W_{hn} s_{t-1} + b_{hn})\\big) && \\text{trạng thái ứng viên} \\\\\ns_t &= (1 - u_t) \\odot n_t + u_t \\odot s_{t-1}, \\qquad s_0 = 0 \\\\\ng_t &= \\big[\\overrightarrow{s}_t ;\\ \\overleftarrow{s}_t\\big] \\in \\mathbb{R}^{96 + 96}\n\\end{aligned}",
+  "w": [
+   [
+    "gru.weight_ih_l0",
+    "(288, 128)",
+    "\\([W_{ir}; W_{iu}; W_{in}]\\)",
+    "3 ma trận 96×128 chồng theo hàng, thứ tự r, u, n"
+   ],
+   [
+    "gru.weight_hh_l0",
+    "(288, 96)",
+    "\\([W_{hr}; W_{hu}; W_{hn}]\\)",
+    "3 ma trận 96×96"
+   ],
+   [
+    "gru.bias_ih_l0",
+    "(288)",
+    "\\([b_{ir}; b_{iu}; b_{in}]\\)",
+    ""
+   ],
+   [
+    "gru.bias_hh_l0",
+    "(288)",
+    "\\([b_{hr}; b_{hu}; b_{hn}]\\)",
+    ""
+   ],
+   [
+    "gru.*_l0_reverse",
+    "như trên",
+    "\\(\\overleftarrow{W}, \\overleftarrow{b}\\)",
+    "bộ trọng số thứ hai cho chiều ngược"
+   ]
+  ],
+  "c": [
+   [
+    "training.py:456",
+    "self.gru = nn.GRU(d, h, batch_first=True, bidirectional=True)"
+   ],
+   [
+    "training.py:465",
+    "h, _ = self.gru(h)"
+   ]
+  ],
+  "note": "σ là sigmoid 1/(1+e^−v), ⊙ là nhân từng phần tử. PyTorch gọi cổng cập nhật là z; ở đây đổi thành u để không trùng với logits z."
+ },
+ {
+  "n": 6,
+  "title": "Gộp theo thời gian: attention ⊕ trung bình ⊕ max",
+  "io": "(30, 192) → (576,)",
+  "params": "193",
+  "what": "Biến 30 vector thành 1 vector cho cả clip. Attention cho mỗi frame một điểm, softmax trên 30 frame thành trọng số α, rồi lấy tổng có trọng số; nối thêm trung bình và max theo từng chiều.",
+  "f": "\\begin{aligned}\ne_t &= w_a^{\\top} g_t + b_a, \\qquad \\alpha_t = \\frac{e^{e_t}}{\\sum_{\\tau=1}^{30} e^{e_\\tau}} \\\\\nv &= \\Big[\\ \\sum_{t=1}^{30} \\alpha_t\\, g_t \\ ;\\ \\ \\frac{1}{30}\\sum_{t=1}^{30} g_t \\ ;\\ \\ \\max_{t} g_t\\ \\Big] \\in \\mathbb{R}^{192 + 192 + 192}\n\\end{aligned}",
+  "w": [
+   [
+    "attn.weight",
+    "(1, 192)",
+    "\\(w_a^{\\top}\\)",
+    ""
+   ],
+   [
+    "attn.bias",
+    "(1)",
+    "\\(b_a\\)",
+    ""
+   ]
+  ],
+  "c": [
+   [
+    "training.py:466-467",
+    "w = torch.softmax(self.attn(h), dim=1)\nreturn torch.cat([(w * h).sum(1), h.mean(1), h.amax(1)], dim=-1)"
+   ]
+  ]
+ },
+ {
+  "n": 7,
+  "title": "LayerNorm và lớp phân loại",
+  "io": "(576,) → (31,) logits",
+  "params": "19 039",
+  "what": "Chuẩn hoá vector clip rồi nhân với ma trận lớp: mỗi hàng của W_h là \"mẫu\" của một ký hiệu, tích vô hướng với v cho điểm thô (logit) của ký hiệu đó.",
+  "f": "\\begin{aligned}\n\\hat v &= \\operatorname{LN}(v;\\ \\gamma_n, \\beta_n) \\\\\nz^{(k)} &= W_h\\, \\hat v + b_h \\in \\mathbb{R}^{31}, \\qquad z^{(k)}_c = \\sum_{i=1}^{576} W_{h,ci}\\, \\hat v_i + b_{h,c}\n\\end{aligned}",
+  "w": [
+   [
+    "norm.weight",
+    "(576)",
+    "\\(\\gamma_n\\)",
+    ""
+   ],
+   [
+    "norm.bias",
+    "(576)",
+    "\\(\\beta_n\\)",
+    ""
+   ],
+   [
+    "head.weight",
+    "(31, 576)",
+    "\\(W_h\\)",
+    "31 lớp × 576"
+   ],
+   [
+    "head.bias",
+    "(31)",
+    "\\(b_h\\)",
+    ""
+   ]
+  ],
+  "c": [
+   [
+    "training.py:470",
+    "return self.head(self.drop(self.norm(self.pool(x))))"
+   ]
+  ]
+ },
+ {
+  "n": 8,
+  "title": "Nhiệt độ và softmax của từng model",
+  "io": "(31,) → (31,) xác suất",
+  "params": "1 số (T)",
+  "what": "Chia logits cho T rồi softmax để thành xác suất có tổng bằng 1.",
+  "f": "p^{(k)}_c = \\frac{\\exp\\big(z^{(k)}_c / T\\big)}{\\sum_{c'=1}^{31} \\exp\\big(z^{(k)}_{c'} / T\\big)}, \\qquad T = 1.0",
+  "w": [
+   [
+    "temperature",
+    "1.0",
+    "\\(T\\)",
+    "học trên logits OOF, chung cho cả 6 model"
+   ]
+  ],
+  "c": [
+   [
+    "training.py:1015-1016",
+    "z = normalize_features(x, self.means[k], self.stds[k], self.presence_aware)\nprobs.append(torch.softmax(m(z) / self.temperature, dim=-1))"
+   ]
+  ]
+ },
+ {
+  "n": 9,
+  "title": "Trung bình 6 model",
+  "io": "6 × (31,) → (31,)",
+  "params": "0",
+  "what": "Lặp bước 1–8 cho cả 6 model (mỗi model một μ, σ và một bộ trọng số riêng) rồi lấy trung bình xác suất.",
+  "f": "p_c = \\frac{1}{6} \\sum_{k=1}^{6} p^{(k)}_c",
+  "w": [
+   [
+    "state_dicts[0..5]",
+    "6 bộ",
+    "\\(\\theta^\\star_1, \\dots, \\theta^\\star_6\\)",
+    "5 model fold + 1 model toàn bộ dữ liệu"
+   ]
+  ],
+  "c": [
+   [
+    "training.py:1017",
+    "return torch.stack(probs).mean(0)"
+   ]
+  ]
+ },
+ {
+  "n": 10,
+  "title": "Quyết định: nhận hay từ chối",
+  "io": "(31,) → nhãn | None",
+  "params": "0",
+  "what": "Xếp hạng xác suất. Chỉ trả nhãn khi lớp đầu đủ chắc và cách lớp thứ hai đủ xa; nếu không thì báo low_confidence hoặc ambiguous.",
+  "f": "\\begin{aligned}\nc_1 &= \\arg\\max_c p_c, \\qquad c_2 = \\text{lớp có xác suất lớn thứ hai} \\\\\n\\tau &= \\max(0.2,\\ 0.65) = 0.65 \\\\\n\\text{nhãn} &= \\begin{cases} \\text{classes}[c_1] & \\text{nếu } p_{c_1} \\ge \\tau \\ \\text{ và } \\ p_{c_1} - p_{c_2} \\ge 0.08 \\\\ \\text{None} & \\text{ngược lại} \\end{cases}\n\\end{aligned}",
+  "w": [
+   [
+    "reject_threshold",
+    "0.2",
+    "\\(\\tau_{\\text{OOF}}\\)",
+    "nâng lên min_confidence = 0,65"
+   ],
+   [
+    "classes",
+    "31 tên",
+    "",
+    "chỉ số → nhãn"
+   ]
+  ],
+  "c": [
+   [
+    "predict.py:82",
+    "self.threshold = max(float(self.checkpoint[\"reject_threshold\"]), min_confidence)"
+   ],
+   [
+    "training.py:1131-1132",
+    "if row[top[0]] < reject_threshold:\n    res.insert(0, (\"unknown\", float(row[top[0]])))"
+   ],
+   [
+    "predict.py:110",
+    "accepted = confident and gap >= self.min_probability_gap"
+   ]
+  ]
+ }
+];
+const TRAIN_FLOW = {
+ "f": "\\begin{aligned}\n\\theta_0 &\\sim \\text{khởi tạo ngẫu nhiên} \\\\\n\\mu_k,\\ \\sigma_k &= \\text{mean, std trên tập train của model } k && \\text{không học bằng gradient} \\\\\ng_t &= \\nabla_\\theta\\, \\mathcal{L}(\\theta_t;\\ \\text{batch}_t) && \\text{lan truyền ngược} \\\\\ng_t &\\leftarrow g_t \\cdot \\min\\!\\Big(1,\\ \\frac{1.0}{\\lVert g_t \\rVert_2}\\Big) && \\text{cắt gradient} \\\\\n\\theta_{t+1} &= \\operatorname{AdamW}\\big(\\theta_t,\\ g_t;\\ \\eta_t,\\ \\lambda\\big) && \\lambda = 0.05 \\text{ cho ma trận, } 0 \\text{ cho bias, LN, BN} \\\\\n\\bar\\theta_{t+1} &= d_t\\,\\bar\\theta_t + (1 - d_t)\\,\\theta_{t+1} && \\text{EMA}, \\ d_t = \\min\\!\\big(0.99,\\ \\tfrac{1+t}{10+t}\\big) \\\\\n\\theta^\\star_k &= \\bar\\theta \\text{ ở epoch có val acc cao nhất} && k = 1..5 \\text{ (5 fold)} \\\\\n\\theta^\\star_6 &= \\bar\\theta \\text{ sau 25 epoch} && \\text{model toàn bộ dữ liệu} \\\\\n\\texttt{ensemble.pt} &= \\big\\{\\theta^\\star_{1..6},\\ \\mu_{1..6},\\ \\sigma_{1..6},\\ T,\\ \\tau,\\ \\text{classes},\\ \\text{cfg}\\big\\}\n\\end{aligned}",
+ "c": [
+  [
+   "training.py:803-806",
+   "decay = [p for p in model.parameters() if p.ndim >= 2]\nno_decay = [p for p in model.parameters() if p.ndim < 2]\nopt = torch.optim.AdamW([{\"params\": decay, \"weight_decay\": cfg.weight_decay},\n                         {\"params\": no_decay, \"weight_decay\": 0.0}], lr=cfg.lr,"
+  ],
+  [
+   "training.py:930-933",
+   "nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)\nscaler.step(opt)\nscaler.update()\nema.update(model, step)"
+  ],
+  [
+   "training.py:671-674",
+   "d = min(self.decay, (1 + step) / (10 + step))\ne, m = self._float\ntorch._foreach_mul_(e, d)\ntorch._foreach_add_(e, m, alpha=1 - d)"
+  ],
+  [
+   "training.py:948-949",
+   "best.update(key=(va_acc, va_loss), state=copy.deepcopy(ema.module.state_dict()),\n            epoch=ep, m=(va_loss, va_acc, va_top5), logits=va_logits.cpu())"
+  ],
+  [
+   "training.py:971",
+   "ema.module.load_state_dict(best[\"state\"])"
+  ],
+  [
+   "training.py:1298",
+   "norm_f = Normalizer(X[tr], cfg.presence_norm)  # thống kê CHỈ từ tập train của fold này"
+  ],
+  [
+   "training.py:1360",
+   "save_ensemble(out_dir / \"ensemble.pt\", models, norms, cfg, layout, classes, temp, thr, (T, D))"
+  ],
+  [
+   "training.py:1098-1101",
+   "torch.save({\"cfg\": asdict(cfg), \"feature_version\": FEATURE_VERSION, \"groups\": groups, \"classes\": classes,\n            \"means\": np.stack([n.mean for n in norms]), \"stds\": np.stack([n.std for n in norms]),\n            \"temperature\": temperature, \"reject_threshold\": reject_thr, \"in_shape\": in_shape,\n            \"state_dicts\": [m.cpu().state_dict() for m in models]}, path)"
+  ]
+ ],
+ "note": "Fold 1–5 dừng ở epoch tốt nhất 10, 15, 10, 10, 14 (val acc 1,0 · 0,988 · 1,0 · 1,0 · 1,0). Model thứ 6 không có tập val nên train cố định 25 epoch rồi lấy EMA cuối. μ_run, σ²_run của BatchNorm không có gradient: chúng là trung bình trượt của thống kê batch trong lúc train, và cũng đi qua EMA như mọi trọng số khác."
+};
+// end FLOW
+
+// Chương 13: huấn luyện → file trọng số, rồi 10 bước forward
+function mathDiv(tex) { const d = el("div", { class: "fs-math" }); d.textContent = "\\[" + tex + "\\]"; return d; }
+function table(head, rows) {
+  const wrap = el("div", { class: "wscroll" });
+  const t = el("table", { class: "ftable" });
+  const tr = el("tr"); head.forEach(h => tr.appendChild(el("th", {}, h)));
+  const thead = el("thead"); thead.appendChild(tr);
+  const tb = el("tbody");
+  for (const r of rows) { const row = el("tr"); r.forEach(c => { const td = el("td"); if (c instanceof Node) td.appendChild(c); else td.textContent = c; row.appendChild(td); }); tb.appendChild(row); }
+  t.append(thead, tb); wrap.appendChild(t); return wrap;
+}
+{
+  const tm = document.getElementById("train-math");
+  tm.append(mathDiv(TRAIN_FLOW.f), el("div", { class: "fs-sub c" }, "Trong code"), codeRefs(TRAIN_FLOW.c), el("p", { class: "fs-note" }, TRAIN_FLOW.note));
+  const box = document.getElementById("flow");
+  for (const s of FLOW) {
+    const art = el("article", { class: "fstep", id: "buoc-" + s.n });
+    const head = el("div", { class: "fs-head" });
+    head.append(el("span", { class: "fs-num" }, String(s.n)), el("h3", {}, s.title));
+    const meta = el("div", { class: "fs-meta" });
+    meta.append(el("span", { class: "fs-io" }, s.io), el("span", { class: "fs-params" }, "tham số: " + s.params));
+    art.append(head, meta, el("p", {}, s.what), mathDiv(s.f));
+    art.appendChild(el("div", { class: "fs-sub" }, "Trọng số đọc từ ensemble.pt"));
+    art.appendChild(table(["Khoá trong state_dict", "Shape", "Kí hiệu", "Ghi chú"],
+      s.w.map(([k, sh, sym, note]) => [el("code", {}, k), el("code", {}, sh), sym, note])));
+    if (s.groups) art.appendChild(table(["g", "Cột", "Nhóm", "d_g → h_g", "Tham số"],
+      s.groups.map(([g, cols, name, d, h, n]) => [String(g), cols, name, d + " → " + h, n.toLocaleString("vi-VN")])));
+    art.append(el("div", { class: "fs-sub c" }, "Trong code"), codeRefs(s.c));
+    if (s.note) art.appendChild(el("p", { class: "fs-note" }, s.note));
+    box.appendChild(art);
+  }
+}
+
+// Tra cứu
+const gloss = document.getElementById("gloss");
+const hits = document.getElementById("hits");
+const sorted = [...TERMS].sort((a, b) => a.en.localeCompare(b.en, "en", { sensitivity: "base" }));
+const fold = s => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+const index = sorted.map(t => ({ t, key: fold([t.en, t.vi, plain(t.what), t.id].join(" ")) }));
+function firstSentence(s) { const p = plain(s); const i = p.search(/[.:](\s|$)/); return i > 0 ? p.slice(0, i + 1) : p; }
+function renderGloss(q) {
+  gloss.textContent = "";
+  const words = fold(q).split(/\s+/).filter(Boolean);
+  const rows = index.filter(r => words.every(w => r.key.includes(w)));
+  let letter = "";
+  for (const { t } of rows) {
+    const L = t.en[0].toUpperCase();
+    if (!words.length && L !== letter) { letter = L; gloss.appendChild(el("div", { class: "g-letter" }, L)); }
+    const row = el("div", { class: "g-row" });
+    const name = el("div");
+    name.append(el("a", { href: "#t-" + t.id }, t.en), el("span", { class: "gv" }, t.vi));
+    row.append(name, el("div", { class: "gd" }, firstSentence(t.what)), el("div", { class: "gc" }, "chương " + SEC_NUM[t.s]));
+    gloss.appendChild(row);
+  }
+  if (!rows.length) gloss.appendChild(el("div", { class: "g-row" }, "Không có thuật ngữ nào khớp. Thử từ khác, có thể gõ không dấu."));
+  hits.textContent = words.length ? `${rows.length} / ${TERMS.length} thuật ngữ` : `${TERMS.length} thuật ngữ`;
+}
+const q = document.getElementById("q");
+q.addEventListener("input", () => renderGloss(q.value));
+renderGloss("");
+
+// Thanh 418 cột + bảng
+const bar = document.getElementById("fbar");
+const tbody = document.getElementById("ftable");
+let offset = 0;
+for (const [name, n, fam, meaning, how] of FEATURES) {
+  const s = el("span", { title: `${name}: ${n} cột (${offset}–${offset + n - 1})` });
+  s.style.flex = `${n} 0 0`;
+  s.style.background = FCOLOR[fam];
+  bar.appendChild(s);
+  const tr = el("tr");
+  const td0 = el("td");
+  const sw = el("span", { class: "swatch" }); sw.style.background = FCOLOR[fam];
+  td0.append(sw, el("code", {}, name));
+  tr.append(td0, el("td", { class: "n" }, String(n)), el("td", {}, meaning), el("td", {}, how));
+  tbody.appendChild(tr);
+  offset += n;
+}
+
+// Thẻ bài tập trong từng chương
+const ORDER = { Easy: 0, Medium: 1, Hard: 2 };
+const bySec = {};
+for (const p of PROBLEMS) (bySec[p[3]] = bySec[p[3]] || []).push(p);
+for (const k in bySec) bySec[k].sort((a, b) => ORDER[a[2]] - ORDER[b[2]]);
+document.querySelectorAll(".tt-list[data-sec]").forEach(list => {
+  for (const [slug, title, diff, , why] of bySec[list.dataset.sec] || []) {
+    const a = el("a", { class: "tt-item", href: TT + slug, target: "_blank", rel: "noopener" });
+    a.append(el("span", { class: "diff " + diff }, diff), el("span", { class: "t" }, title), el("span", { class: "w" }, why));
+    list.appendChild(a);
+  }
+});
+
+// Lộ trình có đánh dấu (chỉ lưu trên trình duyệt người xem)
+const KEY = "vsl-tt-done";
+let done = new Set();
+try { done = new Set(JSON.parse(localStorage.getItem(KEY) || "[]")); } catch (e) {}
+let filter = "all";
+const road = document.getElementById("road");
+const progress = document.getElementById("progress");
+function save() { try { localStorage.setItem(KEY, JSON.stringify([...done])); } catch (e) {} }
+function renderRoad() {
+  road.textContent = "";
+  for (const [id, num, name] of SECTIONS) {
+    const items = (bySec[id] || []).filter(p =>
+      filter === "all" ? true : filter === "todo" ? !done.has(p[0]) : p[2] === filter);
+    if (!items.length) continue;
+    const g = el("div", { class: "road-group" });
+    const h = el("h3"); h.append(el("span", {}, num), document.createTextNode(name));
+    g.appendChild(h);
+    for (const [slug, title, diff, , why] of items) {
+      const row = el("div", { class: "road-row" + (done.has(slug) ? " done" : "") });
+      const cb = el("input", { type: "checkbox", id: "cb-" + slug, "aria-label": "Đã làm " + title });
+      cb.checked = done.has(slug);
+      cb.addEventListener("change", () => { cb.checked ? done.add(slug) : done.delete(slug); save(); renderRoad(); });
+      const info = el("div", { class: "info" });
+      info.append(el("a", { href: TT + slug, target: "_blank", rel: "noopener" }, title), el("span", { class: "w" }, why));
+      row.append(cb, el("span", { class: "diff " + diff }, diff), info);
+      g.appendChild(row);
+    }
+    road.appendChild(g);
+  }
+  const n = PROBLEMS.filter(p => done.has(p[0])).length;
+  progress.textContent = "";
+  progress.append(el("b", {}, String(n)), document.createTextNode(` / ${PROBLEMS.length} bài đã làm`));
+}
+document.querySelectorAll(".chip-btn").forEach(b => b.addEventListener("click", () => {
+  filter = b.dataset.f;
+  document.querySelectorAll(".chip-btn").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  renderRoad();
+}));
+renderRoad();
+</script>
+<script>
+// MathJax vẽ mọi \[ … \] thành SVG (màu theo chữ, không cần CSS hay font ngoài). Tải xong mới vẽ, nên chạy sau khi thẻ đã được tạo.
+window.MathJax = {
+  tex: { inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\\]"]] },
+  svg: { fontCache: "global", displayAlign: "left", displayIndent: "0", mtextInheritFont: true },
+  options: { skipHtmlTags: ["script", "noscript", "style", "textarea", "pre", "code"] },
+};
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.js"></script>

@@ -21,8 +21,8 @@ Dữ liệu vào: file .npz với
     groups  (N,)       tuỳ chọn -- id nhóm (cùng video/lần ghi/người) để chia fold không rò rỉ
 
 Ví dụ:
-    python train_vsl.py --data dataset.npz --out runs/vsl
-    python train_vsl.py --demo --out runs/demo --folds 3 --epochs 60      # chạy thử nhanh
+    python -m src.model.training --data dataset.npz --out runs/vsl
+    python -m src.model.training --demo --out runs/demo --folds 3 --epochs 60      # chạy thử nhanh
 """
 from __future__ import annotations
 
@@ -41,49 +41,44 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from src.features.extract import (FEATURE_DIM, FEATURE_SLICES, FEATURE_VERSION, LEFT_MIRROR, PRESENCE_SLICE,
-                                  SEQ_FEATURE_DIM, SIDE_COLUMNS, STROKE_SLICE)
+                                  SEQ_FEATURE_DIM, SIDE_COLUMNS, STROKE_SLICE, still_versions, stroke_magnitude)
 
 
-# =============================================================================
-# CẤU HÌNH
-# =============================================================================
 @dataclass
 class Config:
-    # kiến trúc
-    arch: str = "vslnet"            # "vslnet" | "handpair" | "former"
-    drop_path: float = 0.1          # stochastic depth cho các lớp Transformer của "former"
+    arch: str = "vslnet"
+    drop_path: float = 0.1
     d_model: int = 128
     gru_hidden: int = 96
     kernels: tuple = (3, 5, 9)
     n_blocks: int = 2
-    head: str = "linear"            # "linear" | "cosine"
+    head: str = "linear"
     base_dropout: float = 0.2
-    # tối ưu
-    max_epochs: int = 60            # val (mẫu gốc) bão hoà ~epoch 5-10; 200 chỉ làm cosine không bao giờ hạ LR
+    max_epochs: int = 60
     min_epochs: int = 15
-    patience: int = 10              # early stopping (epoch): sau best ~10 epoch val không đổi thì dừng
+    patience: int = 10
     lr: float = 2e-3
     min_lr: float = 1e-5
     weight_decay: float = 0.05
     warmup_epochs: int = 5
-    select_after_warmup: int | None = None  # Q3: chỉ chọn checkpoint từ epoch warmup+N (EMA còn chưa ổn trong warmup)
-    lr_patience: int = 8            # plateau -> giảm LR
+    select_after_warmup: int | None = None
+    lr_patience: int = 8
     label_smoothing: float = 0.1
     ema_decay: float = 0.99
     grad_clip: float = 1.0
-    batch_size: int = 0             # 0 = tự chọn
-    mixup_alpha: float = 0.0         # blending different signs can erase small distinctions
+    batch_size: int = 0
+    mixup_alpha: float = 0.0
     hard_negative_margin: float = 0.8
     hard_negative_weight: float = 0.25
-    # Mix an unrelated hand into a one-hand clip while keeping its label.
     extra_hand_probability: float = 0.4
     extra_hand_loss: float = 0.5
     hand_consistency: float = 0.12
     presence_scale: float = 0.25
-    # Chuẩn hoá theo tay: thống kê chỉ trên frame có tay, tay vắng -> 0, cột presence -> cờ có hình học 0/1.
     presence_norm: bool = False
-    # Tay phụ chèn vào: tính lại cột tay-tay từ vị trí thật thay vì gán 0.
     distractor_geometry: bool = False
+    still_negative_weight: float = 0.5
+    still_negative_fraction: float = 0.25
+    dynamic_min_stroke: float = 0.25
     seed: int = 42
 
     def __post_init__(self):
@@ -93,8 +88,6 @@ class Config:
             raise ValueError(f"arch={self.arch!r} cần presence_norm=True (cổng tay đọc cờ có hình học)")
 
 
-# Presence là độ tin cậy mềm exp(-(d/0.35)^2) (0 = không có tay), không phải cờ 0/1.
-# Coi một tay là "có" khi độ tin cậy >= 0.5 (khớp wrist trong ~0.29 vai).
 PRESENCE_THRESHOLD = 0.5
 
 
@@ -113,17 +106,14 @@ def get_device() -> torch.device:
     return torch.device("cpu")
 
 
-# =============================================================================
-# DỮ LIỆU
-# =============================================================================
 def default_groups(d: int) -> list[tuple[int, int]]:
     """Nhóm cột theo bố cục FEATURE_SLICES (FEATURE_DIM hoặc SEQ_FEATURE_DIM). Khác -> 1 nhóm."""
     if d in (FEATURE_DIM, SEQ_FEATURE_DIM):
-        S = FEATURE_SLICES   # vị trí | thủ hình | điểm bàn tay | độ cong ngón | hướng | hiện diện | chuyển động | nét
-        b = [0, S["handshape"].start, S["hand_local"].start, S["finger_curl"].start, S["orientation"].start,
-             S["presence"].start, FEATURE_DIM]
+        S = FEATURE_SLICES
+        b = [0, S["handshape"].start, S["hand_local"].start, S["finger_curl"].start, S["hand_closure"].start,
+             S["orientation"].start, S["presence"].start, FEATURE_DIM]
         if d == SEQ_FEATURE_DIM:
-            b += [STROKE_SLICE.start, SEQ_FEATURE_DIM]   # nhóm riêng: group-drop vị trí buộc model dùng nét
+            b += [STROKE_SLICE.start, SEQ_FEATURE_DIM]
     else:
         b = [0, d]
     return [(b[i], b[i + 1]) for i in range(len(b) - 1)]
@@ -229,7 +219,7 @@ def normalize_features(x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor,
 
     presence_aware: cột của tay vắng (và cột tay-tay khi thiếu một tay) -> 0; cột presence -> cờ 0/1.
     """
-    z = torch.nan_to_num(((x - mean) / std).clamp(-8.0, 8.0), nan=0.0)   # NaN -> giá trị trung bình
+    z = torch.nan_to_num(((x - mean) / std).clamp(-8.0, 8.0), nan=0.0)
     m = _membership(x.shape[-1], x.device) if presence_aware else None
     if m is None:
         return z
@@ -308,7 +298,7 @@ def add_distractor_hand_features(
     if isinstance(side, int):
         side = torch.full((x.shape[0],), side, dtype=torch.long, device=x.device)
     side = torch.as_tensor(side, device=x.device)
-    col = torch.zeros(2, x.shape[-1], dtype=torch.bool, device=x.device)   # vector hoá: không lặp từng mẫu
+    col = torch.zeros(2, x.shape[-1], dtype=torch.bool, device=x.device)
     for k in (0, 1):
         col[k, torch.as_tensor(layout[k], device=x.device)] = True
     out = torch.where(col[side][:, None, :], donor, x)
@@ -323,15 +313,60 @@ def add_distractor_hand_features(
         both = out[..., PRESENCE_SLICE].clamp(0, 1).round().prod(-1, keepdim=True)
     else:
         both = hand_validity(raw).prod(-1, keepdim=True)
-    shared_raw = _inter_hand_raw(raw) * both          # thiếu một tay -> 0 như process_sequence
+    shared_raw = _inter_hand_raw(raw) * both
     z = ((shared_raw - mean[shared]) / std[shared]).clamp(-8.0, 8.0)
     out[..., shared] = z * both if presence_aware else z
     return out
 
 
-# =============================================================================
-# AUGMENTATION (trên tensor đã chuẩn hoá, (B, T, D))
-# =============================================================================
+def dynamic_classes(X: np.ndarray, y: np.ndarray, n_classes: int, min_stroke: float) -> np.ndarray:
+    """(C,) bool: lớp có nét chuyển động rõ (trung vị |nét xy| của các mẫu trong X >= ``min_stroke``).
+
+    Ký hiệu tĩnh (chữ cái) có trung vị <= ~0.15 độ rộng vai; dấu sắc/huyền/nặng/hỏi, gặp, xin chào... >= ~0.28.
+    """
+    out = np.zeros(n_classes, dtype=bool)
+    if X.ndim != 3 or X.shape[-1] != SEQ_FEATURE_DIM:
+        return out
+    magnitude = np.array([stroke_magnitude(x) for x in X])
+    for c in range(n_classes):
+        if (y == c).any():
+            out[c] = np.median(magnitude[y == c]) >= min_stroke
+    return out
+
+
+def still_negative_pool(X: np.ndarray, max_count: int = 1024, seed: int = 0) -> np.ndarray:
+    """Các bản "đứng yên" (``still_versions``) của các chuỗi X, tối đa ``max_count`` (chọn ngẫu nhiên)."""
+    pool = [v for x in X for v in still_versions(x)]
+    if not pool:
+        return np.zeros((0, *X.shape[1:]), dtype=np.float32)
+    pool = np.stack(pool).astype(np.float32)
+    if len(pool) > max_count:
+        pool = pool[np.random.default_rng(seed).choice(len(pool), max_count, replace=False)]
+    return pool
+
+
+def still_negatives_for(X: np.ndarray, y: np.ndarray, idx: np.ndarray, originals: np.ndarray, n_classes: int,
+                        cfg: Config, norm: Normalizer, device) -> torch.Tensor | None:
+    """Tham số ``negatives`` của ``train_one`` cho tập train ``idx``: bản đứng yên của các mẫu thuộc lớp có nét,
+    đã chuẩn hoá bằng ``norm``. Lớp có nét chỉ xác định trên mẫu gốc (``originals`` (N,) bool) của idx.
+    None khi tắt (``still_negative_weight`` = 0) hoặc không có mẫu âm nào.
+    """
+    if cfg.still_negative_weight <= 0:
+        return None
+    idx = np.asarray(idx)
+    source_originals = idx[np.asarray(originals)[idx]]
+    dynamic = dynamic_classes(X[source_originals], y[source_originals], n_classes, cfg.dynamic_min_stroke)
+    pool = still_negative_pool(X[idx[dynamic[y[idx]]]], seed=cfg.seed)
+    if len(pool) == 0:
+        return None
+    return torch.from_numpy(norm(pool)).to(device)
+
+
+def uniform_target_loss(logits: torch.Tensor) -> torch.Tensor:
+    """Cross-entropy với nhãn đều trên mọi lớp, trừ log C để về 0 khi logits đều (mẫu "không phải lớp nào")."""
+    return -F.log_softmax(logits, dim=-1).mean(dim=-1).mean() - math.log(logits.shape[-1])
+
+
 class Augmenter:
     def __call__(self, x: torch.Tensor, s: float, extra_hand_probability: float = 0.0,
                  hand_presence: torch.Tensor | None = None,
@@ -341,21 +376,18 @@ class Augmenter:
             return x, None
         B, T, D = x.shape
         dev = x.device
-        # 1) Time-warp + crop ngẫu nhiên: mô phỏng người ký nhanh/chậm, cắt lệch đầu/cuối
         inc = (1.0 + 0.5 * s * torch.randn(B, T, device=dev)).clamp(min=0.2)
         cum = torch.cumsum(inc, dim=1)
-        cum = (cum - cum[:, :1]) / (cum[:, -1:] - cum[:, :1] + 1e-6)          # [0,1] đơn điệu
+        cum = (cum - cum[:, :1]) / (cum[:, -1:] - cum[:, :1] + 1e-6)
         lo = torch.rand(B, 1, device=dev) * 0.12 * s
         hi = 1.0 - torch.rand(B, 1, device=dev) * 0.12 * s
         t_new = lo + (hi - lo) * cum
-        grid = torch.stack([t_new * 2 - 1, torch.zeros_like(t_new)], dim=-1).unsqueeze(1)  # (B,1,T,2)
-        img = x.permute(0, 2, 1).unsqueeze(2)                                  # (B,D,1,T)
+        grid = torch.stack([t_new * 2 - 1, torch.zeros_like(t_new)], dim=-1).unsqueeze(1)
+        img = x.permute(0, 2, 1).unsqueeze(2)
         x = F.grid_sample(img, grid, mode="bilinear", padding_mode="border",
                           align_corners=True).squeeze(2).permute(0, 2, 1)
-        # 2) Nhiễu Gaussian + co giãn biên độ theo cột (jitter landmark, khác người ký)
         x = x + torch.randn_like(x) * (0.08 * s)
         x = x * (1.0 + 0.08 * s * torch.randn(B, 1, D, device=dev))
-        # 3) Che ngẫu nhiên vài frame (mất detect thoáng qua)
         mask = (torch.rand(B, T, 1, device=dev) < 0.06 * s).float()
         x = x * (1.0 - mask)
 
@@ -378,9 +410,6 @@ class Augmenter:
         return x, augmented
 
 
-# =============================================================================
-# MÔ HÌNH
-# =============================================================================
 class GroupStem(nn.Module):
     """Mã hoá riêng từng nhóm đặc trưng rồi trộn; group-dropout khi train -> chịu được thiếu tay."""
 
@@ -402,8 +431,6 @@ class GroupStem(nn.Module):
         outs = []
         for (a, b), encoder in zip(self.groups, self.enc):
             encoded = encoder(x[..., a:b])
-            # Presence is useful for missing-data handling, but should not act
-            # as a class identity shortcut (one-hand vs two-hand).
             if (a, b) == (PRESENCE_SLICE.start, PRESENCE_SLICE.stop):
                 encoded = encoded * self.presence_scale
             outs.append(encoded)
@@ -428,7 +455,7 @@ class MultiScaleBlock(nn.Module):
         self.act = nn.GELU()
         self.drop = nn.Dropout(dropout)
 
-    def forward(self, x):  # (B, d, T)
+    def forward(self, x):
         y = torch.cat([c(x) for c in self.dw], dim=1)
         return x + self.drop(self.act(self.bn(self.pw(y))))
 
@@ -459,14 +486,14 @@ class VSLNet(nn.Module):
         self.drop = nn.Dropout(cfg.base_dropout)
         self.head = CosineHead(6 * h, n_classes) if cfg.head == "cosine" else nn.Linear(6 * h, n_classes)
 
-    def pool(self, x):  # (B, T, D) -> vector gộp theo thời gian (B, 6h), trước norm/head
+    def pool(self, x):
         h = self.stem(x)
         h = self.blocks(h.transpose(1, 2)).transpose(1, 2)
         h, _ = self.gru(h)
         w = torch.softmax(self.attn(h), dim=1)
         return torch.cat([(w * h).sum(1), h.mean(1), h.amax(1)], dim=-1)
 
-    def forward(self, x):  # (B, T, D) -> logits (B, C); chạy được với mọi T
+    def forward(self, x):
         return self.head(self.drop(self.norm(self.pool(x))))
 
 
@@ -484,7 +511,7 @@ class HandPairNet(nn.Module):
         if cols is None:
             raise ValueError(f"HandPairNet cần {FEATURE_DIM} hoặc {SEQ_FEATURE_DIM} cột, nhận {in_dim}")
         left, right, shared = cols
-        n = len(left)                       # cột thô đứng trước cột chuyển động -> cắt [:n] vẫn hợp lệ
+        n = len(left)
         perm, sign = LEFT_MIRROR[0][:n], LEFT_MIRROR[1][:n]
         left, sign = left[perm], sign[perm]
         keep_l, keep_r = left != PRESENCE_SLICE.start, right != PRESENCE_SLICE.start + 1
@@ -507,7 +534,7 @@ class HandPairNet(nn.Module):
         self.head = (CosineHead(6 * gru_hidden, n_classes) if cfg.head == "cosine"
                      else nn.Linear(6 * gru_hidden, n_classes))
 
-    def forward(self, x):  # (B, T, D) đã chuẩn hoá presence-aware -> logits (B, C)
+    def forward(self, x):
         return self.head(self.drop(self.norm(self.pool(x))))
 
     def pool(self, x):
@@ -568,7 +595,7 @@ class PointShapeEncoder(nn.Module):
         self.norm = nn.LayerNorm(d)
         self.score = nn.Linear(d, 1)
 
-    def forward(self, pts):  # (N, 20, 3) -> (N, 2d)
+    def forward(self, pts):
         h = self.norm(self.block(self.inp(pts) + self.joint))
         w = torch.softmax(self.score(h), dim=1)
         return torch.cat([(w * h).sum(1), h.mean(1)], dim=-1)
@@ -616,17 +643,17 @@ class SignFormer(nn.Module):
         self.head = (CosineHead(3 * d_model, n_classes) if cfg.head == "cosine"
                      else nn.Linear(3 * d_model, n_classes))
 
-    def forward(self, x):  # (B, T, D) đã chuẩn hoá presence-aware -> logits (B, C)
+    def forward(self, x):
         return self.head(self.drop(self.norm(self.pool(x))))
 
     def pool(self, x):
         B, T, _ = x.shape
-        p = x[..., PRESENCE_SLICE].clamp(0.0, 1.0).unsqueeze(-1)                 # (B,T,2,1)
-        pts = torch.stack([x[..., self.local_l], x[..., self.local_r]], dim=2)   # (B,T,2,60)
+        p = x[..., PRESENCE_SLICE].clamp(0.0, 1.0).unsqueeze(-1)
+        pts = torch.stack([x[..., self.local_l], x[..., self.local_r]], dim=2)
         shape = self.points(pts.reshape(B * T * 2, -1, 3)).reshape(B, T, 2, -1)
         other = torch.stack([x[..., self.left_idx] * self.left_sign, x[..., self.right_idx]], dim=2)
         h = self.hand_norm(self.fuse(torch.cat([shape, self.other(other)], dim=-1)) + self.side)
-        h = p * h + (1 - p) * self.absent                                        # (B,T,2,d_hand)
+        h = p * h + (1 - p) * self.absent
         hi = self.inter(x[..., self.shared_idx]) * (p[:, :, 0] * p[:, :, 1])
         z = self.proj(torch.cat([h[:, :, 0], h[:, :, 1], hi], dim=-1))
         z = self.conv(z.transpose(1, 2)).transpose(1, 2) + _sinusoid(T, z.shape[-1], x.device)
@@ -651,9 +678,6 @@ def set_dropout(model: nn.Module, p: float):
             m.p = float(p)
 
 
-# =============================================================================
-# EMA + BỘ ĐIỀU KHIỂN THÍCH ỨNG
-# =============================================================================
 class EMA:
     def __init__(self, model: nn.Module, decay: float):
         self.decay = decay
@@ -667,7 +691,6 @@ class EMA:
 
     @torch.no_grad()
     def update(self, model: nn.Module, step: int):
-        # model phải là model đã truyền vào __init__ (giữ tham chiếu tensor, cập nhật gộp bằng _foreach)
         d = min(self.decay, (1 + step) / (10 + step))
         e, m = self._float
         torch._foreach_mul_(e, d)
@@ -716,9 +739,6 @@ class AdaptiveController:
             self.s = min(1.0, self.s + 0.1)
 
 
-# =============================================================================
-# HUẤN LUYỆN
-# =============================================================================
 @torch.no_grad()
 def logits_of(model: nn.Module, X: torch.Tensor, bs: int = 512) -> torch.Tensor:
     model.eval()
@@ -776,7 +796,7 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
               fixed_epochs: int | None = None, init_strength: float = 0.5,
               freeze_strength: bool = False, tag: str = "", log_every: int = 5,
               hand_presence: torch.Tensor | None = None, norm_stats=None, init_state: dict | None = None,
-              sampler=None):
+              sampler=None, negatives: torch.Tensor | None = None):
     """Huấn luyện 1 model. Có (Xva,yva): early stopping + tự thích ứng. Không có: chạy `fixed_epochs`.
 
     norm_stats=(mean, std, presence_aware) tensor trên device: để augmentation tay phụ tính lại cột tay-tay.
@@ -785,6 +805,9 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
     trên val so với lúc bắt đầu.
     sampler: callable epoch -> chỉ số vào Xtr (số lượng cố định, vd. `ReplaySampler`): mỗi epoch chỉ train trên
     tập con đó thay vì toàn bộ Xtr (fine-tune nhanh). Batch size vẫn tính theo len(Xtr) như khi train đầy đủ.
+    negatives: (M, T, D) đã chuẩn hoá như Xtr: mẫu "không phải lớp nào" (``still_negative_pool``); mỗi bước
+    ``ceil(cfg.still_negative_fraction * bs)`` mẫu được augment rồi train về xác suất đều (trọng số
+    ``cfg.still_negative_weight``).
     """
     has_val = Xva is not None
     model = build_model(Xtr.shape[-1], n_classes, groups, cfg).to(device)
@@ -804,7 +827,7 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
     no_decay = [p for p in model.parameters() if p.ndim < 2]
     opt = torch.optim.AdamW([{"params": decay, "weight_decay": cfg.weight_decay},
                              {"params": no_decay, "weight_decay": 0.0}], lr=cfg.lr,
-                            fused=device.type in ("cuda", "mps"))   # gộp kernel: ít overhead mỗi bước
+                            fused=device.type in ("cuda", "mps"))
 
     n = len(Xtr)
     bs = cfg.batch_size or int(np.clip(n // 20, 16, 64))
@@ -815,16 +838,18 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
         raise ValueError("sampler trả về tập rỗng")
     bs = min(bs, n_epoch)
     steps_per_epoch = max(1, n_epoch // bs)
-    extra_slots = max(1, math.ceil(cfg.extra_hand_probability * bs))   # chỗ cố định cho clip chèn tay phụ
+    extra_slots = max(1, math.ceil(cfg.extra_hand_probability * bs))
+    use_negatives = negatives is not None and len(negatives) > 0 and cfg.still_negative_weight > 0
+    neg_slots = max(1, math.ceil(cfg.still_negative_fraction * bs)) if use_negatives else 0
     total_epochs = fixed_epochs or cfg.max_epochs
     total_steps = total_epochs * steps_per_epoch
     warm_steps = cfg.warmup_epochs * steps_per_epoch
 
     counts = torch.bincount(ytr, minlength=n_classes).float().clamp(min=1)
     cw = None
-    if (counts.max() / counts.min()) > 1.5:       # lệch lớp -> trọng số căn bậc hai nghịch đảo
+    if (counts.max() / counts.min()) > 1.5:
         cw = ((counts.sum() / (n_classes * counts)) ** 0.5).to(device)
-    if first is not None:     # sampler rút lớp lệch so với Xtr -> bù để kỳ vọng loss = loss trên toàn bộ Xtr
+    if first is not None:
         seen = torch.bincount(ytr[first], minlength=n_classes).float()
         iw = torch.where(seen > 0, counts / seen.clamp(min=1), torch.zeros_like(seen))
         iw = (iw / iw[seen > 0].mean()).to(device)
@@ -836,10 +861,10 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
     best = {"key": (-1.0, 1e9), "state": None, "epoch": 0, "m": None, "logits": None}
     best_loss, plateau, step = 1e9, 0, 0
     history: list[dict] = []
-    lr_scale, lr_target = 1.0, 1.0      # lr_scale tiến mượt về lr_target (không "vách đứng")
-    sub = torch.randperm(n, device=device)[:min(n, 512)]   # tập con cố định để đo train-acc sạch (rẻ)
+    lr_scale, lr_target = 1.0, 1.0
+    sub = torch.randperm(n, device=device)[:min(n, 512)]
     Xsub, ysub = Xtr[sub], ytr[sub]
-    if init_state is not None and has_val:                  # điểm xuất phát của fine-tune = mốc để so
+    if init_state is not None and has_val:
         va_logits = logits_of(ema.module, Xva)
         m0 = eval_metrics(va_logits, yva)
         best.update(key=(m0[1], m0[0]), state=copy.deepcopy(ema.module.state_dict()), epoch=-1, m=m0,
@@ -859,7 +884,7 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
             perm = torch.randperm(n, device=device)
         else:
             perm = first if ep == 0 else sampler(ep).to(device)
-        run_correct, run_total = torch.zeros((), device=device), 0   # acc ngay trong lúc train (miễn phí)
+        run_correct, run_total = torch.zeros((), device=device), 0
 
         for i in range(steps_per_epoch):
             idx = perm[i * bs:(i + 1) * bs]
@@ -885,9 +910,6 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
             for g in opt.param_groups:
                 g["lr"] = lr
 
-            # Một lượt forward cho batch sạch + CHỈ các clip được chèn tay phụ (clip không đổi thì bản
-            # "tay phụ" chính là out -> cùng loss, KL = 0), thay vì forward cả batch hai lần. Số slot cố định
-            # (thừa -> đệm bằng clip sạch, bỏ output): MPS biên dịch lại GRU mỗi khi batch đổi kích thước.
             changed = None
             if x_extra_hand is not None:
                 changed = torch.where((x_extra_hand != x).flatten(1).any(1))[0]
@@ -896,13 +918,16 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
                 inp = torch.cat([x, x_extra_hand[changed], x[pad]])
             else:
                 inp = x
+            if neg_slots:
+                neg, _ = aug(negatives[torch.randint(len(negatives), (neg_slots,), device=device)], ctrl.s)
+                inp = torch.cat([inp, neg])
             with torch.autocast(device_type=device.type, enabled=use_amp):
                 both = model(inp).float()
             out = both[:len(x)]
             extra_out = None
             if changed is not None:
                 extra_out = out.index_copy(0, changed, both[len(x):len(x) + len(changed)]) if len(changed) else out
-            with torch.no_grad():                    # đo acc theo nhãn trội (mixup: lam>=0.5 -> y, ngược lại y2)
+            with torch.no_grad():
                 tgt = y if (y2 is None or lam >= 0.5) else y2
                 run_correct = run_correct + (out.argmax(1) == tgt).sum()
                 run_total += len(x)
@@ -923,6 +948,8 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
                 loss = loss + cfg.hand_consistency * F.kl_div(
                     F.log_softmax(extra_out, dim=-1), teacher, reduction="batchmean"
                 )
+            if neg_slots:
+                loss = loss + cfg.still_negative_weight * uniform_target_loss(both[-neg_slots:])
 
             opt.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
@@ -933,7 +960,6 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
             ema.update(model, step)
             step += 1
 
-        # ---- đánh giá bằng EMA (sạch, không augmentation) ----
         aug_acc = (run_correct / max(1, run_total)).item()
         if has_val:
             tr_clean = eval_metrics(logits_of(ema.module, Xsub), ysub)[1]
@@ -944,7 +970,7 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
                             "val_loss": va_loss, "val_acc": va_acc, "strength": ctrl.s})
             selectable = (cfg.select_after_warmup is None
                           or ep + 1 >= cfg.warmup_epochs + cfg.select_after_warmup)
-            if selectable and (va_acc, -va_loss) > (best["key"][0], -best["key"][1]):   # acc cao hơn; hoà thì loss thấp hơn
+            if selectable and (va_acc, -va_loss) > (best["key"][0], -best["key"][1]):
                 best.update(key=(va_acc, va_loss), state=copy.deepcopy(ema.module.state_dict()),
                             epoch=ep, m=(va_loss, va_acc, va_top5), logits=va_logits.cpu())
             if va_loss < best_loss - 1e-4:
@@ -969,19 +995,15 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
 
     if has_val:
         ema.module.load_state_dict(best["state"])
-        hist = ctrl.hist[:best["epoch"] + 1] or [ctrl.s]      # best_epoch=0 (giữ model ban đầu) -> s hiện tại
+        hist = ctrl.hist[:best["epoch"] + 1] or [ctrl.s]
         info = {"best_epoch": best["epoch"] + 1, "val_loss": best["m"][0], "val_acc": best["m"][1],
                 "val_top5": best["m"][2], "strength": float(np.mean(hist[-10:])), "val_logits": best["logits"],
                 "history": history}
     else:
-        # final_lr ~ min_lr nghĩa là đã đi hết pha cosine (không dừng giữa warmup)
         info = {"best_epoch": total_epochs, "strength": ctrl.s, "final_lr": lr}
     return ema.module.eval(), info
 
 
-# =============================================================================
-# ENSEMBLE, HIỆU CHỈNH, XUẤT MODEL
-# =============================================================================
 def logits_and_embedding(model: nn.Module, z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Một lượt chạy model -> (logits (B, C), embedding chuẩn hoá L2 (B, E)).
 
@@ -1040,7 +1062,7 @@ def fit_temperature(logits: torch.Tensor, y: torch.Tensor, t_min: float = 1.0, t
     """
     logits = torch.nan_to_num(logits.float(), nan=0.0, posinf=1e4, neginf=-1e4)
     lo, hi = math.log(t_min), math.log(t_max)
-    u = torch.zeros(1, requires_grad=True)                     # sigmoid(0)=0.5 -> T ≈ 1.41
+    u = torch.zeros(1, requires_grad=True)
 
     def temp():
         return torch.exp(lo + (hi - lo) * torch.sigmoid(u))
@@ -1108,7 +1130,7 @@ def load_ensemble(path, device="cpu") -> tuple[VSLEnsemble, dict]:
     cfg = Config(**saved_cfg)
     models = []
     for sd in ck["state_dicts"]:
-        m = build_model(ck["in_shape"][-1], len(ck["classes"]), ck["groups"], cfg)   # thiếu "arch" -> vslnet
+        m = build_model(ck["in_shape"][-1], len(ck["classes"]), ck["groups"], cfg)
         m.load_state_dict(sd)
         models.append(m.eval())
     ens = VSLEnsemble(models, ck["means"], ck["stds"], ck["temperature"],
@@ -1145,9 +1167,6 @@ def export_onnx(ens: VSLEnsemble, path: str, in_shape):
         torch.onnx.export(ens, dummy, path, **kw)
 
 
-# =============================================================================
-# PHÂN TÍCH LỖI
-# =============================================================================
 def report_errors(oof_logits: np.ndarray, y: np.ndarray, classes, mask: np.ndarray, top=8):
     pred = oof_logits.argmax(1)
     per = []
@@ -1200,9 +1219,6 @@ def closest_rivals(probs: np.ndarray, y: np.ndarray, classes) -> list[dict]:
     return sorted(rivals, key=lambda item: -item["mean_rival_probability"])
 
 
-# =============================================================================
-# CHẠY HUẤN LUYỆN (gọi từ notebook hoặc CLI)
-# =============================================================================
 def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | None = None,
                  folds: int = 5, folds_to_run: int = 0, add_full: bool = True,
                  export_onnx_model: bool = True, device=None,
@@ -1245,9 +1261,6 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
     if per_class.min() < folds:
         print(f"[cảnh báo] có lớp chỉ {per_class.min()} mẫu < {folds} fold: lớp đó sẽ vắng trong tập train của một số fold.")
 
-    # Bản tăng cường mất cả hai tay ở MỌI frame (phép xoay/dời khung đẩy tay ra ngoài hoặc xuống dưới REST_Y)
-    # không còn gì của ký hiệu -> chỉ là nhãn nhiễu ("không có tay" = b, e, g...). Không train trên chúng;
-    # mẫu gốc luôn được giữ (chúng là tập validation). Giữ nguyên chỉ số N để oof/groups vẫn khớp.
     trainable = np.ones(N, dtype=bool)
     if hand_feature_columns(D) is not None:
         no_hand = hand_validity(torch.from_numpy(X)).sum(dim=(1, 2)).numpy() == 0
@@ -1263,7 +1276,7 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
     def presence_of(idx):
         if hand_feature_columns(D) is None:
             return None
-        if cfg.distractor_geometry:              # cờ có hình học: presence mềm bỏ sót tay thật (cảm ơn)
+        if cfg.distractor_geometry:
             return hand_validity(torch.from_numpy(X[idx])).to(device)
         return torch.from_numpy(X[idx, :, PRESENCE_SLICE].copy()).to(device)
 
@@ -1273,7 +1286,13 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
         return (torch.from_numpy(norm.mean).to(device), torch.from_numpy(norm.std).to(device),
                 norm.presence_aware)
 
-    # ---------------- k-fold phân tầng ----------------
+    def negatives_of(norm: Normalizer, idx):
+        return still_negatives_for(X, y, idx, validation_mask, C, cfg, norm, device)
+
+    dynamic_all = dynamic_classes(X[validation_mask], y[validation_mask], C, cfg.dynamic_min_stroke)
+    if cfg.still_negative_weight > 0:
+        print("Lớp có nét (train thêm mẫu âm đứng yên):", ", ".join(np.asarray(classes)[dynamic_all]) or "không có")
+
     k = max(2, folds)
     group_ids = np.arange(N) if groups is None else np.asarray(groups)
     for class_index in range(C):
@@ -1295,10 +1314,11 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
         if len(np.unique(y[va])) != C or len(np.unique(y[tr])) != C:
             raise ValueError(f"Fold {f + 1} does not contain every class in train and validation")
         print(f"\n=== Fold {f+1}/{k}: train {len(tr)} | val {len(va)} ===")
-        norm_f = Normalizer(X[tr], cfg.presence_norm)  # thống kê CHỈ từ tập train của fold này
+        norm_f = Normalizer(X[tr], cfg.presence_norm)
         model, info = train_one(to_dev(norm_f, tr), yt[tr], to_dev(norm_f, va), yt[va],
                                 C, layout, cfg, device, tag=f"[f{f+1}]",
-                                hand_presence=presence_of(tr), norm_stats=stats_of(norm_f))
+                                hand_presence=presence_of(tr), norm_stats=stats_of(norm_f),
+                                negatives=negatives_of(norm_f, tr))
         print(f"  -> best ep {info['best_epoch']} | val acc {info['val_acc']:.3f} "
               f"top5 {info['val_top5']:.3f} loss {info['val_loss']:.3f} | s≈{info['strength']:.2f}")
         oof[va] = info["val_logits"].numpy()
@@ -1311,7 +1331,6 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
     print(f"\nCV acc: {np.mean(accs):.4f} ± {np.std(accs):.4f} | "
           f"top5: {np.mean([i['val_top5'] for i in infos]):.4f}")
 
-    # ---------------- hiệu chỉnh + ngưỡng từ chối ----------------
     lo = torch.from_numpy(oof[oof_mask])
     yo = torch.from_numpy(y[oof_mask])
     temp, temp_status = calibrate_temperature(lo, yo)
@@ -1330,7 +1349,7 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
     except ImportError:
         print("[cảnh báo] Chưa có src.model.evaluation -> bỏ qua metrics['evaluation']")
     else:
-        try:                                            # OOF chỉ mẫu gốc, logits thô (T=1)
+        try:
             evaluation = oof_report(oof[oof_mask], y[oof_mask], classes,
                                     None if groups is None else np.asarray(groups)[oof_mask])
         except Exception as e:  # noqa: BLE001
@@ -1342,24 +1361,21 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
             for item in rivals[:8]
         ))
 
-    # ---------------- model toàn bộ dữ liệu (số epoch & độ mạnh điều hoà lấy từ CV) ----------------
     if add_full:
         ep_full = full_model_epochs([i["best_epoch"] for i in infos], cfg)
         s_full = float(np.mean([i["strength"] for i in infos]))
         print(f"\n=== Model toàn bộ dữ liệu: {ep_full} epoch, s={s_full:.2f} ===")
         all_idx = np.where(trainable)[0]
-        norm_all = Normalizer(X[all_idx], cfg.presence_norm)   # model cuối: không có val nên không có gì để rò rỉ
+        norm_all = Normalizer(X[all_idx], cfg.presence_norm)
         full, full_info = train_one(to_dev(norm_all, all_idx), yt[all_idx], None, None, C, layout, cfg, device,
                                     fixed_epochs=ep_full, init_strength=s_full, freeze_strength=True,
                                     tag="[full]", hand_presence=presence_of(all_idx),
-                                    norm_stats=stats_of(norm_all))
+                                    norm_stats=stats_of(norm_all), negatives=negatives_of(norm_all, all_idx))
         models.append(full)
         norms.append(norm_all)
 
-    # ---------------- lưu ----------------
     save_ensemble(out_dir / "ensemble.pt", models, norms, cfg, layout, classes, temp, thr, (T, D))
     (out_dir / "classes.json").write_text(json.dumps(classes, ensure_ascii=False, indent=1), encoding="utf-8")
-    # Group gốc -> fold: fine-tune sau này phải giữ đúng phép chia này (model fold f chưa từng thấy val fold f).
     (out_dir / "folds.json").write_text(json.dumps(
         {"k": k, "seed": cfg.seed, "fold_by_group": {str(g): int(f) for g, f in fold_by_group.items()}},
         ensure_ascii=False, indent=1), encoding="utf-8")
@@ -1369,7 +1385,8 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
         "temperature": temp, "temperature_status": temp_status, "reject_threshold": thr,
         "n_models": len(models),
         "n_samples": int(N), "n_classes": int(C), "confusion_pairs": confused,
-        "closest_rivals": rivals, "config": asdict(cfg)}
+        "closest_rivals": rivals, "config": asdict(cfg),
+        "dynamic_classes": [c for c, d in zip(classes, dynamic_all) if d]}
     if add_full:
         metrics["full_model"] = {"epochs": ep_full, "final_lr": float(full_info["final_lr"])}
     if evaluation is not None:
@@ -1391,7 +1408,7 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
 
     if publish:
         from src.model.checkpoints import publish_run
-        out_dir = publish_run(out_dir) or out_dir          # thư mục run đã được đổi thành runs/best
+        out_dir = publish_run(out_dir) or out_dir
 
     return {**metrics, "out_dir": str(out_dir), "onnx_path": str(onnx_path) if onnx_path else None,
             "fold_histories": [i["history"] for i in infos], "oof_logits": oof, "oof_mask": oof_mask,
@@ -1447,7 +1464,7 @@ def main():
     run_training(X, y, classes, groups, out_dir=args.out, cfg=cfg, folds=args.folds,
                  folds_to_run=args.folds_to_run, add_full=not args.no_full,
                  export_onnx_model=not args.no_onnx, validation_mask=validation_mask,
-                 publish=not args.demo)   # dữ liệu giả không bao giờ thành runs/best
+                 publish=not args.demo)
 
 
 if __name__ == "__main__":

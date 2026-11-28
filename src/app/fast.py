@@ -35,14 +35,14 @@ from src.model.predict import StreamConfig, VSLPredictor, VSLStreamSession
 
 @dataclass(frozen=True)
 class FastConfig:
-    fast_model: int = -1                 # model sàng lọc trong ensemble; -1 = model toàn bộ dữ liệu (cuối cùng)
-    early_window_seconds: float = 1.0    # bắt đầu dự đoán sớm (chỉ phiếu mạnh được tính)
-    strong_confidence: float = 0.9       # phiếu mạnh của model nhanh
+    fast_model: int = -1
+    early_window_seconds: float = 1.0
+    strong_confidence: float = 0.9
     strong_gap: float = 0.5
-    early_votes: int = 3                 # số phiếu mạnh liên tiếp để chốt sớm
-    escalate: bool = False               # model nhanh từ chối (sau min_window) -> chạy cả ensemble
-    confirm: bool = True                 # ensemble phải đồng ý trước khi chốt từ
-    strict_confidence: float = 0.85      # ngưỡng ensemble khi xác nhận một lần chốt sớm
+    early_votes: int = 3
+    escalate: bool = False
+    confirm: bool = True
+    strict_confidence: float = 0.85
     strict_gap: float = 0.4
 
     def __post_init__(self) -> None:
@@ -91,7 +91,7 @@ class FastStreamSession(VSLStreamSession):
 
     def reset(self) -> None:
         super().reset()
-        self.sequence: np.ndarray | None = None     # cửa sổ đã xử lý của dự đoán gần nhất
+        self.sequence: np.ndarray | None = None
         self.confirmation: dict | None = None
 
     def _min_ready_seconds(self) -> float:
@@ -106,7 +106,7 @@ class FastStreamSession(VSLStreamSession):
         strong = bool(result["accepted"] and result["confidence"] >= cfg.strong_confidence
                       and result["probability_gap"] >= cfg.strong_gap)
         early = duration < self.config.min_window_seconds
-        if early and not strong:          # cửa sổ còn ngắn: chỉ tin phiếu mạnh
+        if early and not strong:
             result = {**result, "label": None, "accepted": False, "rejection_reason": "early_uncertain"}
         elif not result["accepted"] and cfg.escalate:
             result = self.predictor.predict_processed(self.sequence, top_k=top_k)

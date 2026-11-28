@@ -38,7 +38,7 @@ class LandmarkStorageTests(unittest.TestCase):
         pose, image, world = _scene()
         direct = extract(*_results(pose, image, world))
         arrays = results_to_arrays(*_results(pose, image, world))
-        self.assertTrue(np.isnan(arrays[1][1]).all())          # tay thứ hai không có -> NaN
+        self.assertTrue(np.isnan(arrays[1][1]).all())
         np.testing.assert_array_equal(extract(*arrays_to_results(*arrays)), direct)
 
     def test_save_and_load(self):
@@ -73,7 +73,7 @@ class ViewSimulationTests(unittest.TestCase):
         self.assertGreater(near[:, RIGHT_SCALE].mean(), self.base[:, RIGHT_SCALE].mean())
 
     def test_finger_offsets_change_joint_angles_of_that_hand_only(self):
-        offsets = tuple([0.0] * 15 + [12.0] * 15)        # chỉ tay phải
+        offsets = tuple([0.0] * 15 + [12.0] * 15)
         out = self.viewed(ViewParams(finger_offsets=offsets))
         self.assertGreater(np.abs(out[:, RIGHT_SHAPE] - self.base[:, RIGHT_SHAPE]).max(), 0.05)
         np.testing.assert_allclose(out[:, S["hand_pos"]][:, 9:12], self.base[:, S["hand_pos"]][:, 9:12], atol=1e-5)
@@ -82,7 +82,7 @@ class ViewSimulationTests(unittest.TestCase):
         pose, hands, world = (a.copy() for a in self.marks)
         out = simulate_view(pose, hands, world, ViewParams(shift_x=-40.0))
         self.assertTrue(np.isnan(out[1][:, 0]).all())
-        self.assertTrue(np.isfinite(hands[:, 0]).all())        # mảng vào không bị sửa
+        self.assertTrue(np.isfinite(hands[:, 0]).all())
 
     def test_random_view_is_reproducible(self):
         a, b = random_view(np.random.default_rng(3)), random_view(np.random.default_rng(3))
@@ -102,7 +102,7 @@ class LandmarkAugmentTests(unittest.TestCase):
                 np.savez_compressed(source / f"{i}.npz", feature=f)
             (source / "meta.json").write_text(json.dumps({"session": "s1", "feature_version": FEATURE_VERSION}))
             save_landmarks(source / LANDMARKS_FILE, *marks)
-            self.assertEqual(len(DataHandler._frame_paths(source)[0]), len(features))   # landmarks.npz không phải frame
+            self.assertEqual(len(DataHandler._frame_paths(source)[0]), len(features))
 
             created = augment_sample(source, raw, 2, 0.5, np.random.default_rng(0))
             for target in created:

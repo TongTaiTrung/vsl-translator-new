@@ -1,6 +1,6 @@
 # Module `src/features`
 
-Chuyển khung hình BGR thành vector đặc trưng VSL và biến một clip có độ dài bất kỳ thành tensor cố định `(30, 418)` (feature v7).
+Chuyển khung hình BGR thành vector đặc trưng VSL và biến một clip có độ dài bất kỳ thành tensor cố định `(30, 434)` (feature v8).
 
 ## Kiến trúc
 
@@ -8,8 +8,8 @@ Chuyển khung hình BGR thành vector đặc trưng VSL và biến một clip c
 flowchart LR
     A[BGR frame] -->|frame_padding| B[1280x1280 BGR]
     B --> C[MediaPipe results]
-    C -->|extract| D[(T, 367) raw<br/>có NaN]
-    D -->|process_sequence| E[(30, 418) processed]
+    C -->|extract| D[(T, 383) raw<br/>có NaN]
+    D -->|process_sequence| E[(30, 434) processed]
 ```
 
 ### Các file
@@ -17,7 +17,7 @@ flowchart LR
 | File | Nội dung |
 |---|---|
 | `frame.py` | `FRAME_SIZE`, `frame_padding` / `pad_frame` |
-| `schema.py` | Hằng số chia sẻ: `EXPECTED_FRAMES = 30`, `FRAME_FEATURE_DIM` (= `extract.FEATURE_DIM` = 367) |
+| `schema.py` | Hằng số chia sẻ: `EXPECTED_FRAMES = 30`, `FRAME_FEATURE_DIM` (= `extract.FEATURE_DIM` = 383) |
 | `extract.py` | `extract`, `process_sequence`, layout đặc trưng, hằng số trích xuất |
 | `__init__.py` | Rỗng — import trực tiếp từ module con |
 
@@ -32,7 +32,7 @@ flowchart LR
 
 Kết quả luôn là `(1280, 1280, 3) uint8`, không méo tỉ lệ. `pad_frame` là alias.
 
-## `extract.py` — 367 đặc trưng/frame
+## `extract.py` — 383 đặc trưng/frame
 
 ### Hệ quy chiếu
 
@@ -61,7 +61,7 @@ Không tin nhãn `handedness` (có thể bị đảo khi ảnh lật gương). T
 - Bỏ ghép nếu khoảng cách > `MAX_MATCH_DIST = 0.8`.
 - `presence` là confidence mềm `exp(-(d / 0.35)^2)`, không phải cờ 0/1.
 
-### Bố cục 367 chiều (v7)
+### Bố cục 383 chiều (v8)
 
 Mọi module khác lấy chỉ số cột từ `FEATURE_SLICES` / `SIDE_COLUMNS` / `LEFT_MIRROR`, không hard-code.
 
@@ -76,10 +76,11 @@ Mọi module khác lấy chỉ số cột từ `FEATURE_SLICES` / `SIDE_COLUMNS`
 | `handshape` | `61:137` | 76 | Mỗi tay 38: 15 cos khớp, 5 độ duỗi, 4 độ xòe, 8 tiếp xúc đầu ngón, 3 vị trí ngón cái, 3 thứ tự đầu ngón (từ `hand_world`) |
 | `hand_local` | `137:257` | 120 | Mỗi tay 60: 20 điểm trong hệ trục lòng bàn tay (từ `hand_world`) |
 | `finger_curl` | `257:347` | 90 | Mỗi tay 45 (v7): độ cong từng ngón, đo trên **cả** landmark ảnh và `hand_world`, xem dưới |
-| `orientation` | `347:365` | 18 | Mỗi tay 9: `palm_dir` 3, `palm_normal` 3, 3 cos góc cổ tay so với cẳng tay |
-| `presence` | `365:367` | 2 | Confidence hiện diện tay trái/phải |
+| `hand_closure` | `347:363` | 16 | Mỗi tay 8 (v8): độ khép vòng ngón cái − trỏ/giữa, trên landmark ảnh và `hand_world`, xem dưới |
+| `orientation` | `363:381` | 18 | Mỗi tay 9: `palm_dir` 3, `palm_normal` 3, 3 cos góc cổ tay so với cẳng tay |
+| `presence` | `381:383` | 2 | Confidence hiện diện tay trái/phải |
 
-`process_sequence` nối thêm 39 cột chuyển động (`367:406`) và 12 cột nét (`406:418`).
+`process_sequence` nối thêm 39 cột chuyển động (`383:422`) và 12 cột nét (`422:434`).
 
 ### `finger_curl` (v7)
 
@@ -102,6 +103,23 @@ gốc, `hand_world` làm phẳng độ móc (PIP+DIP ngón trỏ của dấu mũ
 ảnh. z ảnh của tay cùng thang với x, y (frame vuông) nên góc 3D đo trực tiếp được. Giữ cả hai nguồn vì chúng là hai
 đầu ra khác nhau của mạng.
 
+### `hand_closure` (v8)
+
+Mỗi tay 8 số, `[ảnh: khe cái−trỏ, khe cái−giữa, khe cái−đốt gần nhất, tỉ lệ hở | world: 4 số như vậy]`.
+
+- Ba khe đầu: khoảng cách 3D từ đầu ngón cái (4) tới đầu ngón trỏ (8), đầu ngón giữa (12), và điểm gần nhất trên các đốt
+  của ngón trỏ/giữa (5→8, 9→12), chia cỡ lòng bàn tay (trung bình 5 xương `_PALM_BONES`). Khe tới đốt bắt được kiểu
+  "o" mà ngón cái chạm cạnh đốt DIP thay vì đầu ngón.
+- Tỉ lệ hở = khe cái−trỏ / (khe + độ dài đường vòng 4→3→2→5→6→7→8): 0 khi vòng khép kín, lớn dần khi miệng vòng mở,
+  không phụ thuộc vòng to hay nhỏ.
+- Bất biến khi xoay, tịnh tiến, co giãn và soi gương (giữ nguyên trong `LEFT_MIRROR` và `rotate_view_pitch`); có stem
+  riêng trong `training.default_groups`.
+
+Lý do: `o` (vòng khép kín) và `c` (vòng hở) gần như cùng độ cong ngón, nên model học tách hai lớp qua độ cuộn và chỉ nhận
+`o` khi tay gần thành nắm đấm. Đo trên clip gốc kèm giả lập đổi bối cảnh quay (`view.py`, 8 view/clip), tỉ lệ hở trên ảnh
+là 0.09 ± 0.03 (`o`) so với 0.22 ± 0.04 (`c`), d' ≈ 3.4; khe cái−trỏ 0.25 so với 0.63. `hand_world` mở bớt vòng (`o` còn
+hở ~0.5 cỡ lòng bàn tay) nhưng vẫn tách được, nên giữ cả hai nguồn như `finger_curl`.
+
 ### 11 neo cơ thể cho `body_contact`
 
 Thứ tự: trán, mũi, miệng, cằm, má trái, má phải, cổ, ngực, bụng, vai trái, vai phải. Mỗi neo có hệ số `gamma` riêng; độ gần dùng kernel `exp(-gamma * d²)` lấy **max** trên 6 điểm bàn tay (lòng bàn tay + 5 đầu ngón). Nhờ vậy thay đổi nhỏ khi chạm được phóng đại, jitter khi xa bị triệt.
@@ -113,17 +131,17 @@ Thứ tự: trán, mũi, miệng, cằm, má trái, má phải, cổ, ngực, b�
 - Nếu visibility cổ tay/khuỷu tay pose thấp, góc cổ tay là `NaN`.
 - `NaN` chỉ được xử lý ở `process_sequence`, không ở `extract`.
 
-## `process_sequence` — chuỗi → `(30, 418)`
+## `process_sequence` — chuỗi → `(30, 434)`
 
-Đầu vào `(T, 131)`, đầu ra `(target_len, 170)`. Các bước theo thứ tự:
+Đầu vào `(T, 383)`, đầu ra `(target_len, 434)`. Các bước theo thứ tự:
 
 1. **Presence**: `NaN` → `0` (không nội suy cờ hiện diện).
 2. **Nội suy khoảng trống**: mỗi cột, đoạn `NaN` dài ≤ `max_gap` (mặc định 6) được nội suy tuyến tính; đoạn dài hơn → `0.0`. Cột toàn `NaN` → `0.0`.
 3. **Khử gai 1 frame**: nếu frame giữa lệch cùng chiều so với cả hai bên, biên độ vượt ngưỡng (`0.45` × scale), và hai frame lân cận gần nhau, thay bằng trung điểm. Scale là `1.0` cho `hand_pos`/`inter_hand_vec`, `2.0` cho nhóm còn lại, `inf` cho `presence` (không khử cờ).
 4. **Co giãn thời gian**: nội suy tuyến tính trên trục thời gian về `target_len`; chuỗi 1 frame được lặp.
-5. **Chuyển động** (`add_motion=True`): lấy các cột `hand_pos`, `inter_hand_vec`, `orientation` (39 cột), làm mượt nhẹ `[1,2,1]/4` theo thời gian, rồi sai phân trung tâm × `(target_len - 1)`. Ghép sau 131 chiều → 170.
+5. **Chuyển động** (`add_motion=True`): lấy các cột `hand_pos`, `inter_hand_vec`, `orientation` (39 cột), làm mượt nhẹ `[1,2,1]/4` theo thời gian, rồi sai phân trung tâm × `(target_len - 1)`. Ghép sau 383 chiều → 434.
 
-`add_motion=False` trả `(30, 131)`.
+`add_motion=False` trả `(30, 383)`.
 
 Các cột chuyển động nằm ở `131:170`:
 
@@ -139,10 +157,10 @@ Các cột chuyển động nằm ở `131:170`:
 
 - Đặc trưng bất biến với vị trí/khoảng cách người ký nhờ hệ trục thân và đơn vị độ rộng vai.
 - `handshape`, `hand_local`, hướng bàn tay dùng `hand_world_landmarks` khi có (`USE_HAND_WORLD = True`); `finger_curl` (v7)
-  dùng cả landmark ảnh vì `hand_world` làm phẳng độ móc ngón.
+  và `hand_closure` (v8) dùng cả landmark ảnh vì `hand_world` làm phẳng độ móc ngón và mở bớt vòng ngón cái.
 - Không làm mượt các cột `handshape` — giữ rung/búng ngón.
 - Chuyển động tính **sau** khi co giãn thời gian, nên biên độ phụ thuộc `target_len` và độc lập tốc độ tuyệt đối của người ký.
-- `FEATURE_VERSION = 7`: đổi bố cục đặc trưng phải tăng version và trích xuất lại dữ liệu.
+- `FEATURE_VERSION = 8`: đổi bố cục đặc trưng phải tăng version và trích xuất lại dữ liệu.
 
 ## Phụ thuộc
 

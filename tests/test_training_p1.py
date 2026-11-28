@@ -39,7 +39,6 @@ class TemperatureTests(unittest.TestCase):
         self.assertEqual(status, "skipped_no_errors")
 
     def test_temperature_is_never_sharpened_and_bound_is_reported(self):
-        # Gần như đúng hết, một lỗi sát nút: NLL muốn T < 1 -> bị chặn ở T=1 và phải cảnh báo.
         logits = torch.tensor([[3.0, 0.0]] * 20 + [[0.1, 0.0]])
         y = torch.tensor([0] * 20 + [1])
         self.assertGreaterEqual(fit_temperature(logits, y), 1.0 - 1e-6)
@@ -62,7 +61,7 @@ class EpochBudgetTests(unittest.TestCase):
     def test_full_model_budget_extends_past_warmup(self):
         cfg = Config()
         self.assertEqual(full_model_epochs([3, 3, 4, 11, 34], cfg), cfg.warmup_epochs + 20)
-        self.assertEqual(full_model_epochs([100, 100], cfg), int(100 * 1.15) + 1)   # CV dài: giữ công thức cũ
+        self.assertEqual(full_model_epochs([100, 100], cfg), int(100 * 1.15) + 1)
         self.assertGreater(full_model_epochs([1], cfg), cfg.warmup_epochs)
 
     def test_fixed_epoch_model_reaches_end_of_cosine(self):
@@ -83,30 +82,30 @@ class WarmStartTests(unittest.TestCase):
         tuned, info = train_one(X, y, X, y, 3, groups, cfg, torch.device("cpu"), log_every=0,
                                 fixed_epochs=2, init_state=start)
         self.assertGreaterEqual(info["best_epoch"], 0)
-        if info["best_epoch"] == 0:                       # model ban đầu thắng -> trả về đúng trọng số cũ
+        if info["best_epoch"] == 0:
             for k, v in tuned.state_dict().items():
                 torch.testing.assert_close(v, start[k])
         with torch.no_grad():
             base_acc = (base.eval()(X).argmax(1) == y).float().mean().item()
-        self.assertGreaterEqual(info["val_acc"], base_acc)   # không bao giờ tệ hơn điểm xuất phát trên val
+        self.assertGreaterEqual(info["val_acc"], base_acc)
 
 
 class ReplaySamplerTests(unittest.TestCase):
     def test_always_samples_every_epoch_and_quota_per_class(self):
         y = np.repeat(np.arange(3), 10)
         always = np.zeros(30, dtype=bool)
-        always[[0, 1, 25]] = True                           # 2 mẫu mới lớp 0, 1 mẫu mới lớp 2
+        always[[0, 1, 25]] = True
         sampler = ReplaySampler(y, quota=[4, 2, 20], always=always, seed=0)
-        self.assertEqual(len(sampler), 3 + 4 + 2 + 9)        # lớp 2 chỉ còn 9 mẫu cũ -> lấy hết
+        self.assertEqual(len(sampler), 3 + 4 + 2 + 9)
         seen = set()
         for ep in range(5):
             idx = sampler(ep).numpy()
             self.assertEqual(len(idx), len(sampler))
-            self.assertEqual(len(set(idx)), len(idx))        # không lặp trong một epoch
+            self.assertEqual(len(set(idx)), len(idx))
             self.assertTrue({0, 1, 25} <= set(idx))
             self.assertEqual(np.bincount(y[idx], minlength=3).tolist(), [6, 2, 10])
             seen |= set(idx)
-        self.assertGreater(len(seen), len(sampler))           # đổi tập con giữa các epoch
+        self.assertGreater(len(seen), len(sampler))
 
     def test_train_one_with_sampler_trains_and_keeps_start_candidate(self):
         X, y = tiny_data(n=30)
@@ -123,7 +122,7 @@ class ReplaySamplerTests(unittest.TestCase):
 
         _, info = train_one(X, y, X, y, 3, groups, cfg, torch.device("cpu"), log_every=0, fixed_epochs=3,
                             init_state=start, sampler=sampler)
-        self.assertEqual(calls, [0, 1, 2])                    # epoch 0 dùng lại lần gọi đầu, không rút 2 lần
+        self.assertEqual(calls, [0, 1, 2])
         self.assertEqual(len(info["history"]), 3)
         self.assertGreaterEqual(info["best_epoch"], 0)
 
@@ -133,7 +132,7 @@ class SoftPresenceTests(unittest.TestCase):
         x = torch.zeros(1, 30, SEQ_FEATURE_DIM)
         presence = torch.zeros(1, 30, 2)
         presence[0, :, 1] = 1.0
-        presence[0, :, 0] = 0.2                   # tay trái chỉ khớp yếu -> coi như vắng
+        presence[0, :, 0] = 0.2
         donor = torch.full((1, 30, SEQ_FEATURE_DIM), 7.0)
         _, augmented = Augmenter()(x, 0.5, 1.0, presence, (donor, donor))
         self.assertIsNotNone(augmented)
@@ -183,7 +182,7 @@ class DistractorTrainingTests(unittest.TestCase):
     def test_distractor_batches_train_in_one_fixed_size_forward(self):
         X, y = tiny_data()
         presence = torch.zeros(len(X), 30, 2)
-        presence[::2, :, 1] = 1.0                        # nửa số clip chỉ có tay phải
+        presence[::2, :, 1] = 1.0
         presence[1::2] = 1.0
         shapes = []
         cfg = tiny_config(max_epochs=6, extra_hand_probability=1.0)
@@ -196,7 +195,7 @@ class DistractorTrainingTests(unittest.TestCase):
                                 hand_presence=presence, log_every=0)
         hook.remove()
         self.assertTrue(np.isfinite(info["val_loss"]))
-        self.assertEqual(set(shapes), {8 + 8})           # batch 8 + 8 slot tay phụ, không đổi giữa các bước
+        self.assertEqual(set(shapes), {8 + 8})
 
 
 class EvaluationHookTests(unittest.TestCase):
@@ -240,7 +239,7 @@ class EvaluationHookTests(unittest.TestCase):
         rng = np.random.default_rng(0)
         y = np.r_[np.arange(18) % 3, np.arange(6) % 3]
         X = rng.normal(size=(24, 30, SEQ_FEATURE_DIM)).astype(np.float32) + y[:, None, None]
-        X[[18, 19, 20], :, FEATURE_SLICES["hand_pos"]] = 0.0     # bản tăng cường mất cả hai tay
+        X[[18, 19, 20], :, FEATURE_SLICES["hand_pos"]] = 0.0
         groups = np.r_[np.arange(18), np.arange(6)]
         mask = np.r_[np.ones(18, bool), np.zeros(6, bool)]
         sizes, real = [], training.train_one
@@ -256,8 +255,8 @@ class EvaluationHookTests(unittest.TestCase):
                                   cfg=tiny_config(max_epochs=6), folds=3, add_full=True,
                                   export_onnx_model=False, device=torch.device("cpu"), validation_mask=mask)
         self.assertIn("Bỏ 3 bản tăng cường", out.getvalue())
-        self.assertEqual(sizes[-1], 21)                  # model toàn bộ dữ liệu: 24 - 3 clip không tay
-        self.assertEqual(sum(sizes[:-1]), 2 * 21)        # mỗi mẫu train ở đúng k-1 = 2 fold
+        self.assertEqual(sizes[-1], 21)
+        self.assertEqual(sum(sizes[:-1]), 2 * 21)
 
     def test_training_runs_without_evaluation_module(self):
         with tempfile.TemporaryDirectory() as directory, \

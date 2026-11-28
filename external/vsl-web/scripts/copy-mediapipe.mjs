@@ -1,7 +1,3 @@
-// Chép WASM của @mediapipe/tasks-vision, 2 model .task dùng ở Python và blaze_face_short_range.tflite (cô lập người
-// chính, lib/subject.ts) từ src/builtin/mediapipe_builtin/models
-// vào public/mediapipe/ để trình duyệt chạy đúng cùng model với lúc trích đặc trưng train. Chạy tự động
-// trước `npm run dev` / `npm run build` (predev / prebuild); public/mediapipe/ không commit.
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

@@ -55,12 +55,11 @@ class OpenCameraTests(unittest.TestCase):
             return camera.open_camera(*args, verbose=False, **kwargs)
 
     def test_picks_largest_16_9_mode_on_avfoundation(self):
-        # Chế độ thật của FaceTime HD Camera (ffmpeg -list), mặc định preset Medium thấp.
         modes = [(1920, 1080), (1280, 720), (1080, 1920), (1760, 1328), (640, 480), (1328, 1760), (1552, 1552)]
         fake = FakeCapture(modes, default=(480, 360), snap=True)
         cap = self.open(fake, 0)
         self.assertEqual(cap.read()[1].shape[:2], (1080, 1920))
-        self.assertIsNone(fake.fourcc)            # AVFoundation không đặt MJPG
+        self.assertIsNone(fake.fourcc)
 
     def test_ignores_unsupported_requests_on_other_backends(self):
         fake = FakeCapture([(640, 480), (1280, 720)], default=(640, 480), backend="DSHOW")
@@ -69,7 +68,6 @@ class OpenCameraTests(unittest.TestCase):
         self.assertEqual(fake.fourcc, cv2.VideoWriter_fourcc(*"MJPG"))
 
     def test_falls_back_to_largest_seen_size(self):
-        # Không ứng viên 16:9 nào khớp; camera kẹp về 1280x960 -> dùng kích thước thật lớn nhất.
         fake = FakeCapture([(640, 480), (1280, 960)], default=(640, 480), snap=True)
         cap = self.open(fake, 0)
         self.assertEqual(cap.read()[1].shape[:2], (960, 1280))

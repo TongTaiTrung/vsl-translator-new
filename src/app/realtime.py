@@ -48,7 +48,7 @@ class RealtimeTranslator:
 
     def process(self, frame_bgr: np.ndarray, *, now: float | None = None) -> dict:
         state = self.session.update_frame(frame_bgr, now=now)
-        if state is self._last_state and self._snapshot is not None:   # frame bị bỏ vì target_fps
+        if state is self._last_state and self._snapshot is not None:
             return {**self._snapshot, "committed": None, "sentence": self.composer.state()}
         self._last_state = state
 
@@ -64,7 +64,7 @@ class RealtimeTranslator:
 
         if committed is not None:
             self.composer.submit(self.voter.sequence)
-            if self.reset_after_commit:   # cửa sổ mới cho ký hiệu kế tiếp
+            if self.reset_after_commit:
                 self.session.reset()
                 self._last_prediction = None
         self._snapshot = {
@@ -101,8 +101,6 @@ class RealtimeTranslator:
     def __exit__(self, *_exc) -> None:
         self.close()
 
-
-# ---------------------------------------------------------------- hiển thị OpenCV
 
 FONT_CANDIDATES = (
     Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
@@ -240,7 +238,7 @@ def main(argv=None) -> None:
     try:
         vote_config = VoteConfig(min_consecutive=args.min_consecutive)
         if args.fast:
-            from src.app.fast import FastConfig, FastRealtimeTranslator   # fast.py import realtime.py
+            from src.app.fast import FastConfig, FastRealtimeTranslator
             fast_config = FastConfig(
                 fast_model=args.fast_model, early_window_seconds=args.early_window,
                 early_votes=min(args.early_votes, args.min_consecutive),

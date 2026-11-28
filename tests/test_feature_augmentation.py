@@ -42,7 +42,6 @@ class FeatureAugmentationTests(unittest.TestCase):
             pitches = [json.loads((p / "meta.json").read_text())["augmentation"]["view_pitch_deg"] for p in created]
             self.assertTrue(all(-10.0 <= p <= 10.0 for p in pitches))
             self.assertGreater(len(set(pitches)), 1)
-            # pitch=0 -> giống hệt chỉ thêm nhiễu (cùng seed).
             flat = augment_sample(source, Path(tmp) / "raw", 1, 1.0, np.random.default_rng(3), pitch_degrees=0.0)[0]
             features = np.stack([DataHandler._load_feature(source / f"{i}.npz") for i in range(8)])
             expected = add_feature_noise(features, np.random.default_rng(3), 1.0)

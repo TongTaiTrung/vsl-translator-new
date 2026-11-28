@@ -1,24 +1,9 @@
-// Chạy MediaPipe (pose + hand landmarker, chế độ VIDEO) ngay trên trình duyệt thay vì gửi ảnh lên server.
-//
-// Nhiều người trong khung hình: lib/subject.ts (MainSubjectIsolator) chỉ giữ người chính — FaceDetector chọn
-// mặt to và gần giữa nhất, pose + hand chạy trên ảnh crop quanh người đó, tay được khoá theo cổ tay pose chính.
-// Isolator trả toạ độ chuẩn hoá theo video (đã lật nếu mirrorData); ở đây đổi tiếp sang toạ độ canvas
-// FRAME_SIZE x FRAME_SIZE giống hệt src/features/frame.py:frame_padding (scale đều cho cạnh dài = 1280, đặt giữa,
-// nền đen) nên x/y/z cùng tỉ lệ như lúc trích đặc trưng train.
-// Model là đúng file của Python (scripts/copy-mediapipe.mjs chép vào public/mediapipe/, mặc định tải bản giống hệt
-// từ CDN, xem CDN_ASSETS), thêm blaze_face_short_range.
-//
-// Kết quả mỗi frame đúng định dạng src/features/landmarks.py: { pose, hands, hands_world }.
 
 import { type AssetUrls, type Delegate, MainSubjectIsolator, type Point } from "./subject";
 
 export type { Delegate };
 export const FRAME_SIZE = 1280;
 const LOCAL_ASSETS = "/mediapipe";
-// Mặc định tải wasm + model từ CDN (byte-for-byte giống file trong public/mediapipe/, đã so sha1): khi web chạy
-// sau tunnel chậm (Tailscale Funnel ~160 KB/s) ~31 MB tải lần đầu mất vài phút trước khi camera mở. CDN lỗi thì
-// quay về public/mediapipe/. NEXT_PUBLIC_MEDIAPIPE_CDN=0 để luôn dùng bản local.
-// Phiên bản phải khớp @mediapipe/tasks-vision trong package.json.
 const TASKS_VISION_VERSION = "1.1.1";
 const MODELS = "https://storage.googleapis.com/mediapipe-models";
 const CDN_ASSETS: AssetUrls = {
@@ -28,19 +13,14 @@ const CDN_ASSETS: AssetUrls = {
   hand: `${MODELS}/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task`,
 };
 const USE_CDN = process.env.NEXT_PUBLIC_MEDIAPIPE_CDN !== "0";
-/** Giống LandmarkerLoader (Python): detection / presence / tracking confidence. */
 const CONFIDENCE = 0.5;
 
 export interface FrameLandmarks {
-  /** 33 điểm [x, y, z, visibility]; null = không thấy người. */
   pose: number[][] | null;
-  /** 0–2 tay, mỗi tay 21 điểm [x, y, z] (toạ độ ảnh chuẩn hoá). */
   hands: number[][][];
-  /** Cùng số tay, toạ độ mét (hand_world_landmarks); thiếu thì server dùng landmark ảnh cho thủ hình. */
   hands_world?: number[][][];
 }
 
-/** 6 chữ số thập phân: sai lệch feature ~1e-4, nhỏ hơn nhiều nhiễu MediaPipe; JSON gọn hơn ~2 lần. */
 const round = (v: number) => Math.round(v * 1e6) / 1e6;
 const xyz = (points: { x: number; y: number; z: number }[]) => points.map((p) => [round(p.x), round(p.y), round(p.z)]);
 
@@ -53,7 +33,6 @@ export class LandmarkDetector {
     return this.isolator.delegate;
   }
 
-  /** Tải WASM + 3 model (lần đầu ~17 MB). GPU lỗi (không có WebGL2…) thì tự chuyển CPU. */
   static async create(delegate: Delegate = "GPU", numPoses = 1): Promise<LandmarkDetector> {
     const create = (assets: string | AssetUrls) =>
       MainSubjectIsolator.create({ assets, delegate, numPoses, confidence: CONFIDENCE });
@@ -66,20 +45,16 @@ export class LandmarkDetector {
     }
   }
 
-  /** Overlay vẽ khung crop (debug); null = tắt. */
   setDebugCanvas(canvas: HTMLCanvasElement | null): void {
     this.isolator.setDebugCanvas(canvas);
   }
 
-  /** Detect người chính rồi đổi toạ độ về canvas pad 1280x1280; `timestamp` ms, tự đảm bảo tăng ngặt. */
   detect(video: HTMLVideoElement, timestamp: number, mirror: boolean): FrameLandmarks {
-    const t = Math.max(Math.round(timestamp), this.lastTimestamp + 1);   // VIDEO mode: timestamp tăng ngặt
+    const t = Math.max(Math.round(timestamp), this.lastTimestamp + 1);
     this.lastTimestamp = t;
     const frame = this.isolator.process(video, t, mirror);
     if (!frame) return { pose: null, hands: [] };
 
-    // frame_padding: scale = 1280 / cạnh dài, kích thước làm tròn, lề trên/trái = phần nguyên của nửa phần dư.
-    // Lật gương (cv2.flip rồi pad) đã nằm sẵn trong toạ độ của isolator.
     const w = video.videoWidth;
     const h = video.videoHeight;
     const scale = FRAME_SIZE / Math.max(w, h);
@@ -107,7 +82,6 @@ export class LandmarkDetector {
     };
   }
 
-  /** Quên khung người chính đang theo (khi đổi camera): frame kế tiếp tìm mặt lại từ đầu. */
   reset(): void {
     this.isolator.reset();
   }

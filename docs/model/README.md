@@ -6,7 +6,7 @@ Huấn luyện bộ phân loại chuỗi đặc trưng VSL, hiệu chỉnh xác 
 
 ```mermaid
 flowchart TD
-    A[(dataset.npz<br/>X N,30,170 / y / classes / groups)] --> B[run_training]
+    A[(dataset.npz<br/>X N,30,434 / y / classes / groups)] --> B[run_training]
     B --> C[StratifiedGroupKFold]
     C --> D[train_one x k]
     D --> E[OOF logits]
@@ -39,7 +39,7 @@ File `.npz`:
 
 | Key | Shape | Bắt buộc | Ý nghĩa |
 |---|---|---|---|
-| `X` | `(N, 30, D)` float | Có | Đầu ra `process_sequence`; `D = 170` (có motion) hoặc `131` |
+| `X` | `(N, 30, D)` float | Có | Đầu ra `process_sequence`; `D = 434` (có motion) hoặc `383` |
 | `y` | `(N,)` int/str | Có | Nhãn lớp |
 | `classes` | `(C,)` str | Không | Tên lớp theo thứ tự nhãn; thiếu thì suy ra từ `y` |
 | `groups` | `(N,)` | Khuyến nghị | Nhóm nguồn (video/lần ghi/người) để chia fold không rò rỉ |
@@ -108,6 +108,21 @@ Loss bổ sung khi có extra hand:
 
 Mixup: xác suất `0.6 * s`, `alpha = 0.4`, tắt khi đang dùng extra hand.
 
+### Mẫu âm "đứng yên" (lớp có nét)
+
+Dấu sắc/huyền/nặng/hỏi chỉ vẩy tay ~0.3 s rồi giữ yên. Trước đây model nhận ra chúng từ **một frame tĩnh** (kể cả
+frame trước cú vẩy hay clip chạy ngược) tức là học theo tư thế giữ tay riêng của buổi thu chứ không theo nét, nên
+trên camera thật (giữ tay hơi khác) nhận sai.
+
+- `dynamic_classes`: lớp có trung vị `|nét xy|` (`extract.stroke_magnitude`) của mẫu gốc ≥ `dynamic_min_stroke = 0.25`
+  độ rộng vai (chữ cái ≤ ~0.15; dấu sắc/huyền/nặng/hỏi/ă, gặp, xin chào, cảm ơn, age, ten_la, địa chỉ ≥ ~0.28).
+  Tính trên mẫu gốc của tập train mỗi fold; danh sách ghi vào `metrics.json["dynamic_classes"]`.
+- `extract.still_versions`: mỗi mẫu của lớp có nét cho tối đa 3 bản "đứng yên" (đoạn giữ tay trước / sau cú di chuyển,
+  frame yên nhất lặp lại), tính lại bằng `process_sequence`; đoạn còn nét > `STILL_MAX_STROKE` bị bỏ.
+- `train_one(negatives=...)`: mỗi bước thêm `ceil(still_negative_fraction * bs)` mẫu âm (augment như thường, số slot cố
+  định vì MPS) với loss `still_negative_weight * uniform_target_loss` (CE về xác suất đều). Tư thế không có nét → model
+  không tự tin → bị từ chối, thay vì đoán bừa một dấu. `still_negative_weight = 0` để tắt.
+
 ### AdaptiveController
 
 Điều hoà thích ứng bằng hai tín hiệu:
@@ -172,15 +187,15 @@ Các cờ: `--folds`, `--folds-to-run`, `--no-full`, `--epochs`, `--head linear|
 
 - Khởi tạo một lần, dùng lại cho nhiều request.
 - Nếu không truyền `checkpoint_path`, dùng `runs/best/ensemble.pt`; không có thì run mới nhất theo thời điểm trong tên thư mục (`src/model/checkpoints.py`).
-- Kiểm tra checkpoint: `feature_dim` phải bằng `SEQ_FEATURE_DIM = 170`.
+- Kiểm tra checkpoint: `feature_dim` phải bằng `SEQ_FEATURE_DIM = 434`.
 - Ngưỡng hiệu dụng: `max(reject_threshold, min_confidence)`, mặc định `min_confidence = 0.65`.
 
 Ba API:
 
 | API | Input | Xử lý |
 |---|---|---|
-| `predict_processed(seq)` | `(30, 170)` | Dự đoán trực tiếp |
-| `predict_raw(raw)` | `(T, 131)` | `process_sequence` rồi dự đoán |
+| `predict_processed(seq)` | `(30, 434)` | Dự đoán trực tiếp |
+| `predict_raw(raw)` | `(T, 383)` | `process_sequence` rồi dự đoán |
 | `predict_frames(frames_bgr)` | iterable ảnh BGR | pad + detect + extract + process + dự đoán |
 
 Kết quả:
@@ -239,7 +254,7 @@ Trạng thái cho **một** luồng camera/client:
 
 ## Bất biến và lưu ý
 
-- `D` của dữ liệu huấn luyện phải khớp `SEQ_FEATURE_DIM` của extractor hiện tại (170).
+- `D` của dữ liệu huấn luyện phải khớp `SEQ_FEATURE_DIM` của extractor hiện tại (434).
 - `groups` là bắt buộc trên thực tế: thiếu groups → mẫu cùng video/người có thể rơi vào cả train và val, làm CV lạc quan.
 - Normalizer của mỗi fold chỉ fit trên train của fold đó; không dùng thống kê toàn dataset trước CV.
 - `temperature` và `reject_threshold` lấy từ OOF, không lấy từ train.

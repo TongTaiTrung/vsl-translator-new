@@ -28,15 +28,15 @@ def fake_landmarks(hand: bool = True, seed: int = 0) -> dict:
     rng = np.random.default_rng(seed)
     pose = np.column_stack([rng.uniform(0.4, 0.6, 33), rng.uniform(0.2, 0.4, 33), rng.uniform(-0.1, 0.1, 33),
                             np.ones(33)])
-    pose[11, :2], pose[12, :2] = (0.6, 0.5), (0.4, 0.5)          # vai trái / phải
-    pose[23, :2], pose[24, :2] = (0.57, 0.9), (0.43, 0.9)        # hông
-    pose[13, :2], pose[15, :2] = (0.65, 0.7), (0.58, 0.55)       # khuỷu, cổ tay trái
+    pose[11, :2], pose[12, :2] = (0.6, 0.5), (0.4, 0.5)
+    pose[23, :2], pose[24, :2] = (0.57, 0.9), (0.43, 0.9)
+    pose[13, :2], pose[15, :2] = (0.65, 0.7), (0.58, 0.55)
     pose[14, :2], pose[16, :2] = (0.35, 0.7), (0.3, 0.85)
     out = {"pose": pose.tolist(), "hands": [], "hands_world": []}
     if hand:
         img = np.column_stack([0.58 + rng.uniform(-0.04, 0.04, 21), 0.5 + rng.uniform(-0.06, 0.0, 21),
                                rng.uniform(-0.02, 0.02, 21)])
-        img[0] = (0.58, 0.55, 0.0)                               # cổ tay trùng cổ tay pose
+        img[0] = (0.58, 0.55, 0.0)
         out["hands"] = [img.tolist()]
         out["hands_world"] = [((img - img[0]) * 0.4).tolist()]
     return out
@@ -103,15 +103,15 @@ class ServerTests(unittest.TestCase):
         self.assertTrue(body["accepted"])
         self.assertEqual(len(body["top"]), 2)
         self.assertEqual(body["frames"], 30)
-        self.assertIn("cảm ơn".encode(), response.data)          # tiếng Việt không bị escape
+        self.assertIn("cảm ơn".encode(), response.data)
         self.assertEqual(self.calls, [{"n": 30, "shape": (48, 64, 3), "fps": 30.0, "mirror": False}])
         self.assertEqual(response.headers["Access-Control-Allow-Origin"], "*")
 
     def test_predict_counts_frames_with_active_hands(self):
         def extractor(frames, *, fps, mirror_data):
             features = np.zeros((len(frames), FEATURE_DIM), dtype=np.float32)
-            features[:12, list(_PALM_Y)] = np.nan            # 12 frame không thấy tay
-            features[12:15, list(_PALM_Y)] = REST_Y + 0.5    # 3 frame tay buông -> không tính
+            features[:12, list(_PALM_Y)] = np.nan
+            features[12:15, list(_PALM_Y)] = REST_Y + 0.5
             return features
 
         client = create_app(self.predictor, feature_extractor=extractor).test_client()
@@ -130,7 +130,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_json())
         body = response.get_json()
         self.assertEqual((body["frames"], body["hand_frames"]), (30, 20))
-        self.assertEqual(self.calls, [])                          # không chạy MediaPipe trên server
+        self.assertEqual(self.calls, [])
         for bad in ([fake_landmarks()] * 29, [{"pose": [[0, 0, 0]] * 33}] * 30, "x"):
             self.assertEqual(self.client.post("/api/predict", json={"landmarks": bad}).status_code, 400)
 
@@ -229,10 +229,10 @@ class StreamTests(unittest.TestCase):
         self.assertIn(body["label"], ("xin chào", "cảm ơn"))
         self.assertEqual((body["buffered"], body["frames"], body["hand_frames"]), (30, 30, 5))
 
-        body = self.send(sid, [self.hand] * 5).get_json()          # cửa sổ trượt: giữ 30 frame mới nhất
+        body = self.send(sid, [self.hand] * 5).get_json()
         self.assertEqual((body["buffered"], body["hand_frames"]), (30, 10))
         extractor, = FakeStreamExtractor.instances
-        self.assertEqual(len(extractor.timestamps), 35)          # mỗi frame chỉ trích MỘT lần
+        self.assertEqual(len(extractor.timestamps), 35)
 
     def test_short_window_predicts_early_on_recent_frames(self):
         sid = self.open()
@@ -240,15 +240,15 @@ class StreamTests(unittest.TestCase):
         body = self.send(sid, [self.empty] * 7, **fast).get_json()
         self.assertEqual((body["ready"], body["buffered"], body["window"]), (False, 7, 15))
 
-        body = self.send(sid, [self.hand], **fast).get_json()          # đủ min_frames: dự đoán 8 frame
+        body = self.send(sid, [self.hand], **fast).get_json()
         self.assertTrue(body["ready"])
         self.assertIn(body["label"], ("xin chào", "cảm ơn"))
         self.assertEqual((body["frames"], body["hand_frames"]), (8, 1))
 
-        body = self.send(sid, [self.hand] * 20, **fast).get_json()     # chỉ 15 frame gần nhất
+        body = self.send(sid, [self.hand] * 20, **fast).get_json()
         self.assertEqual((body["buffered"], body["frames"], body["hand_frames"]), (28, 15, 15))
 
-        body = self.send(sid, [self.empty] * 2).get_json()              # mặc định: cả cửa sổ 30 frame
+        body = self.send(sid, [self.empty] * 2).get_json()
         self.assertEqual((body["ready"], body["frames"], body["hand_frames"], body["window"]), (True, 30, 21, 30))
 
     def test_fill_repeat_copies_short_window_to_full_length(self):
@@ -264,12 +264,11 @@ class StreamTests(unittest.TestCase):
             body = self.send(sid, [self.hand], window=1, min_frames=1, fill="repeat").get_json()
             self.assertEqual((body["ready"], body["frames"], body["hand_frames"]), (True, 1, 1))
             self.send(sid, [self.empty], window=2, min_frames=1, fill="repeat")
-            self.send(sid, [self.hand], window=2, min_frames=1)                  # mặc định: nội suy
+            self.send(sid, [self.hand], window=2, min_frames=1)
         one, two, interp = seen
-        same = lambda rows, ref: all(np.array_equal(r, ref, equal_nan=True) for r in rows)   # frame trống có NaN
+        same = lambda rows, ref: all(np.array_equal(r, ref, equal_nan=True) for r in rows)
         self.assertEqual(one.shape[0], 30)
         self.assertTrue(same(one, one[0]))
-        # 2 frame thật → 15 bản của frame trước rồi 15 bản của frame sau (không có frame nội suy ở giữa).
         self.assertEqual(two.shape[0], 30)
         self.assertTrue(same(two[:15], two[0]) and same(two[15:], two[-1]))
         self.assertFalse(np.array_equal(two[0], two[-1], equal_nan=True))
@@ -286,7 +285,7 @@ class StreamTests(unittest.TestCase):
         body = self.send(sid, [self.hand] * 30, predict=False).get_json()
         self.assertEqual((body["ready"], body["predicted"], body["buffered"], body["hand_frames"]), (True, False, 30, 30))
         self.assertNotIn("label", body)
-        body = self.send(sid, [self.hand]).get_json()                   # mặc định predict = true
+        body = self.send(sid, [self.hand]).get_json()
         self.assertTrue(body["predicted"])
         self.assertIn(body["label"], ("xin chào", "cảm ơn"))
         self.assertEqual(self.send(sid, [self.hand], predict="yes").status_code, 400)
@@ -318,12 +317,12 @@ class StreamTests(unittest.TestCase):
         send = lambda frames, **extra: self.client.post(f"/api/stream/{sid}", json={"landmarks": frames, **extra})
         body = send([fake_landmarks(seed=i) for i in range(29)], predict=False).get_json()
         self.assertEqual((body["ready"], body["buffered"], body["hand_frames"]), (False, 29, 29))
-        body = send([fake_landmarks(hand=False)], timestamps=[1933.0]).get_json()     # frame thứ 30 ở 15 fps
+        body = send([fake_landmarks(hand=False)], timestamps=[1933.0]).get_json()
         self.assertEqual((body["predicted"], body["frames"], body["hand_frames"]), (True, 30, 29))
         self.assertIn(body["label"], ("xin chào", "cảm ơn"))
         body = send([fake_landmarks(hand=False)] * 2, reset=True, window=10).get_json()
         self.assertEqual((body["ready"], body["buffered"], body["hand_frames"]), (False, 2, 0))
-        self.assertEqual(FakeStreamExtractor.instances, [])       # phiên landmark không tạo landmarker
+        self.assertEqual(FakeStreamExtractor.instances, [])
         for bad in ([], [fake_landmarks()] * 61, [{"pose": None, "hands": [[[0, 0, 0]]]}]):
             self.assertEqual(send(bad).status_code, 400)
         self.assertEqual(send([fake_landmarks()], timestamps=[1, 2]).status_code, 400)
@@ -332,19 +331,19 @@ class StreamTests(unittest.TestCase):
         """Điện thoại chậm (7.5 fps) hay máy nhanh (30 fps): cửa sổ luôn là 2 giây như lúc train (30 frame ở 15 fps)."""
         sid = self.client.post("/api/stream").get_json()["session_id"]
         send = lambda frames, **extra: self.client.post(f"/api/stream/{sid}", json={"landmarks": frames, **extra})
-        slow = [1000 + i * 1000 / 7.5 for i in range(16)]               # 16 frame trải 2 giây
+        slow = [1000 + i * 1000 / 7.5 for i in range(16)]
         body = send([fake_landmarks(seed=i) for i in range(16)], timestamps=slow).get_json()
         self.assertTrue(body["ready"])
         self.assertEqual(body["buffered"], 30)
-        self.assertEqual(body["frames"], 15)                            # frame đầu đã ra ngoài 2 giây
-        self.assertEqual(body["hand_frames"], 30)                       # quy về đơn vị frame 15 fps
+        self.assertEqual(body["frames"], 15)
+        self.assertEqual(body["hand_frames"], 30)
         self.assertIn(body["label"], ("xin chào", "cảm ơn"))
 
-        fast = [9000 + i * 1000 / 30 for i in range(40)]                # 40 frame chỉ trải 1.33 giây
+        fast = [9000 + i * 1000 / 30 for i in range(40)]
         body = send([fake_landmarks(seed=i) for i in range(40)], timestamps=fast, reset=True).get_json()
         self.assertEqual((body["ready"], body["buffered"], body["hand_frames"]), (False, 20, 20))
 
-        more = [fast[-1] + (i + 1) * 1000 / 30 for i in range(30)]      # thêm 1 giây: cửa sổ chỉ giữ 2 giây gần nhất
+        more = [fast[-1] + (i + 1) * 1000 / 30 for i in range(30)]
         body = send([fake_landmarks(seed=i) for i in range(30)], timestamps=more).get_json()
         self.assertEqual((body["ready"], body["buffered"], body["hand_frames"]), (True, 30, 30))
         self.assertEqual(body["frames"], 60)
@@ -376,7 +375,7 @@ class StreamTests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/stream").status_code, 503)
         self.assertEqual(self.client.delete(f"/api/stream/{first}").status_code, 204)
         self.assertEqual(self.send(first, [self.empty]).status_code, 404)
-        self.open()                                               # đã có chỗ trống
+        self.open()
         self.assertEqual(self.client.get("/api/health").get_json()["stream"], {"window": 30, "active": 2, "max": 2})
         del second
 

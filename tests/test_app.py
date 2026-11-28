@@ -65,9 +65,9 @@ class WordVoterTests(unittest.TestCase):
         voter = WordVoter(VoteConfig(min_consecutive=2))
         committed = [voter.vote("toi") for _ in range(8)]
         self.assertEqual(committed.count("toi"), 1)
-        voter.interrupt()                      # cửa sổ đang gom lại: vẫn chặn
+        voter.interrupt()
         self.assertEqual([voter.vote("toi") for _ in range(3)].count("toi"), 0)
-        voter.release()                        # tay rời khung: cho phép lặp
+        voter.release()
         self.assertEqual([voter.vote("toi") for _ in range(2)][-1], "toi")
         self.assertEqual(voter.sequence, ["toi", "toi"])
 
@@ -162,7 +162,7 @@ class SentenceTests(unittest.TestCase):
             gate.set()
             self.assertTrue(done.wait(2))
             self.assertEqual(composer.state()["words"], ["c"])
-            self.assertLessEqual(len(client.calls), 2)   # "b" bị gộp, không gửi
+            self.assertLessEqual(len(client.calls), 2)
         finally:
             composer.close()
 

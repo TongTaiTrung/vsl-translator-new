@@ -99,7 +99,6 @@ class DataHandler:
     SEQUENCE_LENGTH = EXPECTED_FRAMES
     FEATURE_DIM = FRAME_FEATURE_DIM
     MIN_FRAMES = 8
-    # Hai cột cuối của vector đặc trưng = cờ hiện diện tay trái/phải (bố cục của extractor mới).
     PRESENCE_COLS = slice(-2, None)
 
     def __init__(
@@ -117,16 +116,15 @@ class DataHandler:
 
         self.processor = processor
         self.min_samples_per_class = max(1, int(min_samples_per_class))
-        self.strict = strict  # True: mẫu dở dang -> RuntimeError (hành vi cũ)
+        self.strict = strict
 
-        self.incomplete: List[Tuple[str, str]] = []   # (đường dẫn, lý do) của mẫu bị bỏ qua
-        self.excluded_classes: Dict[str, int] = {}    # lớp quá ít mẫu -> số mẫu
+        self.incomplete: List[Tuple[str, str]] = []
+        self.excluded_classes: Dict[str, int] = {}
         self._samples: Optional[List[SampleRef]] = None
         self._class_to_idx: Optional[Dict[str, int]] = None
         self._counts: Dict[str, int] = {}
         self._origin_counts: Dict[str, int] = {}
 
-    # ------------------------------------------------------------------ lớp
     @staticmethod
     def _child_dirs(root: Path) -> Dict[str, Path]:
         if not root.is_dir():
@@ -145,10 +143,6 @@ class DataHandler:
     def class_names(self) -> List[str]:
         """Mọi lớp có thư mục (kể cả lớp còn trống), đã chuẩn hoá NFC."""
         return sorted(self._child_dirs(self.processed))
-
-    @property
-    def num_class(self) -> int:
-        return len(self.class_names)
 
     @property
     def active_class_names(self) -> List[str]:
@@ -188,7 +182,6 @@ class DataHandler:
                 shutil.rmtree(d)
         self._invalidate_dataset_index()
 
-    # ------------------------------------------------------------------ index
     def _invalidate_dataset_index(self) -> None:
         self._samples = None
         self._class_to_idx = None
@@ -277,7 +270,6 @@ class DataHandler:
         return {"class": s.class_name, "sample_id": s.sample_id, "label": s.label,
                 "session": s.session, "origin_sample_id": s.origin_id, "augmented": s.augmented}
 
-    # ------------------------------------------------------------------ đọc
     @classmethod
     def _load_feature(cls, path: Path, allow_nan: bool = True) -> np.ndarray:
         with np.load(path, allow_pickle=False) as data:
@@ -337,13 +329,6 @@ class DataHandler:
                 "Truyền processor=process_sequence để co giãn thời gian."
             )
         return seq, label
-
-    # ------------------------------------------------------------------ ghi
-    def get_sample_indices(self, class_name: str) -> List[int]:
-        class_dir = self._class_dir(self.processed, class_name)
-        if not class_dir.is_dir():
-            return []
-        return sorted(int(d.name) for d in class_dir.iterdir() if d.is_dir() and d.name.isdigit())
 
     def _next_sample_idx(self, proc_cls: Path, raw_cls: Path) -> int:
         used = [int(d.name) for d in proc_cls.iterdir() if d.is_dir() and d.name.isdigit()] if proc_cls.is_dir() else []
@@ -451,24 +436,6 @@ class DataHandler:
             video.unlink()
         self._invalidate_dataset_index()
 
-    def get_npz(self, class_name: str, sample_idx: int, frame_idx: int) -> np.ndarray:
-        npz_path = self._class_dir(self.processed, class_name) / str(sample_idx) / f"{frame_idx}.npz"
-        if not npz_path.exists():
-            raise FileNotFoundError(f"Feature file not found: {npz_path}")
-        with np.load(npz_path, allow_pickle=False) as data:
-            key = "feature" if "feature" in data.files else data.files[0]
-            return data[key]
-
-    def get_npzs(self, class_name: str, sample_idx: int) -> List[np.ndarray]:
-        sample_dir = self._class_dir(self.processed, class_name) / str(sample_idx)
-        if not sample_dir.is_dir():
-            raise FileNotFoundError(f"Sample directory not found: {sample_dir}")
-        idxs = sorted(int(p.stem) for p in sample_dir.glob("*.npz") if p.stem.isdigit())
-        if not idxs:
-            raise FileNotFoundError(f"No .npz files found in: {sample_dir}")
-        return [self.get_npz(class_name, sample_idx, i) for i in idxs]
-
-    # ------------------------------------------------------------------ chất lượng & xuất
     def quality_report(self) -> List[dict]:
         """Thống kê chất lượng từng mẫu: số frame, tỉ lệ frame có pose, tỉ lệ có tay trái/phải."""
         self._ensure_dataset_index()
@@ -513,7 +480,7 @@ class DataHandler:
         }
 
     def save_npz(self, path: Union[str, Path], group_by: str = "sample") -> Path:
-        """Ghi file .npz đúng định dạng mà train_vsl.py đọc (X, y, classes, groups)."""
+        """Ghi file .npz đúng định dạng mà src/model/training.py đọc (X, y, classes, groups)."""
         data = self.export_arrays(group_by=group_by)
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)

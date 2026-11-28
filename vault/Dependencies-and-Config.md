@@ -6,9 +6,9 @@
 |---|---|
 | `mediapipe==1.1.1` | `src/builtin/mediapipe_builtin` |
 | `opencv-python` | camera, đọc video, vẽ (`cv2`) |
-| `numpy`, `scipy` | toàn bộ pipeline; `scipy` trong `extract.py` |
+| `numpy`, `scipy` | toàn bộ pipeline; `scipy` ở `extract.py` (nội suy, `ndimage.label`, gán tay), `evaluation.py` (softmax), `benchmark.py` (khoảng cách) |
 | `torch` | huấn luyện, dự đoán, ONNX |
-| `scikit-learn` | fold, metric (`training.py`, `diagnostics.py`) |
+| `scikit-learn` | fold, metric, chuẩn hoá (`training.py`, `evaluation.py`, `diagnostics.py`) |
 | `matplotlib` | biểu đồ trong notebook train/finetune |
 | `flask` | `src/app/server.py` |
 | `requests` | gọi Groq (`src/app/sentence.py`) |

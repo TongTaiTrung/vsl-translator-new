@@ -26,8 +26,8 @@ def list_runs(runs_dir: Path = RUNS_DIR) -> list[Path]:
     runs_dir = Path(runs_dir)
     if not runs_dir.is_dir():
         return []
-    runs = [p for p in runs_dir.iterdir()
-            if p.name not in PROTECTED and not p.is_symlink() and (p / "ensemble.pt").is_file()]
+    runs = [path for path in runs_dir.iterdir()
+            if path.name not in PROTECTED and not path.is_symlink() and (path / "ensemble.pt").is_file()]
     return sorted(runs, key=run_time, reverse=True)
 
 
@@ -63,10 +63,10 @@ def publish_run(run_dir: str | Path, runs_dir: Path = RUNS_DIR, keep: int = KEEP
         best.unlink()
     elif best.is_dir():
         archive = runs_dir / _archive_name(best)
-        n = 1
+        suffix = 1
         while archive.exists():
-            archive = runs_dir / f"{_archive_name(best)}_{n}"
-            n += 1
+            archive = runs_dir / f"{_archive_name(best)}_{suffix}"
+            suffix += 1
         best.rename(archive)
     (run_dir / RUN_NAME_FILE).write_text(run_dir.name, encoding="utf-8")
     name = run_dir.name
@@ -76,5 +76,5 @@ def publish_run(run_dir: str | Path, runs_dir: Path = RUNS_DIR, keep: int = KEEP
     for path in removed:
         shutil.rmtree(path)
     print(f"Model mới nhất: runs/{BEST_NAME} (train lúc {name})" + (f" | đã xoá {len(removed)} run cũ: "
-                                                                   + ", ".join(p.name for p in removed) if removed else ""))
+                                                                   + ", ".join(removed_run.name for removed_run in removed) if removed else ""))
     return best

@@ -42,12 +42,12 @@ export interface AssetUrls {
   hand: string;
 }
 
-export function assetDir(dir: string): AssetUrls {
+export function assetDir(directory: string): AssetUrls {
   return {
-    wasm: `${dir}/wasm`,
-    face: `${dir}/blaze_face_short_range.tflite`,
-    pose: `${dir}/pose_landmarker_full.task`,
-    hand: `${dir}/hand_landmarker.task`,
+    wasm: `${directory}/wasm`,
+    face: `${directory}/blaze_face_short_range.tflite`,
+    pose: `${directory}/pose_landmarker_full.task`,
+    hand: `${directory}/hand_landmarker.task`,
   };
 }
 
@@ -83,7 +83,7 @@ const SOLID: number[] = [];
 type Canvas = HTMLCanvasElement | OffscreenCanvas;
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
-const makePoints = (n: number): Point[] => Array.from({ length: n }, () => ({ x: 0, y: 0, z: 0, visibility: 1 }));
+const makePoints = (count: number): Point[] => Array.from({ length: count }, () => ({ x: 0, y: 0, z: 0, visibility: 1 }));
 
 export class MainSubjectIsolator {
   private readonly canvas: Canvas;
@@ -132,17 +132,17 @@ export class MainSubjectIsolator {
     const urls = typeof assets === "string" ? assetDir(assets) : assets;
     const vision = await import("@mediapipe/tasks-vision");
     const fileset = await vision.FilesetResolver.forVisionTasks(urls.wasm);
-    const build = async (d: Delegate) => {
+    const build = async (delegate: Delegate) => {
       const opened: { close(): void }[] = [];
       try {
         const face = await vision.FaceDetector.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: urls.face, delegate: d },
+          baseOptions: { modelAssetPath: urls.face, delegate: delegate },
           runningMode: "VIDEO",
           minDetectionConfidence: confidence,
         });
         opened.push(face);
         const pose = await vision.PoseLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: urls.pose, delegate: d },
+          baseOptions: { modelAssetPath: urls.pose, delegate: delegate },
           runningMode: "VIDEO",
           numPoses,
           minPoseDetectionConfidence: confidence,
@@ -151,14 +151,14 @@ export class MainSubjectIsolator {
         });
         opened.push(pose);
         const hand = await vision.HandLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: urls.hand, delegate: d },
+          baseOptions: { modelAssetPath: urls.hand, delegate: delegate },
           runningMode: "VIDEO",
           numHands,
           minHandDetectionConfidence: confidence,
           minHandPresenceConfidence: confidence,
           minTrackingConfidence: confidence,
         });
-        return new MainSubjectIsolator(face, pose, hand, d, Math.max(1, faceEvery), Math.max(0, faceHold));
+        return new MainSubjectIsolator(face, pose, hand, delegate, Math.max(1, faceEvery), Math.max(0, faceHold));
       } catch (err) {
         for (const task of opened) task.close();
         throw err;
@@ -189,53 +189,53 @@ export class MainSubjectIsolator {
   }
 
   process(video: HTMLVideoElement, timestamp: number, mirror: boolean): IsolatedFrame | null {
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    if (!vw || !vh) return null;
+    const videoWidth = video.videoWidth;
+    const videoHeight = video.videoHeight;
+    if (!videoWidth || !videoHeight) return null;
 
     if (!this.faceLocked || this.frameIndex % this.faceEvery === 0) {
-      this.locateFace(this.faceDetector.detectForVideo(video, timestamp).detections, vw, vh);
+      this.locateFace(this.faceDetector.detectForVideo(video, timestamp).detections, videoWidth, videoHeight);
     }
     this.frameIndex += 1;
-    const s = this.smooth, tg = this.target;
+    const smoothed = this.smooth, targetCrop = this.target;
     if (!this.hasSmooth) {
-      s.x = tg.x; s.y = tg.y; s.w = tg.w; s.h = tg.h;
+      smoothed.x = targetCrop.x; smoothed.y = targetCrop.y; smoothed.w = targetCrop.w; smoothed.h = targetCrop.h;
       this.hasSmooth = true;
     } else {
-      s.x = EMA_ALPHA * s.x + (1 - EMA_ALPHA) * tg.x;
-      s.y = EMA_ALPHA * s.y + (1 - EMA_ALPHA) * tg.y;
-      s.w = EMA_ALPHA * s.w + (1 - EMA_ALPHA) * tg.w;
-      s.h = EMA_ALPHA * s.h + (1 - EMA_ALPHA) * tg.h;
+      smoothed.x = EMA_ALPHA * smoothed.x + (1 - EMA_ALPHA) * targetCrop.x;
+      smoothed.y = EMA_ALPHA * smoothed.y + (1 - EMA_ALPHA) * targetCrop.y;
+      smoothed.w = EMA_ALPHA * smoothed.w + (1 - EMA_ALPHA) * targetCrop.w;
+      smoothed.h = EMA_ALPHA * smoothed.h + (1 - EMA_ALPHA) * targetCrop.h;
     }
 
-    let sw = s.w * vw;
-    let sh = s.h * vh;
-    if (sw < 2 || sh < 2) return null;
-    const aspect = sw / sh;
+    let cropWidth = smoothed.w * videoWidth;
+    let cropHeight = smoothed.h * videoHeight;
+    if (cropWidth < 2 || cropHeight < 2) return null;
+    const aspect = cropWidth / cropHeight;
     if (!this.canvasW || Math.abs(aspect / (this.canvasW / this.canvasH) - 1) > ASPECT_TOLERANCE) {
       this.canvasW = aspect >= 1 ? CROP_MAX_SIDE : Math.max(1, Math.round(CROP_MAX_SIDE * aspect));
       this.canvasH = aspect >= 1 ? Math.max(1, Math.round(CROP_MAX_SIDE / aspect)) : CROP_MAX_SIDE;
       this.canvas.width = this.canvasW;
       this.canvas.height = this.canvasH;
     }
-    const cw = this.canvasW, ch = this.canvasH;
-    const cx = (s.x + s.w / 2) * vw, cy = (s.y + s.h / 2) * vh;
-    if (sw / sh < cw / ch) sw = sh * (cw / ch);
-    else sh = sw / (cw / ch);
-    const sx = cx - sw / 2, sy = cy - sh / 2;
-    const ix0 = Math.max(0, sx), iy0 = Math.max(0, sy);
-    const ix1 = Math.min(vw, sx + sw), iy1 = Math.min(vh, sy + sh);
-    if (ix1 - ix0 < 1 || iy1 - iy0 < 1) return null;
-    const kx = cw / sw, ky = ch / sh;
-    const ctx = this.ctx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, cw, ch);
-    if (mirror) ctx.setTransform(-1, 0, 0, 1, cw, 0);
-    ctx.drawImage(video, ix0, iy0, ix1 - ix0, iy1 - iy0, (ix0 - sx) * kx, (iy0 - sy) * ky, (ix1 - ix0) * kx, (iy1 - iy0) * ky);
+    const canvasWidth = this.canvasW, canvasHeight = this.canvasH;
+    const centerX = (smoothed.x + smoothed.w / 2) * videoWidth, centerY = (smoothed.y + smoothed.h / 2) * videoHeight;
+    if (cropWidth / cropHeight < canvasWidth / canvasHeight) cropWidth = cropHeight * (canvasWidth / canvasHeight);
+    else cropHeight = cropWidth / (canvasWidth / canvasHeight);
+    const sourceX = centerX - cropWidth / 2, sourceY = centerY - cropHeight / 2;
+    const visibleLeft = Math.max(0, sourceX), visibleTop = Math.max(0, sourceY);
+    const visibleRight = Math.min(videoWidth, sourceX + cropWidth), visibleBottom = Math.min(videoHeight, sourceY + cropHeight);
+    if (visibleRight - visibleLeft < 1 || visibleBottom - visibleTop < 1) return null;
+    const scaleX = canvasWidth / cropWidth, scaleY = canvasHeight / cropHeight;
+    const context = this.ctx;
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.fillStyle = "#000";
+    context.fillRect(0, 0, canvasWidth, canvasHeight);
+    if (mirror) context.setTransform(-1, 0, 0, 1, canvasWidth, 0);
+    context.drawImage(video, visibleLeft, visibleTop, visibleRight - visibleLeft, visibleBottom - visibleTop, (visibleLeft - sourceX) * scaleX, (visibleTop - sourceY) * scaleY, (visibleRight - visibleLeft) * scaleX, (visibleBottom - visibleTop) * scaleY);
 
     const crop = this.out.crop;
-    crop.x = sx / vw; crop.y = sy / vh; crop.w = sw / vw; crop.h = sh / vh;
+    crop.x = sourceX / videoWidth; crop.y = sourceY / videoHeight; crop.w = cropWidth / videoWidth; crop.h = cropHeight / videoHeight;
 
     const poses = this.pose.detectForVideo(this.canvas, timestamp).landmarks;
     const handResult = this.hand.detectForVideo(this.canvas, timestamp);
@@ -245,56 +245,56 @@ export class MainSubjectIsolator {
     let main: NormalizedLandmark[] | null = null;
     let widest = -1;
     for (let i = 0; i < poses.length; i++) {
-      const p = poses[i];
-      if (p.length < POSE_POINTS) continue;
-      const d = Math.hypot((p[L_SHOULDER].x - p[R_SHOULDER].x) * cw, (p[L_SHOULDER].y - p[R_SHOULDER].y) * ch);
-      if (d > widest) { widest = d; main = p; }
+      const personPose = poses[i];
+      if (personPose.length < POSE_POINTS) continue;
+      const shoulderWidth = Math.hypot((personPose[L_SHOULDER].x - personPose[R_SHOULDER].x) * canvasWidth, (personPose[L_SHOULDER].y - personPose[R_SHOULDER].y) * canvasHeight);
+      if (shoulderWidth > widest) { widest = shoulderWidth; main = personPose; }
     }
 
     let left = -1, right = -1;
     if (main) {
       const maxDist = widest * WRIST_RATIO;
-      const lw = main[L_WRIST], rw = main[R_WRIST];
+      const leftWrist = main[L_WRIST], rightWrist = main[R_WRIST];
       let best = maxDist, bestHand = -1, bestLeft = true;
       for (let i = 0; i < hands.length; i++) {
-        const w = hands[i][0];
-        const dl = Math.hypot((w.x - lw.x) * cw, (w.y - lw.y) * ch);
-        const dr = Math.hypot((w.x - rw.x) * cw, (w.y - rw.y) * ch);
-        if (dl < best) { best = dl; bestHand = i; bestLeft = true; }
-        if (dr < best) { best = dr; bestHand = i; bestLeft = false; }
+        const handWrist = hands[i][0];
+        const distanceToLeft = Math.hypot((handWrist.x - leftWrist.x) * canvasWidth, (handWrist.y - leftWrist.y) * canvasHeight);
+        const distanceToRight = Math.hypot((handWrist.x - rightWrist.x) * canvasWidth, (handWrist.y - rightWrist.y) * canvasHeight);
+        if (distanceToLeft < best) { best = distanceToLeft; bestHand = i; bestLeft = true; }
+        if (distanceToRight < best) { best = distanceToRight; bestHand = i; bestLeft = false; }
       }
       if (bestHand >= 0) {
-        const other = bestLeft ? rw : lw;
+        const other = bestLeft ? rightWrist : leftWrist;
         let second = -1, secondDist = maxDist;
         for (let i = 0; i < hands.length; i++) {
           if (i === bestHand) continue;
-          const w = hands[i][0];
-          const d = Math.hypot((w.x - other.x) * cw, (w.y - other.y) * ch);
-          if (d < secondDist) { secondDist = d; second = i; }
+          const handWrist = hands[i][0];
+          const wristDistance = Math.hypot((handWrist.x - other.x) * canvasWidth, (handWrist.y - other.y) * canvasHeight);
+          if (wristDistance < secondDist) { secondDist = wristDistance; second = i; }
         }
         if (bestLeft) { left = bestHand; right = second; } else { right = bestHand; left = second; }
       }
     } else {
-      let a = -1, b = -1, sa = -1, sb = -1;
+      let largestIndex = -1, secondIndex = -1, largestSize = -1, secondSize = -1;
       for (let i = 0; i < hands.length; i++) {
-        const h = hands[i];
-        const size = Math.hypot((h[MIDDLE_MCP].x - h[0].x) * cw, (h[MIDDLE_MCP].y - h[0].y) * ch);
-        if (size > sa) { b = a; sb = sa; a = i; sa = size; } else if (size > sb) { b = i; sb = size; }
+        const hand = hands[i];
+        const size = Math.hypot((hand[MIDDLE_MCP].x - hand[0].x) * canvasWidth, (hand[MIDDLE_MCP].y - hand[0].y) * canvasHeight);
+        if (size > largestSize) { secondIndex = largestIndex; secondSize = largestSize; largestIndex = i; largestSize = size; } else if (size > secondSize) { secondIndex = i; secondSize = size; }
       }
-      if (a >= 0 && b >= 0 && hands[b][0].x < hands[a][0].x) { left = b; right = a; } else { left = a; right = b; }
+      if (largestIndex >= 0 && secondIndex >= 0 && hands[secondIndex][0].x < hands[largestIndex][0].x) { left = secondIndex; right = largestIndex; } else { left = largestIndex; right = secondIndex; }
     }
 
-    const ox = mirror ? 1 - crop.x - crop.w : crop.x;
-    const out = this.out;
-    out.pose = main ? mapPoints(main, this.posePoints, ox, crop.y, crop.w, crop.h) : null;
-    out.leftHand = left >= 0 ? mapPoints(hands[left], this.leftPoints, ox, crop.y, crop.w, crop.h) : null;
-    out.rightHand = right >= 0 ? mapPoints(hands[right], this.rightPoints, ox, crop.y, crop.w, crop.h) : null;
-    out.leftWorld = left >= 0 ? (worlds?.[left] ?? null) : null;
-    out.rightWorld = right >= 0 ? (worlds?.[right] ?? null) : null;
-    out.faceLocked = this.faceLocked;
+    const offsetX = mirror ? 1 - crop.x - crop.w : crop.x;
+    const output = this.out;
+    output.pose = main ? mapPoints(main, this.posePoints, offsetX, crop.y, crop.w, crop.h) : null;
+    output.leftHand = left >= 0 ? mapPoints(hands[left], this.leftPoints, offsetX, crop.y, crop.w, crop.h) : null;
+    output.rightHand = right >= 0 ? mapPoints(hands[right], this.rightPoints, offsetX, crop.y, crop.w, crop.h) : null;
+    output.leftWorld = left >= 0 ? (worlds?.[left] ?? null) : null;
+    output.rightWorld = right >= 0 ? (worlds?.[right] ?? null) : null;
+    output.faceLocked = this.faceLocked;
 
-    if (this.debugCtx) this.drawDebug(vw, vh);
-    return out;
+    if (this.debugCtx) this.drawDebug(videoWidth, videoHeight);
+    return output;
   }
 
   close(): void {
@@ -304,85 +304,85 @@ export class MainSubjectIsolator {
     this.hand.close();
   }
 
-  private locateFace(detections: Detection[], vw: number, vh: number): void {
-    const half = vw / 2;
+  private locateFace(detections: Detection[], videoWidth: number, videoHeight: number): void {
+    const half = videoWidth / 2;
     let bestScore = -1;
-    let fx = 0, fy = 0, fw = 0, fh = 0;
+    let faceX = 0, faceY = 0, faceWidth = 0, faceHeight = 0;
     for (let i = 0; i < detections.length; i++) {
-      const bb = detections[i].boundingBox;
-      if (!bb || bb.width < vw * MIN_FACE_FRAC || bb.height <= 0) continue;
-      const center = bb.originX + bb.width / 2;
-      const score = bb.width * bb.height * Math.max(MIN_CENTER_FACTOR, 1 - CENTER_WEIGHT * Math.abs(center - half) / half);
+      const box = detections[i].boundingBox;
+      if (!box || box.width < videoWidth * MIN_FACE_FRAC || box.height <= 0) continue;
+      const center = box.originX + box.width / 2;
+      const score = box.width * box.height * Math.max(MIN_CENTER_FACTOR, 1 - CENTER_WEIGHT * Math.abs(center - half) / half);
       if (score > bestScore) {
         bestScore = score;
-        fx = bb.originX; fy = bb.originY; fw = bb.width; fh = bb.height;
+        faceX = box.originX; faceY = box.originY; faceWidth = box.width; faceHeight = box.height;
       }
     }
-    const tg = this.target;
+    const targetCrop = this.target;
     if (bestScore < 0) {
       this.faceMisses += 1;
       if (!this.faceLocked || this.faceMisses > this.faceHold) {
         this.faceLocked = false;
-        tg.x = FALLBACK.x; tg.y = FALLBACK.y; tg.w = FALLBACK.w; tg.h = FALLBACK.h;
+        targetCrop.x = FALLBACK.x; targetCrop.y = FALLBACK.y; targetCrop.w = FALLBACK.w; targetCrop.h = FALLBACK.h;
       }
       return;
     }
     this.faceMisses = 0;
     this.faceLocked = true;
     const face = this.face;
-    face.x = fx / vw; face.y = fy / vh; face.w = fw / vw; face.h = fh / vh;
+    face.x = faceX / videoWidth; face.y = faceY / videoHeight; face.w = faceWidth / videoWidth; face.h = faceHeight / videoHeight;
 
-    const cx = fx + fw / 2;
-    const x1 = Math.max(0, cx - (fw * CROP_WIDTH_FACES) / 2);
-    const x2 = Math.min(vw, cx + (fw * CROP_WIDTH_FACES) / 2);
-    const y1 = Math.max(0, fy - fh * CROP_TOP_FACES);
-    const y2 = Math.min(vh, fy + fh * CROP_BOTTOM_FACES);
-    if (x2 - x1 < 2 || y2 - y1 < 2) {
-      tg.x = FALLBACK.x; tg.y = FALLBACK.y; tg.w = FALLBACK.w; tg.h = FALLBACK.h;
+    const faceCenterX = faceX + faceWidth / 2;
+    const cropLeft = Math.max(0, faceCenterX - (faceWidth * CROP_WIDTH_FACES) / 2);
+    const cropRight = Math.min(videoWidth, faceCenterX + (faceWidth * CROP_WIDTH_FACES) / 2);
+    const cropTop = Math.max(0, faceY - faceHeight * CROP_TOP_FACES);
+    const cropBottom = Math.min(videoHeight, faceY + faceHeight * CROP_BOTTOM_FACES);
+    if (cropRight - cropLeft < 2 || cropBottom - cropTop < 2) {
+      targetCrop.x = FALLBACK.x; targetCrop.y = FALLBACK.y; targetCrop.w = FALLBACK.w; targetCrop.h = FALLBACK.h;
       return;
     }
-    tg.x = x1 / vw; tg.y = y1 / vh; tg.w = (x2 - x1) / vw; tg.h = (y2 - y1) / vh;
+    targetCrop.x = cropLeft / videoWidth; targetCrop.y = cropTop / videoHeight; targetCrop.w = (cropRight - cropLeft) / videoWidth; targetCrop.h = (cropBottom - cropTop) / videoHeight;
   }
 
-  private drawDebug(vw: number, vh: number): void {
-    const canvas = this.debugCanvas!, ctx = this.debugCtx!;
+  private drawDebug(videoWidth: number, videoHeight: number): void {
+    const canvas = this.debugCanvas!, context = this.debugCtx!;
     const dpr = window.devicePixelRatio || 1;
-    const w = Math.max(1, Math.round(canvas.clientWidth * dpr));
-    const h = Math.max(1, Math.round(canvas.clientHeight * dpr));
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
+    const canvasWidth = Math.max(1, Math.round(canvas.clientWidth * dpr));
+    const canvasHeight = Math.max(1, Math.round(canvas.clientHeight * dpr));
+    if (canvas.width !== canvasWidth || canvas.height !== canvasHeight) {
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
     }
-    ctx.clearRect(0, 0, w, h);
-    const scale = Math.max(w / vw, h / vh);
-    const offX = (w - vw * scale) / 2, offY = (h - vh * scale) / 2;
-    const px = vw * scale, py = vh * scale;
+    context.clearRect(0, 0, canvasWidth, canvasHeight);
+    const scale = Math.max(canvasWidth / videoWidth, canvasHeight / videoHeight);
+    const offX = (canvasWidth - videoWidth * scale) / 2, offY = (canvasHeight - videoHeight * scale) / 2;
+    const scaledWidth = videoWidth * scale, scaledHeight = videoHeight * scale;
     const color = this.faceLocked ? "#22c55e" : "#f59e0b";
-    ctx.lineWidth = 2 * dpr;
+    context.lineWidth = 2 * dpr;
 
-    const c = this.out.crop;
-    ctx.strokeStyle = color;
-    ctx.setLineDash(DASH);
-    ctx.strokeRect(offX + c.x * px, offY + c.y * py, c.w * px, c.h * py);
-    ctx.setLineDash(SOLID);
-    const s = this.smooth;
-    ctx.strokeRect(offX + s.x * px, offY + s.y * py, s.w * px, s.h * py);
+    const crop = this.out.crop;
+    context.strokeStyle = color;
+    context.setLineDash(DASH);
+    context.strokeRect(offX + crop.x * scaledWidth, offY + crop.y * scaledHeight, crop.w * scaledWidth, crop.h * scaledHeight);
+    context.setLineDash(SOLID);
+    const smoothed = this.smooth;
+    context.strokeRect(offX + smoothed.x * scaledWidth, offY + smoothed.y * scaledHeight, smoothed.w * scaledWidth, smoothed.h * scaledHeight);
     if (this.faceLocked) {
-      const f = this.face;
-      ctx.strokeStyle = "#38bdf8";
-      ctx.strokeRect(offX + f.x * px, offY + f.y * py, f.w * px, f.h * py);
+      const face = this.face;
+      context.strokeStyle = "#38bdf8";
+      context.strokeRect(offX + face.x * scaledWidth, offY + face.y * scaledHeight, face.w * scaledWidth, face.h * scaledHeight);
     }
   }
 }
 
-function mapPoints(src: NormalizedLandmark[], into: Point[], ox: number, oy: number, bw: number, bh: number): Point[] {
-  const n = Math.min(src.length, into.length);
-  for (let i = 0; i < n; i++) {
-    const p = src[i], q = into[i];
-    q.x = ox + p.x * bw;
-    q.y = oy + p.y * bh;
-    q.z = p.z * bw;
-    q.visibility = p.visibility ?? 1;
+function mapPoints(source: NormalizedLandmark[], into: Point[], offsetX: number, offsetY: number, boxWidth: number, boxHeight: number): Point[] {
+  const count = Math.min(source.length, into.length);
+  for (let i = 0; i < count; i++) {
+    const sourcePoint = source[i], targetPoint = into[i];
+    targetPoint.x = offsetX + sourcePoint.x * boxWidth;
+    targetPoint.y = offsetY + sourcePoint.y * boxHeight;
+    targetPoint.z = sourcePoint.z * boxWidth;
+    targetPoint.visibility = sourcePoint.visibility ?? 1;
   }
   return into;
 }

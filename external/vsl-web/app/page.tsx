@@ -235,7 +235,7 @@ function Icon({ name }: { name: "settings" | "close" | "copy" | "check" | "speak
 
 function graphemes(text: string): string[] {
   if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
-    return Array.from(new Intl.Segmenter("vi", { granularity: "grapheme" }).segment(text), (s) => s.segment);
+    return Array.from(new Intl.Segmenter("vi", { granularity: "grapheme" }).segment(text), (segment) => segment.segment);
   }
   return Array.from(text.normalize("NFC"));
 }
@@ -426,8 +426,8 @@ export default function Home() {
     if (!recognizer?.running || recording) return;
     setPersonalizeOpen(false);
     try {
-      for (let n = COUNTDOWN_SECONDS; n > 0; n--) {
-        setRecording({ label, stage: "countdown", count: n });
+      for (let secondsLeft = COUNTDOWN_SECONDS; secondsLeft > 0; secondsLeft--) {
+        setRecording({ label, stage: "countdown", count: secondsLeft });
         await new Promise((resolve) => setTimeout(resolve, 1000));
         if (!recognizer.running) throw new Error("Camera đã tắt");
       }
@@ -534,7 +534,7 @@ export default function Home() {
     setNotice({ text: "Đã xoá mẫu cá nhân trên trình duyệt này.", tone: "ok" });
   };
 
-  const usableSamples = featureDim === undefined ? samples : samples.filter((s) => s.featureDim === featureDim);
+  const usableSamples = featureDim === undefined ? samples : samples.filter((sample) => sample.featureDim === featureDim);
 
   const phase: Phase = state?.phase ?? "stopped";
   const running = phase !== "stopped";
@@ -708,8 +708,8 @@ export default function Home() {
                         <path d="M7.5 12.5l3 3 6-6.5" pathLength={1} />
                       </svg>
                       <span className="stamp-word">
-                        {graphemes(commit.word).map((ch, i) => (
-                          <span key={i} style={{ "--i": i } as React.CSSProperties}>{ch}</span>
+                        {graphemes(commit.word).map((grapheme, i) => (
+                          <span key={i} style={{ "--i": i } as React.CSSProperties}>{grapheme}</span>
                         ))}
                       </span>
                     </span>

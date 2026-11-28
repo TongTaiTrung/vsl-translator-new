@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 
 import numpy as np
@@ -48,30 +49,30 @@ class MemoryEnsemble(nn.Module):
         self.classes = tuple(classes)
         self.alpha = float(strength) * MAX_BONUS
         self.sharpness = float(sharpness)
-        index = {name: i for i, name in enumerate(self.classes)}
+        index = {name: class_index for class_index, name in enumerate(self.classes)}
         kept: list[Exemplar] = []
-        per_class: dict[str, int] = {}
+        per_class: Counter = Counter()
         self.ignored: list[str] = []
-        for ex in reversed(exemplars):
-            if ex.label not in index:
-                self.ignored.append(ex.label)
+        for exemplar in reversed(exemplars):
+            if exemplar.label not in index:
+                self.ignored.append(exemplar.label)
                 continue
-            if per_class.get(ex.label, 0) >= max_per_class:
+            if per_class[exemplar.label] >= max_per_class:
                 continue
-            per_class[ex.label] = per_class.get(ex.label, 0) + 1
-            kept.append(ex)
+            per_class[exemplar.label] += 1
+            kept.append(exemplar)
         kept.reverse()
         self.counts = {name: per_class[name] for name in self.classes if name in per_class}
         device = next(ensemble.buffers()).device
         n_classes = len(self.classes)
-        self.register_buffer("labels", torch.as_tensor([index[ex.label] for ex in kept], dtype=torch.long,
+        self.register_buffer("labels", torch.as_tensor([index[exemplar.label] for exemplar in kept], dtype=torch.long,
                                                        device=device))
         if kept:
-            x = torch.as_tensor(np.stack([process_sequence(check_exemplar_features(ex.features), target_len=target_len)
-                                          for ex in kept]),
+            sequences = torch.as_tensor(np.stack([process_sequence(check_exemplar_features(exemplar.features), target_len=target_len)
+                                          for exemplar in kept]),
                                 device=device)
             with torch.inference_mode():
-                _, keys = ensemble.logits_and_embeddings(x)
+                _, keys = ensemble.logits_and_embeddings(sequences)
             keys = keys.clone()
         else:
             keys = torch.zeros(0)

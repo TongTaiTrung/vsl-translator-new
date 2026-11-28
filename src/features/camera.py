@@ -18,7 +18,7 @@ def parse_resolution(text: str | None) -> tuple[int, int] | None:
     if text is None or text.strip().lower() in ("", "max", "auto"):
         return None
     try:
-        width, height = (int(v) for v in text.lower().replace("*", "x").split("x"))
+        width, height = (int(dimension) for dimension in text.lower().replace("*", "x").split("x"))
     except ValueError:
         raise ValueError(f"Độ phân giải phải có dạng RỘNGxCAO (vd. 1920x1080), nhận {text!r}") from None
     if width <= 0 or height <= 0:
@@ -28,8 +28,8 @@ def parse_resolution(text: str | None) -> tuple[int, int] | None:
 
 def _read_size(cap: cv2.VideoCapture, attempts: int = 3) -> tuple[int, int] | None:
     for _ in range(attempts):
-        ok, frame = cap.read()
-        if ok and frame is not None:
+        has_frame, frame = cap.read()
+        if has_frame and frame is not None:
             return frame.shape[1], frame.shape[0]
     return None
 
@@ -54,7 +54,7 @@ def open_camera(index: int = 0, resolution: tuple[int, int] | None = None, *,
         if cap.getBackendName() != "AVFOUNDATION":
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
 
-        wanted = [tuple(resolution)] if resolution is not None else [tuple(c) for c in candidates]
+        wanted = [tuple(resolution)] if resolution is not None else [tuple(candidate) for candidate in candidates]
         best = default
         chosen = None
         for size in wanted:

@@ -108,8 +108,8 @@ class Renderer:
     def __init__(self, size: int = 640, mirror_preview: bool = True) -> None:
         from PIL import ImageFont
         self.size, self.mirror_preview = size, mirror_preview
-        font_path = next((p for p in FONT_CANDIDATES if p.is_file()), None)
-        load = (lambda px: ImageFont.truetype(str(font_path), px)) if font_path else \
+        font_path = next((candidate_path for candidate_path in FONT_CANDIDATES if candidate_path.is_file()), None)
+        load = (lambda pixel_size: ImageFont.truetype(str(font_path), pixel_size)) if font_path else \
             (lambda _px: ImageFont.load_default())
         self.font, self.small, self.big = load(22), load(18), load(26)
 
@@ -153,14 +153,14 @@ class Renderer:
              f'R: xóa  ⌫: bỏ từ cuối  Q: thoát', self.small, (145, 205, 250)),
             (f'Từ: {" · ".join(result["words"][-10:]) or "—"}', self.font, (250, 220, 145)),
         ]
-        y = size + 10
+        text_y = size + 10
         for text, font, color in lines:
-            painter.text((16, y), self._fit(painter, text, font), font=font, fill=color)
-            y += 36
+            painter.text((16, text_y), self._fit(painter, text, font), font=font, fill=color)
+            text_y += 36
         text = (sentence["sentence"] or "—") + SENTENCE_STATUS.get(sentence["status"], "")
         for line in textwrap.wrap(text, width=48)[:2]:
-            painter.text((16, y), self._fit(painter, line, self.big), font=self.big, fill=(255, 255, 255))
-            y += 36
+            painter.text((16, text_y), self._fit(painter, line, self.big), font=self.big, fill=(255, 255, 255))
+            text_y += 36
         return cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
 
     def _fit(self, painter, text: str, font) -> str:
@@ -213,7 +213,7 @@ def main(argv=None) -> None:
         except ValueError as exc:
             print(f"{exc} → chạy không có LLM")
     composer = SentenceComposer(
-        client, on_update=lambda s: print(f'Câu [{s["status"]}]: {s["sentence"]}  ←  {" | ".join(s["words"])}'),
+        client, on_update=lambda sentence_state: print(f'Câu [{sentence_state["status"]}]: {sentence_state["sentence"]}  ←  {" | ".join(sentence_state["words"])}'),
     )
     stream_config = StreamConfig(predict_every=1, mirror_data=args.mirror_data)
     renderer = Renderer(args.display_size, mirror_preview=not args.no_mirror_preview)
@@ -246,8 +246,8 @@ def main(argv=None) -> None:
             )
         cv2.namedWindow(window, cv2.WINDOW_NORMAL)
         while True:
-            ok, frame = cap.read()
-            if not ok:
+            has_frame, frame = cap.read()
+            if not has_frame:
                 print("Camera đã ngừng cung cấp hình ảnh.")
                 break
             result = translator.process(frame)

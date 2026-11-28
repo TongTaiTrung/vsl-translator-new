@@ -39,10 +39,10 @@ class FastConfig:
 
 def make_fast_ensemble(predictor: VSLPredictor, index: int = -1) -> training.VSLEnsemble:
     ensemble = predictor.ensemble
-    n = len(ensemble.models)
-    if not -n <= index < n:
-        raise IndexError(f"fast_model={index} ngoài phạm vi ensemble {n} model")
-    index %= n
+    model_count = len(ensemble.models)
+    if not -model_count <= index < model_count:
+        raise IndexError(f"fast_model={index} ngoài phạm vi ensemble {model_count} model")
+    index %= model_count
     device = ensemble.means.device
     fast = training.VSLEnsemble(
         [ensemble.models[index]],
@@ -99,12 +99,12 @@ class FastStreamSession(VSLStreamSession):
         self.stats["ensemble"] += 1
         self.stats["confirm"] += 1
         strict = early or bool(self.prediction and self.prediction.get("early"))
-        ok = result["label"] == label and (not strict or (
+        is_confirmed = result["label"] == label and (not strict or (
             result["confidence"] >= cfg.strict_confidence and result["probability_gap"] >= cfg.strict_gap))
-        self.confirmation = {**result, "confirmed": ok, "strict": strict}
-        if not ok:
+        self.confirmation = {**result, "confirmed": is_confirmed, "strict": strict}
+        if not is_confirmed:
             self.stats["confirm_rejected"] += 1
-        return ok
+        return is_confirmed
 
 
 class FastRealtimeTranslator(RealtimeTranslator):

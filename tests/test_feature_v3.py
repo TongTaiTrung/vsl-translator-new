@@ -63,10 +63,10 @@ class HandLocalTests(unittest.TestCase):
     def test_left_mirror_flips_face_vec_x(self):
         perm, sign = fx.LEFT_MIRROR
         left = fx.SIDE_COLUMNS["left"][perm]
-        fv = fx.FEATURE_SLICES["face_vec"].start
-        for c in (fv, fv + 3):
+        face_vec_start = fx.FEATURE_SLICES["face_vec"].start
+        for c in (face_vec_start, face_vec_start + 3):
             self.assertEqual(sign[int(np.flatnonzero(left == c)[0])], -1.0)
-        self.assertEqual(sign[int(np.flatnonzero(left == fv + 1)[0])], 1.0)
+        self.assertEqual(sign[int(np.flatnonzero(left == face_vec_start + 1)[0])], 1.0)
 
 
 class LayoutTests(unittest.TestCase):
@@ -77,25 +77,25 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(fx.PRESENCE_SLICE.stop, fx.FEATURE_DIM)
 
 
-def _clip(T: int, left_y: float | None, right_y: float, seed: int = 0) -> np.ndarray:
+def _clip(frame_count: int, left_y: float | None, right_y: float, seed: int = 0) -> np.ndarray:
     rng = np.random.default_rng(seed)
-    t = np.linspace(0, np.pi, T)[:, None]
-    raw = np.full((T, fx.FEATURE_DIM), np.nan, dtype=np.float32)
+    t = np.linspace(0, np.pi, frame_count)[:, None]
+    raw = np.full((frame_count, fx.FEATURE_DIM), np.nan, dtype=np.float32)
     for side, base_y in ((0, left_y), (1, right_y)):
         if base_y is None:
             continue
         cols = fx._side_raw_cols(side)
         raw[:, cols] = 0.3 * np.sin(t + rng.uniform(0, 3, len(cols)))
-        hp = fx.FEATURE_SLICES["hand_pos"].start + 9 * side
-        raw[:, hp:hp + 9] = 0.2 * np.sin(t + rng.uniform(0, 3, 9))
-        raw[:, [hp + 1, hp + 4, hp + 7]] += base_y
+        hand_pos_start = fx.FEATURE_SLICES["hand_pos"].start + 9 * side
+        raw[:, hand_pos_start:hand_pos_start + 9] = 0.2 * np.sin(t + rng.uniform(0, 3, 9))
+        raw[:, [hand_pos_start + 1, hand_pos_start + 4, hand_pos_start + 7]] += base_y
         raw[:, fx.PRESENCE_SLICE.start + side] = 0.9
     if left_y is not None:
-        lp = raw[:, 0:9].reshape(T, 3, 3)
-        rp = raw[:, 9:18].reshape(T, 3, 3)
-        d = np.concatenate([np.linalg.norm(lp - rp, axis=-1),
-                            np.linalg.norm(lp[:, :, None] - rp[:, None], axis=-1).reshape(T, -1).min(1, keepdims=True)], 1)
-        raw[:, fx.FEATURE_SLICES["inter_hand_vec"]] = lp[:, 0] - rp[:, 0]
+        left_points = raw[:, 0:9].reshape(frame_count, 3, 3)
+        right_points = raw[:, 9:18].reshape(frame_count, 3, 3)
+        d = np.concatenate([np.linalg.norm(left_points - right_points, axis=-1),
+                            np.linalg.norm(left_points[:, :, None] - right_points[:, None], axis=-1).reshape(frame_count, -1).min(1, keepdims=True)], 1)
+        raw[:, fx.FEATURE_SLICES["inter_hand_vec"]] = left_points[:, 0] - right_points[:, 0]
         raw[:, fx.FEATURE_SLICES["hand_contact"]] = np.exp(-8.0 * d ** 2)
     return raw
 
@@ -119,22 +119,22 @@ class RestGateTests(unittest.TestCase):
 
 class NormalizationTests(unittest.TestCase):
     def _data(self):
-        X = np.stack([fx.process_sequence(_clip(30, None if i % 2 else 0.4, 0.3, seed=i)) for i in range(6)])
-        return X.astype(np.float32)
+        sequences = np.stack([fx.process_sequence(_clip(30, None if index % 2 else 0.4, 0.3, seed=index)) for index in range(6)])
+        return sequences.astype(np.float32)
 
     def test_presence_aware_zeroes_absent_hand_and_matches_ensemble(self):
-        X = self._data()
-        norm = tr.Normalizer(X, presence_aware=True)
-        Z = norm(X)
-        self.assertTrue(np.all(Z[1][:, fx.SIDE_COLUMNS["left"]] == 0))
-        self.assertTrue(np.all(Z[1][:, fx.SIDE_COLUMNS["shared"]] == 0))
-        np.testing.assert_array_equal(Z[0][:, fx.PRESENCE_SLICE], 1.0)
+        sequences = self._data()
+        norm = tr.Normalizer(sequences, presence_aware=True)
+        normalized = norm(sequences)
+        self.assertTrue(np.all(normalized[1][:, fx.SIDE_COLUMNS["left"]] == 0))
+        self.assertTrue(np.all(normalized[1][:, fx.SIDE_COLUMNS["shared"]] == 0))
+        np.testing.assert_array_equal(normalized[0][:, fx.PRESENCE_SLICE], 1.0)
         cfg = tr.Config(arch="handpair", presence_norm=True)
         model = tr.build_model(fx.SEQ_FEATURE_DIM, 3, tr.default_groups(fx.SEQ_FEATURE_DIM), cfg).eval()
         ensemble = tr.VSLEnsemble([model], norm.mean[None], norm.std[None], presence_aware=True).eval()
         with torch.no_grad():
-            expected = torch.softmax(model(torch.from_numpy(Z)), -1)
-            np.testing.assert_allclose(ensemble(torch.from_numpy(X)).numpy(), expected.numpy(), atol=1e-5)
+            expected = torch.softmax(model(torch.from_numpy(normalized)), -1)
+            np.testing.assert_allclose(ensemble(torch.from_numpy(sequences)).numpy(), expected.numpy(), atol=1e-5)
 
     def test_recomputed_shared_columns_match_process_sequence(self):
         two = fx.process_sequence(_clip(30, 0.4, 0.3, seed=3)).astype(np.float32)
@@ -149,24 +149,24 @@ class NormalizationTests(unittest.TestCase):
 
 class HandPairModelTests(unittest.TestCase):
     def test_forward_shape_head_and_old_checkpoint_without_arch(self):
-        D = fx.SEQ_FEATURE_DIM
+        feature_dim = fx.SEQ_FEATURE_DIM
         cfg = tr.Config(arch="handpair", presence_norm=True)
-        model = tr.build_model(D, 4, tr.default_groups(D), cfg).eval()
-        self.assertEqual(tuple(model(torch.zeros(2, 30, D)).shape), (2, 4))
+        model = tr.build_model(feature_dim, 4, tr.default_groups(feature_dim), cfg).eval()
+        self.assertEqual(tuple(model(torch.zeros(2, 30, feature_dim)).shape), (2, 4))
         self.assertTrue(hasattr(model, "head"))
         with self.assertRaises(ValueError):
             tr.Config(arch="handpair")
 
         old_cfg = tr.Config()
-        old = tr.build_model(D, 2, tr.default_groups(D), old_cfg).eval()
-        norm = tr.Normalizer(np.zeros((2, 30, D), dtype=np.float32))
+        old = tr.build_model(feature_dim, 2, tr.default_groups(feature_dim), old_cfg).eval()
+        norm = tr.Normalizer(np.zeros((2, 30, feature_dim), dtype=np.float32))
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "ensemble.pt"
-            tr.save_ensemble(path, [old], [norm], old_cfg, tr.default_groups(D), ["A", "B"], 1.0, 0.0, (30, D))
-            ck = torch.load(path, weights_only=False)
+            tr.save_ensemble(path, [old], [norm], old_cfg, tr.default_groups(feature_dim), ["A", "B"], 1.0, 0.0, (30, feature_dim))
+            checkpoint = torch.load(path, weights_only=False)
             for key in ("arch", "presence_norm", "distractor_geometry"):
-                del ck["cfg"][key]
-            torch.save(ck, path)
+                del checkpoint["cfg"][key]
+            torch.save(checkpoint, path)
             ensemble, _ = tr.load_ensemble(path, device="cpu")
         self.assertIsInstance(ensemble.models[0], tr.VSLNet)
         self.assertFalse(ensemble.presence_aware)
@@ -194,7 +194,7 @@ def _scene():
 
 
 def _results(pose, image, world, hip_vis=1.0):
-    vis = [hip_vis if i in (23, 24) else 1.0 for i in range(33)]
+    vis = [hip_vis if index in (23, 24) else 1.0 for index in range(33)]
     pose_res = SimpleNamespace(pose_landmarks=[[_pt(r, v) for r, v in zip(pose, vis)]])
     hand_res = SimpleNamespace(hand_landmarks=[[_pt(r) for r in image]],
                                hand_world_landmarks=[[_pt(r) for r in world]])
@@ -206,12 +206,12 @@ def _rotate_scene(pose, image, world, degrees):
     c, s = np.cos(a), np.sin(a)
 
     def rot(pts, gain):
-        q = np.array(pts, dtype=np.float64)
-        q[:, 2] /= gain
-        y, z = q[:, 1].copy(), q[:, 2].copy()
-        q[:, 1], q[:, 2] = y * c + z * s, z * c - y * s
-        q[:, 2] *= gain
-        return q
+        rotated_points = np.array(pts, dtype=np.float64)
+        rotated_points[:, 2] /= gain
+        labels, z = rotated_points[:, 1].copy(), rotated_points[:, 2].copy()
+        rotated_points[:, 1], rotated_points[:, 2] = labels * c + z * s, z * c - labels * s
+        rotated_points[:, 2] *= gain
+        return rotated_points
 
     origin = 0.5 * (pose[11] + pose[12])
     pose_r = rot(pose - origin, fx.POSE_Z_GAIN) + origin
@@ -237,12 +237,12 @@ class FeatureV6Tests(unittest.TestCase):
     def test_rotate_view_pitch_matches_extracting_a_rotated_scene(self):
         pose, image, world = _scene()
         base = fx.extract(*_results(pose, image, world))
-        S = fx.FEATURE_SLICES
-        o = S["orientation"].start
+        slices = fx.FEATURE_SLICES
+        orientation_start = slices["orientation"].start
         for degrees in (12.0, -8.0):
             moved = fx.extract(*_results(*_rotate_scene(pose, image, world, degrees)))
             predicted = fx.rotate_view_pitch(base, degrees)
-            cols = np.r_[S["hand_pos"], S["face_vec"], o:o + 6, o + 9:o + 15]
+            cols = np.r_[slices["hand_pos"], slices["face_vec"], orientation_start:orientation_start + 6, orientation_start + 9:orientation_start + 15]
             live = cols[np.isfinite(base[cols])]
             self.assertGreater(np.abs(moved[live] - base[live]).max(), 0.05)
             np.testing.assert_allclose(predicted[live], moved[live], atol=2e-3)
@@ -253,19 +253,19 @@ class FeatureV6Tests(unittest.TestCase):
         x[1, :9] = np.nan
         np.testing.assert_allclose(fx.rotate_view_pitch(x, 0.0), x, atol=1e-6)
         np.testing.assert_allclose(fx.rotate_view_pitch(fx.rotate_view_pitch(x, 15.0), -15.0), x, atol=1e-5)
-        y = fx.rotate_view_pitch(x, 15.0)
-        self.assertTrue(np.isnan(y[1, :9]).all())
-        S = fx.FEATURE_SLICES
+        labels = fx.rotate_view_pitch(x, 15.0)
+        self.assertTrue(np.isnan(labels[1, :9]).all())
+        slices = fx.FEATURE_SLICES
         for name in ("body_contact", "hand_contact", "hand_scale", "handshape", "hand_local", "presence"):
-            np.testing.assert_array_equal(y[:, S[name]], x[:, S[name]])
-        o = S["orientation"].start
-        np.testing.assert_array_equal(y[:, o + 6:o + 9], x[:, o + 6:o + 9])
+            np.testing.assert_array_equal(labels[:, slices[name]], x[:, slices[name]])
+        orientation_start = slices["orientation"].start
+        np.testing.assert_array_equal(labels[:, orientation_start + 6:orientation_start + 9], x[:, orientation_start + 6:orientation_start + 9])
         for k in (0, 3, 9, 12):
-            np.testing.assert_allclose(np.linalg.norm(y[:, o + k:o + k + 3], axis=1),
-                                       np.linalg.norm(x[:, o + k:o + k + 3], axis=1), rtol=1e-5)
+            np.testing.assert_allclose(np.linalg.norm(labels[:, orientation_start + k:orientation_start + k + 3], axis=1),
+                                       np.linalg.norm(x[:, orientation_start + k:orientation_start + k + 3], axis=1), rtol=1e-5)
         point = np.zeros(fx.FEATURE_DIM, dtype=np.float32)
-        point[S["hand_pos"].start + 9: S["hand_pos"].start + 12] = (0.1, 0.4, -1.0)
-        lifted = fx.rotate_view_pitch(point, 10.0)[S["hand_pos"].start + 9: S["hand_pos"].start + 12]
+        point[slices["hand_pos"].start + 9: slices["hand_pos"].start + 12] = (0.1, 0.4, -1.0)
+        lifted = fx.rotate_view_pitch(point, 10.0)[slices["hand_pos"].start + 9: slices["hand_pos"].start + 12]
         self.assertAlmostEqual(float(lifted[0]), 0.1, places=6)
         self.assertLess(lifted[1], 0.4)
         with self.assertRaises(ValueError):
@@ -285,8 +285,8 @@ class SignFormerTests(unittest.TestCase):
         torch.manual_seed(0)
         model = self._model()
         self.assertTrue(hasattr(model, "head"))
-        for T in (30, 24):
-            x = torch.randn(3, T, fx.SEQ_FEATURE_DIM)
+        for frame_count in (30, 24):
+            x = torch.randn(3, frame_count, fx.SEQ_FEATURE_DIM)
             x[..., fx.PRESENCE_SLICE] = 1.0
             self.assertEqual(tuple(model(x).shape), (3, 5))
 
@@ -296,24 +296,24 @@ class SignFormerTests(unittest.TestCase):
         x = torch.randn(2, 30, fx.SEQ_FEATURE_DIM)
         x[..., fx.PRESENCE_SLICE.start] = 0.0
         x[..., fx.PRESENCE_SLICE.start + 1] = 1.0
-        y = x.clone()
-        y[..., torch.as_tensor(fx.SIDE_COLUMNS["left"][fx.SIDE_COLUMNS["left"] != fx.PRESENCE_SLICE.start])] += 5.0
-        y[..., torch.as_tensor(fx.SIDE_COLUMNS["shared"])] += 5.0
+        labels = x.clone()
+        labels[..., torch.as_tensor(fx.SIDE_COLUMNS["left"][fx.SIDE_COLUMNS["left"] != fx.PRESENCE_SLICE.start])] += 5.0
+        labels[..., torch.as_tensor(fx.SIDE_COLUMNS["shared"])] += 5.0
         with torch.no_grad():
-            torch.testing.assert_close(model(x), model(y))
+            torch.testing.assert_close(model(x), model(labels))
 
     def test_checkpoint_roundtrip(self):
         torch.manual_seed(0)
         model = self._model()
         cfg = tr.Config(arch="former", presence_norm=True)
-        D = fx.SEQ_FEATURE_DIM
+        feature_dim = fx.SEQ_FEATURE_DIM
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "ensemble.pt"
-            tr.save_ensemble(path, [model], [SimpleNamespace(mean=np.zeros(D, np.float32), std=np.ones(D, np.float32))], cfg,
-                             tr.default_groups(D), list("abcde"), 1.0, 0.2, (30, D))
-            ens, ck = tr.load_ensemble(path)
-            self.assertEqual(ck["cfg"]["arch"], "former")
-            self.assertEqual(tuple(ens(torch.zeros(1, 30, D)).shape), (1, 5))
+            tr.save_ensemble(path, [model], [SimpleNamespace(mean=np.zeros(feature_dim, np.float32), std=np.ones(feature_dim, np.float32))], cfg,
+                             tr.default_groups(feature_dim), list("abcde"), 1.0, 0.2, (30, feature_dim))
+            ensemble, checkpoint = tr.load_ensemble(path)
+            self.assertEqual(checkpoint["cfg"]["arch"], "former")
+            self.assertEqual(tuple(ensemble(torch.zeros(1, 30, feature_dim)).shape), (1, 5))
 
 
 class FeatureV5Tests(unittest.TestCase):
@@ -345,27 +345,27 @@ class FeatureV5Tests(unittest.TestCase):
         self.assertAlmostEqual(fx._hand_scale(hand * np.array([-1, 1, 1]), 0.25), base, places=5)
 
     def test_hand_scale_columns_are_per_side_and_not_flipped_by_mirror(self):
-        sl = fx.FEATURE_SLICES["hand_scale"]
-        self.assertEqual(sl.stop - sl.start, 2)
-        self.assertIn(sl.start, fx.SIDE_COLUMNS["left"])
-        self.assertIn(sl.start + 1, fx.SIDE_COLUMNS["right"])
+        feature_slice = fx.FEATURE_SLICES["hand_scale"]
+        self.assertEqual(feature_slice.stop - feature_slice.start, 2)
+        self.assertIn(feature_slice.start, fx.SIDE_COLUMNS["left"])
+        self.assertIn(feature_slice.start + 1, fx.SIDE_COLUMNS["right"])
         perm, sign = fx.LEFT_MIRROR
         left = fx.SIDE_COLUMNS["left"][perm]
-        self.assertEqual(sign[int(np.flatnonzero(left == sl.start)[0])], 1.0)
-        self.assertLess(sl.stop, fx.FEATURE_SLICES["handshape"].start + 1)
+        self.assertEqual(sign[int(np.flatnonzero(left == feature_slice.start)[0])], 1.0)
+        self.assertLess(feature_slice.stop, fx.FEATURE_SLICES["handshape"].start + 1)
 
 
 class StrokeTests(unittest.TestCase):
 
     @staticmethod
-    def _clip(start: int, dy: float, side: int = 1, T: int = 30, absent_until: int = 0) -> np.ndarray:
-        raw = np.full((T, fx.FEATURE_DIM), np.nan, dtype=np.float32)
+    def _clip(start: int, y_offset: float, side: int = 1, frame_count: int = 30, absent_until: int = 0) -> np.ndarray:
+        raw = np.full((frame_count, fx.FEATURE_DIM), np.nan, dtype=np.float32)
         raw[:, fx.FEATURE_SLICES["presence"]] = 0.0
-        hp = fx.FEATURE_SLICES["hand_pos"].start + 9 * side
+        hand_pos_start = fx.FEATURE_SLICES["hand_pos"].start + 9 * side
         x = 0.3 if side else -0.3
-        y = 0.2 + dy * np.clip((np.arange(T) - start) / 4.0, 0.0, 1.0)
+        labels = 0.2 + y_offset * np.clip((np.arange(frame_count) - start) / 4.0, 0.0, 1.0)
         for k, off in enumerate((0.0, 0.1, -0.2)):
-            raw[:, hp + 3 * k], raw[:, hp + 3 * k + 1], raw[:, hp + 3 * k + 2] = x, y + off, 0.0
+            raw[:, hand_pos_start + 3 * k], raw[:, hand_pos_start + 3 * k + 1], raw[:, hand_pos_start + 3 * k + 2] = x, labels + off, 0.0
         raw[:, fx.PRESENCE_SLICE.start + side] = 1.0
         raw[:absent_until, fx._side_raw_cols(side)] = np.nan
         return raw
@@ -381,8 +381,8 @@ class StrokeTests(unittest.TestCase):
         self.assertTrue(np.all(early[0, fx.STROKE_SLICE.start:right] == 0))
 
     def test_up_and_down_strokes_have_opposite_signs_and_static_hand_is_zero(self):
-        y = fx.STROKE_SLICE.start + 7
-        up, down, still = (fx.process_sequence(self._clip(10, dy))[0, y] for dy in (-0.6, 0.6, 0.0))
+        labels = fx.STROKE_SLICE.start + 7
+        up, down, still = (fx.process_sequence(self._clip(10, y_offset))[0, labels] for y_offset in (-0.6, 0.6, 0.0))
         self.assertLess(up, -0.5)
         self.assertGreater(down, 0.5)
         self.assertEqual(still, 0.0)
@@ -396,8 +396,8 @@ class StrokeTests(unittest.TestCase):
         right = fx.process_sequence(self._clip(10, -0.6, side=1))
         perm, sign = fx.LEFT_MIRROR
         cols = fx.SIDE_COLUMNS["left"]
-        st = np.isin(cols, np.arange(fx.STROKE_SLICE.start, fx.STROKE_SLICE.start + 6))
-        mirrored = (left[0, cols[perm]] * sign)[st[perm]]
+        is_stroke = np.isin(cols, np.arange(fx.STROKE_SLICE.start, fx.STROKE_SLICE.start + 6))
+        mirrored = (left[0, cols[perm]] * sign)[is_stroke[perm]]
         np.testing.assert_allclose(mirrored, right[0, fx.STROKE_SLICE.start + 6:], atol=1e-5)
         self.assertIn((fx.STROKE_SLICE.start, fx.SEQ_FEATURE_DIM), tr.default_groups(fx.SEQ_FEATURE_DIM))
 
@@ -416,13 +416,13 @@ class FingerCurlTests(unittest.TestCase):
 
     def test_version_and_layout(self):
         self.assertGreaterEqual(fx.FEATURE_VERSION, 7)
-        sl = fx.FEATURE_SLICES["finger_curl"]
-        self.assertEqual(sl.stop - sl.start, 2 * fx.CURL_DIM)
+        feature_slice = fx.FEATURE_SLICES["finger_curl"]
+        self.assertEqual(feature_slice.stop - feature_slice.start, 2 * fx.CURL_DIM)
         for side in ("left", "right"):
             half = fx.CURL_DIM
-            start = sl.start + (0 if side == "left" else half)
+            start = feature_slice.start + (0 if side == "left" else half)
             self.assertTrue(np.isin(np.arange(start, start + half), fx.SIDE_COLUMNS[side]).all())
-        self.assertIn((sl.start, sl.stop), tr.default_groups(fx.SEQ_FEATURE_DIM))
+        self.assertIn((feature_slice.start, feature_slice.stop), tr.default_groups(fx.SEQ_FEATURE_DIM))
 
     def test_straight_finger_has_zero_angles_and_unit_straightness(self):
         ang, total, hook, straight = fx._curl_stats(_hand(0.5))
@@ -455,8 +455,8 @@ class FingerCurlTests(unittest.TestCase):
     def test_extract_fills_detected_side_and_nans_missing_side(self):
         pose, image, world = _scene()
         out = fx.extract(*_results(pose, image, world))
-        sl = fx.FEATURE_SLICES["finger_curl"]
-        left, right = out[sl.start:sl.start + fx.CURL_DIM], out[sl.start + fx.CURL_DIM:sl.stop]
+        feature_slice = fx.FEATURE_SLICES["finger_curl"]
+        left, right = out[feature_slice.start:feature_slice.start + fx.CURL_DIM], out[feature_slice.start + fx.CURL_DIM:feature_slice.stop]
         self.assertTrue(np.isnan(left).all())
         self.assertTrue(np.isfinite(right).all())
         np.testing.assert_allclose(right, fx._finger_curl(image, world), atol=1e-5)
@@ -464,8 +464,8 @@ class FingerCurlTests(unittest.TestCase):
     def test_left_mirror_keeps_curl_unsigned(self):
         perm, sign = fx.LEFT_MIRROR
         cols = fx.SIDE_COLUMNS["left"]
-        sl = fx.FEATURE_SLICES["finger_curl"]
-        pos = np.isin(cols, np.arange(sl.start, sl.stop))
+        feature_slice = fx.FEATURE_SLICES["finger_curl"]
+        pos = np.isin(cols, np.arange(feature_slice.start, feature_slice.stop))
         self.assertTrue((sign[pos] == 1.0).all())
         self.assertTrue((perm[pos] == np.flatnonzero(pos)).all())
 
@@ -488,12 +488,12 @@ class HandClosureTests(unittest.TestCase):
 
     def test_version_and_layout(self):
         self.assertEqual(fx.FEATURE_VERSION, 8)
-        sl = fx.FEATURE_SLICES["hand_closure"]
-        self.assertEqual(sl.stop - sl.start, 2 * fx.CLOSURE_DIM)
+        feature_slice = fx.FEATURE_SLICES["hand_closure"]
+        self.assertEqual(feature_slice.stop - feature_slice.start, 2 * fx.CLOSURE_DIM)
         for k, side in enumerate(("left", "right")):
-            start = sl.start + k * fx.CLOSURE_DIM
+            start = feature_slice.start + k * fx.CLOSURE_DIM
             self.assertTrue(np.isin(np.arange(start, start + fx.CLOSURE_DIM), fx.SIDE_COLUMNS[side]).all())
-        self.assertIn((sl.start, sl.stop), tr.default_groups(fx.SEQ_FEATURE_DIM))
+        self.assertIn((feature_slice.start, feature_slice.stop), tr.default_groups(fx.SEQ_FEATURE_DIM))
         self.assertEqual(fx.FEATURE_DIM, 383)
         self.assertEqual(fx.SEQ_FEATURE_DIM, 434)
 
@@ -528,8 +528,8 @@ class HandClosureTests(unittest.TestCase):
     def test_extract_fills_detected_side_and_nans_missing_side(self):
         pose, image, world = _scene()
         out = fx.extract(*_results(pose, image, world))
-        sl = fx.FEATURE_SLICES["hand_closure"]
-        left, right = out[sl.start:sl.start + fx.CLOSURE_DIM], out[sl.start + fx.CLOSURE_DIM:sl.stop]
+        feature_slice = fx.FEATURE_SLICES["hand_closure"]
+        left, right = out[feature_slice.start:feature_slice.start + fx.CLOSURE_DIM], out[feature_slice.start + fx.CLOSURE_DIM:feature_slice.stop]
         self.assertTrue(np.isnan(left).all())
         self.assertTrue(np.isfinite(right).all())
         np.testing.assert_allclose(right, fx._hand_closure(image, world), atol=1e-5)
@@ -537,8 +537,8 @@ class HandClosureTests(unittest.TestCase):
     def test_left_mirror_keeps_closure_unsigned(self):
         perm, sign = fx.LEFT_MIRROR
         cols = fx.SIDE_COLUMNS["left"]
-        sl = fx.FEATURE_SLICES["hand_closure"]
-        pos = np.isin(cols, np.arange(sl.start, sl.stop))
+        feature_slice = fx.FEATURE_SLICES["hand_closure"]
+        pos = np.isin(cols, np.arange(feature_slice.start, feature_slice.stop))
         self.assertEqual(int(pos.sum()), fx.CLOSURE_DIM)
         self.assertTrue((sign[pos] == 1.0).all())
         self.assertTrue((perm[pos] == np.flatnonzero(pos)).all())

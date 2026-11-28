@@ -20,7 +20,7 @@ from src.data.data_reader import DataHandler
 from src.features.extract import FEATURE_DIM
 from src.model.predict import StreamConfig, VSLPredictor, VSLStreamSession
 
-FPS = 15.0
+FRAMES_PER_SECOND = 15.0
 
 
 class _NoLandmarkers:
@@ -48,7 +48,7 @@ def load_original_samples(data_dir: Path, classes, folds: dict | None) -> list[t
         class_dir = data_dir / name
         if not class_dir.is_dir():
             continue
-        for sample_dir in sorted(p for p in class_dir.iterdir() if p.is_dir()):
+        for sample_dir in sorted(path for path in class_dir.iterdir() if path.is_dir()):
             meta = DataHandler._read_meta(sample_dir)
             if "augmentation" in meta:
                 continue
@@ -58,7 +58,7 @@ def load_original_samples(data_dir: Path, classes, folds: dict | None) -> list[t
             key = f"{name}/{meta.get('origin_sample_id', sample_dir.name)}"
             if folds is not None and key not in folds:
                 continue
-            raw = np.stack([DataHandler._load_feature(p) for p in paths])
+            raw = np.stack([DataHandler._load_feature(path) for path in paths])
             samples.append((name, -1 if folds is None else int(folds[key]), raw))
     return samples
 
@@ -67,7 +67,7 @@ def build_stream(samples, rng, words: int, max_gap: int):
     rest = np.full((1, FEATURE_DIM), np.nan, dtype=np.float32)
     parts, spans, cursor, previous = [np.repeat(rest, 12, 0)], [], 12, None
     for _ in range(words):
-        choices = [i for i, s in enumerate(samples) if s[0] != previous]
+        choices = [index for index, sample in enumerate(samples) if sample[0] != previous]
         label, _fold, raw = samples[rng.choice(choices)]
         spans.append((label, cursor))
         gap = int(rng.integers(0, max_gap + 1))
@@ -80,58 +80,58 @@ def build_stream(samples, rng, words: int, max_gap: int):
 
 def score(commits, spans) -> dict:
     hyp, ref = [label for _f, label in commits], [label for label, _s in spans]
-    n, m = len(ref), len(hyp)
-    cost = np.zeros((n + 1, m + 1), dtype=np.int64)
-    cost[:, 0], cost[0, :] = np.arange(n + 1), np.arange(m + 1)
-    for i in range(1, n + 1):
-        for j in range(1, m + 1):
-            cost[i, j] = min(cost[i - 1, j] + 1, cost[i, j - 1] + 1,
-                             cost[i - 1, j - 1] + (ref[i - 1] != hyp[j - 1]))
-    i, j, counts, latencies = n, m, {"sub": 0, "del": 0, "ins": 0}, []
-    while i > 0 or j > 0:
-        if i > 0 and j > 0 and cost[i, j] == cost[i - 1, j - 1] + (ref[i - 1] != hyp[j - 1]):
-            if ref[i - 1] == hyp[j - 1]:
-                latencies.append((commits[j - 1][0] - spans[i - 1][1]) / FPS)
+    ref_len, hyp_len = len(ref), len(hyp)
+    cost = np.zeros((ref_len + 1, hyp_len + 1), dtype=np.int64)
+    cost[:, 0], cost[0, :] = np.arange(ref_len + 1), np.arange(hyp_len + 1)
+    for ref_index in range(1, ref_len + 1):
+        for hyp_index in range(1, hyp_len + 1):
+            cost[ref_index, hyp_index] = min(cost[ref_index - 1, hyp_index] + 1, cost[ref_index, hyp_index - 1] + 1,
+                             cost[ref_index - 1, hyp_index - 1] + (ref[ref_index - 1] != hyp[hyp_index - 1]))
+    ref_index, hyp_index, counts, latencies = ref_len, hyp_len, {"sub": 0, "del": 0, "ins": 0}, []
+    while ref_index > 0 or hyp_index > 0:
+        if ref_index > 0 and hyp_index > 0 and cost[ref_index, hyp_index] == cost[ref_index - 1, hyp_index - 1] + (ref[ref_index - 1] != hyp[hyp_index - 1]):
+            if ref[ref_index - 1] == hyp[hyp_index - 1]:
+                latencies.append((commits[hyp_index - 1][0] - spans[ref_index - 1][1]) / FRAMES_PER_SECOND)
             else:
                 counts["sub"] += 1
-            i, j = i - 1, j - 1
-        elif i > 0 and cost[i, j] == cost[i - 1, j] + 1:
+            ref_index, hyp_index = ref_index - 1, hyp_index - 1
+        elif ref_index > 0 and cost[ref_index, hyp_index] == cost[ref_index - 1, hyp_index] + 1:
             counts["del"] += 1
-            i -= 1
+            ref_index -= 1
         else:
             counts["ins"] += 1
-            j -= 1
-    return {"words": n, "commits": m, "correct": len(latencies), **counts, "latencies": latencies}
+            hyp_index -= 1
+    return {"words": ref_len, "commits": hyp_len, "correct": len(latencies), **counts, "latencies": latencies}
 
 
 def run_stream(translator, features) -> tuple[list, float]:
     commits, spent = [], 0.0
-    for t, feature in enumerate(features):
+    for frame_index, feature in enumerate(features):
         start = time.perf_counter()
-        result = translator.process(feature, now=t / FPS)
+        result = translator.process(feature, now=frame_index / FRAMES_PER_SECOND)
         spent += time.perf_counter() - start
         if result["committed"]:
-            commits.append((t, result["committed"]))
+            commits.append((frame_index, result["committed"]))
     translator.close()
     return commits, spent / len(features)
 
 
-def summarize(name: str, rows: list[dict], ms: list[float], stats: dict | None = None) -> dict:
-    total = {key: sum(r[key] for r in rows) for key in ("words", "commits", "correct", "sub", "del", "ins")}
-    lat = np.array([x for r in rows for x in r["latencies"]])
-    out = {
+def summarize(name: str, rows: list[dict], model_seconds: list[float], stats: dict | None = None) -> dict:
+    total = {key: sum(row[key] for row in rows) for key in ("words", "commits", "correct", "sub", "del", "ins")}
+    latencies = np.array([latency for row in rows for latency in row["latencies"]])
+    summary = {
         "branch": name,
         "wer": (total["sub"] + total["del"] + total["ins"]) / max(total["words"], 1),
         "precision": total["correct"] / max(total["commits"], 1),
         "recall": total["correct"] / max(total["words"], 1),
-        **{k: total[k] for k in ("sub", "del", "ins")},
-        "latency_mean_s": float(lat.mean()) if lat.size else float("nan"),
-        "latency_median_s": float(np.median(lat)) if lat.size else float("nan"),
-        "model_ms_per_frame": float(np.mean(ms) * 1e3),
+        **{metric: total[metric] for metric in ("sub", "del", "ins")},
+        "latency_mean_s": float(latencies.mean()) if latencies.size else float("nan"),
+        "latency_median_s": float(np.median(latencies)) if latencies.size else float("nan"),
+        "model_ms_per_frame": float(np.mean(model_seconds) * 1e3),
     }
     if stats:
-        out["calls"] = stats
-    return out
+        summary["calls"] = stats
+    return summary
 
 
 def main(argv=None) -> None:
@@ -169,12 +169,12 @@ def main(argv=None) -> None:
                              strong_confidence=args.strong_confidence, strong_gap=args.strong_gap,
                              escalate=args.escalate, confirm=not args.no_confirm)
     rng = np.random.default_rng(args.seed)
-    groups = sorted({s[1] for s in samples})
+    groups = sorted({sample[1] for sample in samples})
     rows = {"base": [], "fast": []}
-    ms = {"base": [], "fast": []}
+    model_seconds = {"base": [], "fast": []}
     stats = {"fast": 0, "ensemble": 0, "confirm": 0, "confirm_rejected": 0}
     for fold in groups:
-        fold_samples = [s for s in samples if s[1] == fold]
+        fold_samples = [sample for sample in samples if sample[1] == fold]
         if holdout:
             predictor.ensemble = full_ensemble
             predictor.ensemble = make_fast_ensemble(predictor, fold)
@@ -191,16 +191,16 @@ def main(argv=None) -> None:
             for name, translator in (("base", base), ("fast", fast)):
                 commits, spent = run_stream(translator, features)
                 rows[name].append(score(commits, spans))
-                ms[name].append(spent)
+                model_seconds[name].append(spent)
             for key, value in session.stats.items():
                 stats[key] += value
     predictor.ensemble = full_ensemble
 
-    results = [summarize("base", rows["base"], ms["base"]), summarize("fast", rows["fast"], ms["fast"], stats)]
-    for r in results:
-        print(f'{r["branch"]:5s} WER={r["wer"]:.3f} precision={r["precision"]:.3f} recall={r["recall"]:.3f} '
-              f'(sub={r["sub"]} del={r["del"]} ins={r["ins"]}) latency mean={r["latency_mean_s"]:.2f}s '
-              f'median={r["latency_median_s"]:.2f}s model={r["model_ms_per_frame"]:.2f}ms/frame')
+    results = [summarize("base", rows["base"], model_seconds["base"]), summarize("fast", rows["fast"], model_seconds["fast"], stats)]
+    for result in results:
+        print(f'{result["branch"]:5s} WER={result["wer"]:.3f} precision={result["precision"]:.3f} recall={result["recall"]:.3f} '
+              f'(sub={result["sub"]} del={result["del"]} ins={result["ins"]}) latency mean={result["latency_mean_s"]:.2f}s '
+              f'median={result["latency_median_s"]:.2f}s model={result["model_ms_per_frame"]:.2f}ms/frame')
     print("fast calls:", stats)
 
 

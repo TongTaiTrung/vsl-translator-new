@@ -32,12 +32,12 @@ def find_raw_samples(raw_root: Path, classes: list[str] | None = None) -> list[P
             continue
         videos.extend(
             sorted(
-                (p for p in class_dir.glob("*.mp4") if p.stem.isdigit()),
-                key=lambda p: int(p.stem),
+                (path for path in class_dir.glob("*.mp4") if path.stem.isdigit()),
+                key=lambda path: int(path.stem),
             )
         )
     if wanted is not None:
-        missing = wanted - {p.name for p in raw_root.iterdir() if p.is_dir()}
+        missing = wanted - {path.name for path in raw_root.iterdir() if path.is_dir()}
         if missing:
             raise ValueError(f"Classes not found in raw videos: {sorted(missing)}")
     return videos
@@ -59,8 +59,8 @@ def extract_video_features(video_path: Path, with_landmarks: bool = False):
     try:
         loader = LandmarkerLoader(running_mode=VisionRunningMode.VIDEO)
         while True:
-            ok, frame = cap.read()
-            if not ok:
+            has_frame, frame = cap.read()
+            if not has_frame:
                 break
             frame = frame_padding(frame)
             timestamp_ms = max(round(len(features) * 1000 / fps), last_ms + 1)

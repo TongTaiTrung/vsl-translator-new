@@ -120,12 +120,12 @@ function applyTone(syllable: string, mark: string): string {
   const match = SYLLABLE_RE.exec(syllable);
   if (!match) {
     const chars = [...syllable];
-    const idx = chars.findLastIndex((c) => VOWELS.has(c));
+    const idx = chars.findLastIndex((char) => VOWELS.has(char));
     return idx >= 0 ? insertAt(chars, idx, mark) : syllable;
   }
   const [, onset = "", vowelText, coda = ""] = match;
   const vowels = [...vowelText];
-  const special = vowels.findLastIndex((c) => "ăâêôơư".includes(c));
+  const special = vowels.findLastIndex((char) => "ăâêôơư".includes(char));
   const pos = special >= 0 ? special : coda ? vowels.length - 1 : vowels.length === 3 ? 1 : 0;
   return onset + insertAt(vowels, pos, mark) + coda;
 }

@@ -22,7 +22,7 @@ export async function POST(request: Request) {
   const words: unknown = body?.words;
   if (
     !Array.isArray(words) || words.length === 0 || words.length > MAX_WORDS ||
-    !words.every((w) => typeof w === "string" && w.length > 0 && w.length <= MAX_LABEL_LENGTH)
+    !words.every((word) => typeof word === "string" && word.length > 0 && word.length <= MAX_LABEL_LENGTH)
   ) {
     return json({ error: `'words' phải là mảng 1–${MAX_WORDS} nhãn` }, 400);
   }

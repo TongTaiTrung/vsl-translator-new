@@ -93,8 +93,8 @@ def main():
 
         print(f"Thu thập {args.class_name}: SPACE bắt đầu/kết thúc, Q hoặc ESC thoát")
         while collected < args.num_samples:
-            ok, frame = cap.read()
-            if not ok:
+            has_frame, frame = cap.read()
+            if not has_frame:
                 raise RuntimeError("Cannot read frame from camera")
             frame = frame_padding(cv2.flip(frame, 1))
             display = frame.copy()

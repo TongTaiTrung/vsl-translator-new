@@ -21,8 +21,8 @@ CLASSES = ["xin chào", "cảm ơn", "toi"]
 
 
 def clip(seed: int, hand: bool = True, frames: int = 30) -> np.ndarray:
-    return np.stack([extract(*dict_to_results(fake_landmarks(hand=hand, seed=seed * 100 + i)))
-                     for i in range(frames)]).astype(np.float32)
+    return np.stack([extract(*dict_to_results(fake_landmarks(hand=hand, seed=seed * 100 + index)))
+                     for index in range(frames)]).astype(np.float32)
 
 
 class EmbeddingTests(unittest.TestCase):
@@ -130,7 +130,7 @@ class MemoryServerTests(unittest.TestCase):
         self.client = create_app(self.predictor).test_client()
 
     def sample(self, label="toi", hand=True):
-        frames = [fake_landmarks(hand=hand, seed=500 + i) for i in range(30)]
+        frames = [fake_landmarks(hand=hand, seed=500 + index) for index in range(30)]
         return self.client.post("/api/memory/sample", json={"label": label, "landmarks": frames})
 
     def test_features_round_trip(self):
@@ -164,7 +164,7 @@ class MemoryServerTests(unittest.TestCase):
         self.assertEqual(opened.status_code, 201, opened.get_json())
         self.assertEqual(opened.get_json()["memory"]["classes"], {"toi": 1})
         sid = opened.get_json()["session_id"]
-        frames = [fake_landmarks(seed=500 + i) for i in range(30)]
+        frames = [fake_landmarks(seed=500 + index) for index in range(30)]
         body = self.client.post(f"/api/stream/{sid}", json={"landmarks": frames}).get_json()
         self.assertEqual(body["top"][0]["label"], "toi")
         self.assertEqual(body["memory"]["label"], "toi")
@@ -177,7 +177,7 @@ class MemoryServerTests(unittest.TestCase):
 
     def test_memory_update_keeps_window(self):
         sid = self.client.post("/api/stream", json={}).get_json()["session_id"]
-        frames = [fake_landmarks(seed=500 + i) for i in range(30)]
+        frames = [fake_landmarks(seed=500 + index) for index in range(30)]
         body = self.client.post(f"/api/stream/{sid}", json={"landmarks": frames[:20], "predict": False}).get_json()
         self.assertEqual(body["buffered"], 20)
         sample = self.sample().get_json()

@@ -22,8 +22,8 @@ export interface FrameLandmarks {
   hands_world?: number[][][];
 }
 
-const round = (v: number) => Math.round(v * 1e6) / 1e6;
-const xyz = (points: { x: number; y: number; z: number }[]) => points.map((p) => [round(p.x), round(p.y), round(p.z)]);
+const round = (value: number) => Math.round(value * 1e6) / 1e6;
+const xyz = (points: { x: number; y: number; z: number }[]) => points.map((point) => [round(point.x), round(point.y), round(point.z)]);
 
 export class LandmarkDetector {
   private lastTimestamp = -1;
@@ -51,21 +51,21 @@ export class LandmarkDetector {
   }
 
   detect(video: HTMLVideoElement, timestamp: number, mirror: boolean): FrameLandmarks {
-    const t = Math.max(Math.round(timestamp), this.lastTimestamp + 1);
-    this.lastTimestamp = t;
-    const frame = this.isolator.process(video, t, mirror);
+    const monotonicTimestamp = Math.max(Math.round(timestamp), this.lastTimestamp + 1);
+    this.lastTimestamp = monotonicTimestamp;
+    const frame = this.isolator.process(video, monotonicTimestamp, mirror);
     if (!frame) return { pose: null, hands: [] };
 
-    const w = video.videoWidth;
-    const h = video.videoHeight;
-    const scale = FRAME_SIZE / Math.max(w, h);
-    const nw = Math.max(1, Math.min(FRAME_SIZE, Math.round(w * scale)));
-    const nh = Math.max(1, Math.min(FRAME_SIZE, Math.round(h * scale)));
-    const ox = Math.floor((FRAME_SIZE - nw) / 2) / FRAME_SIZE;
-    const oy = Math.floor((FRAME_SIZE - nh) / 2) / FRAME_SIZE;
-    const kx = nw / FRAME_SIZE;
-    const ky = nh / FRAME_SIZE;
-    const toFrame = (p: Point) => [round(ox + p.x * kx), round(oy + p.y * ky), round(p.z * kx)];
+    const videoWidth = video.videoWidth;
+    const videoHeight = video.videoHeight;
+    const scale = FRAME_SIZE / Math.max(videoWidth, videoHeight);
+    const scaledWidth = Math.max(1, Math.min(FRAME_SIZE, Math.round(videoWidth * scale)));
+    const scaledHeight = Math.max(1, Math.min(FRAME_SIZE, Math.round(videoHeight * scale)));
+    const offsetX = Math.floor((FRAME_SIZE - scaledWidth) / 2) / FRAME_SIZE;
+    const offsetY = Math.floor((FRAME_SIZE - scaledHeight) / 2) / FRAME_SIZE;
+    const scaleX = scaledWidth / FRAME_SIZE;
+    const scaleY = scaledHeight / FRAME_SIZE;
+    const toFrame = (point: Point) => [round(offsetX + point.x * scaleX), round(offsetY + point.y * scaleY), round(point.z * scaleX)];
 
     const hands: number[][][] = [];
     const world: number[][][] = [];
@@ -77,7 +77,7 @@ export class LandmarkDetector {
       else worldOk = false;
     }
     return {
-      pose: frame.pose ? frame.pose.map((p) => [...toFrame(p), round(p.visibility)]) : null,
+      pose: frame.pose ? frame.pose.map((point) => [...toFrame(point), round(point.visibility)]) : null,
       hands,
       ...(worldOk && hands.length ? { hands_world: world } : {}),
     };

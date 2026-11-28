@@ -7,11 +7,14 @@ from __future__ import annotations
 
 import argparse
 import json
+from itertools import combinations
 from pathlib import Path
 
 import numpy as np
 import torch
+from scipy.special import softmax
 from sklearn.metrics import f1_score
+from sklearn.preprocessing import normalize
 
 from src.model import training as tr
 
@@ -22,41 +25,41 @@ __all__ = [
 
 
 def load_dataset_npz(path):
-    d = np.load(path, allow_pickle=True)
-    X = d["X"].astype(np.float32)
-    y = d["y"].astype(np.int64)
-    classes = [str(c) for c in d["classes"]] if "classes" in d.files \
-        else [str(i) for i in range(int(y.max()) + 1)]
-    groups = np.asarray(d["groups"]) if "groups" in d.files else np.arange(len(y))
-    validation_mask = ~np.asarray(d["augmented"]) if "augmented" in d.files \
-        else np.ones(len(y), dtype=bool)
-    return X, y, classes, groups, validation_mask
+    archive = np.load(path, allow_pickle=True)
+    sequences = archive["X"].astype(np.float32)
+    labels = archive["y"].astype(np.int64)
+    classes = [str(class_name) for class_name in archive["classes"]] if "classes" in archive.files \
+        else [str(class_index) for class_index in range(int(labels.max()) + 1)]
+    groups = np.asarray(archive["groups"]) if "groups" in archive.files else np.arange(len(labels))
+    validation_mask = ~np.asarray(archive["augmented"]) if "augmented" in archive.files \
+        else np.ones(len(labels), dtype=bool)
+    return sequences, labels, classes, groups, validation_mask
 
 
-def _fit_fold(X, trn, va, y_used, n_classes, layout, cfg, device):
-    presence_norm = getattr(cfg, "presence_norm", False)
-    norm = tr.Normalizer(X[trn], presence_norm) if presence_norm else tr.Normalizer(X[trn])
+def _fit_fold(sequences, train_indices, validation_indices, y_used, n_classes, layout, config, device):
+    presence_norm = getattr(config, "presence_norm", False)
+    norm = tr.Normalizer(sequences[train_indices], presence_norm) if presence_norm else tr.Normalizer(sequences[train_indices])
     kwargs = {}
-    if getattr(cfg, "distractor_geometry", False):
-        kwargs["hand_presence"] = tr.hand_validity(torch.from_numpy(X[trn])).to(device)
+    if getattr(config, "distractor_geometry", False):
+        kwargs["hand_presence"] = tr.hand_validity(torch.from_numpy(sequences[train_indices])).to(device)
         kwargs["norm_stats"] = (torch.from_numpy(norm.mean).to(device), torch.from_numpy(norm.std).to(device),
                                 norm.presence_aware)
     else:
         presence = getattr(tr, "PRESENCE_SLICE", slice(129, 131))
-        kwargs["hand_presence"] = torch.from_numpy(X[trn][..., presence].copy()).to(device)
-    yt = torch.from_numpy(y_used).to(device)
-    m, info = tr.train_one(
-        torch.from_numpy(norm(X[trn])).to(device), yt[trn],
-        torch.from_numpy(norm(X[va])).to(device), yt[va],
-        n_classes, layout, cfg, device, log_every=0, **kwargs,
+        kwargs["hand_presence"] = torch.from_numpy(sequences[train_indices][..., presence].copy()).to(device)
+    target_labels = torch.from_numpy(y_used).to(device)
+    model, info = tr.train_one(
+        torch.from_numpy(norm(sequences[train_indices])).to(device), target_labels[train_indices],
+        torch.from_numpy(norm(sequences[validation_indices])).to(device), target_labels[validation_indices],
+        n_classes, layout, config, device, log_every=0, **kwargs,
     )
-    return m.eval(), norm, info
+    return model.eval(), norm, info
 
 
-def _fold_assignment(y, groups, vmask, k, seed):
-    fold_of_originals = tr.make_folds(y[vmask], k, groups[vmask], seed)
-    fold_by_group = dict(zip(groups[vmask], fold_of_originals))
-    return np.asarray([fold_by_group.get(g, -1) for g in groups], dtype=np.int64)
+def _fold_assignment(labels, groups, validation_mask, fold_count, seed):
+    fold_of_originals = tr.make_folds(labels[validation_mask], fold_count, groups[validation_mask], seed)
+    fold_by_group = dict(zip(groups[validation_mask], fold_of_originals))
+    return np.asarray([fold_by_group.get(group, -1) for group in groups], dtype=np.int64)
 
 
 def _notebook_like_config(seed: int, **overrides) -> tr.Config:
@@ -66,90 +69,82 @@ def _notebook_like_config(seed: int, **overrides) -> tr.Config:
     return tr.Config(**base)
 
 
-def _softmax(z: np.ndarray) -> np.ndarray:
-    z = z - z.max(axis=1, keepdims=True)
-    e = np.exp(z)
-    return e / e.sum(axis=1, keepdims=True)
-
-
 @torch.no_grad()
-def _logits_and_embedding(model, Xn: np.ndarray, device):
+def _logits_and_embedding(model, normalized: np.ndarray, device):
     captured = []
-    hook = model.head.register_forward_pre_hook(lambda _mod, inp: captured.append(inp[0].detach()))
+    hook = model.head.register_forward_pre_hook(lambda _mod, inputs: captured.append(inputs[0].detach()))
     model.eval()
-    logits = model(torch.from_numpy(Xn).to(device))
+    logits = model(torch.from_numpy(normalized).to(device))
     hook.remove()
     return logits.float().cpu().numpy(), captured[0].float().cpu().numpy()
 
 
-def run_cv(X, y, classes, groups, vmask, cfg: tr.Config, device=None, k: int = 5,
+def run_cv(sequences, labels, classes, groups, validation_mask, config: tr.Config, device=None, fold_count: int = 5,
            folds_to_run: int | None = None):
     device = device or tr.get_device()
-    tr.set_seed(cfg.seed)
-    layout = tr.default_groups(X.shape[-1])
-    fold_of = _fold_assignment(y, groups, vmask, k, cfg.seed)
-    out = {"models": [], "norms": [], "va": [], "infos": []}
-    for f in range(k)[: folds_to_run or k]:
-        va = np.where((fold_of == f) & vmask)[0]
-        trn = np.where(fold_of != f)[0]
-        m, norm, info = _fit_fold(X, trn, va, y, len(classes), layout, cfg, device)
-        out["models"].append(m)
-        out["norms"].append(norm)
-        out["va"].append(va)
-        out["infos"].append({k2: v for k2, v in info.items() if k2 != "val_logits"})
-    return out
+    tr.set_seed(config.seed)
+    layout = tr.default_groups(sequences.shape[-1])
+    fold_of = _fold_assignment(labels, groups, validation_mask, fold_count, config.seed)
+    result = {"models": [], "norms": [], "va": [], "infos": []}
+    for fold in range(fold_count)[: folds_to_run or fold_count]:
+        validation_indices = np.where((fold_of == fold) & validation_mask)[0]
+        train_indices = np.where(fold_of != fold)[0]
+        model, norm, info = _fit_fold(sequences, train_indices, validation_indices, labels, len(classes), layout, config, device)
+        result["models"].append(model)
+        result["norms"].append(norm)
+        result["va"].append(validation_indices)
+        result["infos"].append({key: value for key, value in info.items() if key != "val_logits"})
+    return result
 
 
-def diagnose(X, y, classes, vmask, res, device, noise_sigma: float = 1.0, seed: int = 0) -> dict:
-    C = len(classes)
-    N = len(y)
-    global_std = X.reshape(-1, X.shape[-1]).std(0).astype(np.float32)
+def diagnose(sequences, labels, classes, validation_mask, cv_result, device, noise_sigma: float = 1.0, seed: int = 0) -> dict:
+    class_count = len(classes)
+    sample_count = len(labels)
+    global_std = sequences.reshape(-1, sequences.shape[-1]).std(0).astype(np.float32)
     rng = np.random.default_rng(seed)
 
-    oof = np.zeros((N, C), np.float32)
-    mask = np.zeros(N, bool)
+    oof_logits = np.zeros((sample_count, class_count), np.float32)
+    mask = np.zeros(sample_count, bool)
     pair_scores: dict[tuple[int, int], list[float]] = {}
     clean_gap, noisy_gap = [], []
 
-    for m, norm, va in zip(res["models"], res["norms"], res["va"]):
-        trn_orig = np.setdiff1d(np.where(vmask)[0], va)
-        lo, Ev = _logits_and_embedding(m, norm(X[va]), device)
-        oof[va] = lo
-        mask[va] = True
-        _, Et = _logits_and_embedding(m, norm(X[trn_orig]), device)
+    for model, norm, validation_indices in zip(cv_result["models"], cv_result["norms"], cv_result["va"]):
+        trn_orig = np.setdiff1d(np.where(validation_mask)[0], validation_indices)
+        logits, validation_embeddings = _logits_and_embedding(model, norm(sequences[validation_indices]), device)
+        oof_logits[validation_indices] = logits
+        mask[validation_indices] = True
+        _, train_embeddings = _logits_and_embedding(model, norm(sequences[trn_orig]), device)
 
-        nv = Ev / np.linalg.norm(Ev, axis=1, keepdims=True)
-        nt = Et / np.linalg.norm(Et, axis=1, keepdims=True)
-        centroids = np.stack([nt[y[trn_orig] == c].mean(0) for c in range(C)])
-        centroids /= np.linalg.norm(centroids, axis=1, keepdims=True)
-        spread = np.array([np.mean(1 - nt[y[trn_orig] == c] @ centroids[c]) for c in range(C)])
-        for a in range(C):
-            for b in range(a + 1, C):
-                sep = float((1 - centroids[a] @ centroids[b]) / max((spread[a] + spread[b]) / 2, 1e-9))
-                pair_scores.setdefault((a, b), []).append(sep)
+        normalized_validation = normalize(validation_embeddings)
+        normalized_train = normalize(train_embeddings)
+        centroids = normalize(np.stack([normalized_train[labels[trn_orig] == class_index].mean(0) for class_index in range(class_count)]))
+        spread = np.array([np.mean(1 - normalized_train[labels[trn_orig] == class_index] @ centroids[class_index]) for class_index in range(class_count)])
+        for class_a, class_b in combinations(range(class_count), 2):
+            separation = float((1 - centroids[class_a] @ centroids[class_b]) / max((spread[class_a] + spread[class_b]) / 2, 1e-9))
+            pair_scores.setdefault((class_a, class_b), []).append(separation)
 
-        true_logit = lo[np.arange(len(va)), y[va]]
-        rival = lo.copy()
-        rival[np.arange(len(va)), y[va]] = -np.inf
+        true_logit = logits[np.arange(len(validation_indices)), labels[validation_indices]]
+        rival = logits.copy()
+        rival[np.arange(len(validation_indices)), labels[validation_indices]] = -np.inf
         clean_gap.extend((true_logit - rival.max(1)).tolist())
 
-        live = (X[va] != 0).any(axis=1, keepdims=True)
-        noisy_X = X[va] + rng.normal(0, 1, X[va].shape).astype(np.float32) * noise_sigma * global_std * live
-        lp, _ = _logits_and_embedding(m, norm(noisy_X), device)
-        true_logit_n = lp[np.arange(len(va)), y[va]]
-        rival_n = lp.copy()
-        rival_n[np.arange(len(va)), y[va]] = -np.inf
+        live = (sequences[validation_indices] != 0).any(axis=1, keepdims=True)
+        noisy_X = sequences[validation_indices] + rng.normal(0, 1, sequences[validation_indices].shape).astype(np.float32) * noise_sigma * global_std * live
+        noisy_logits, _ = _logits_and_embedding(model, norm(noisy_X), device)
+        true_logit_n = noisy_logits[np.arange(len(validation_indices)), labels[validation_indices]]
+        rival_n = noisy_logits.copy()
+        rival_n[np.arange(len(validation_indices)), labels[validation_indices]] = -np.inf
         noisy_gap.extend((true_logit_n - rival_n.max(1)).tolist())
 
-    yo, lo_oof = y[mask], oof[mask]
+    oof_labels, lo_oof = labels[mask], oof_logits[mask]
     hard_pair_sep = {
-        f"{classes[a]}/{classes[b]}": float(np.mean(v))
-        for (a, b), v in sorted(pair_scores.items(), key=lambda kv: np.mean(kv[1]))
+        f"{classes[class_a]}/{classes[class_b]}": float(np.mean(scores))
+        for (class_a, class_b), scores in sorted(pair_scores.items(), key=lambda pair_item: np.mean(pair_item[1]))
     }
     clean_gap, noisy_gap = np.array(clean_gap), np.array(noisy_gap)
     return {
-        "oof_acc": float((lo_oof.argmax(1) == yo).mean()),
-        "oof_macro_f1": float(f1_score(yo, lo_oof.argmax(1), average="macro")),
+        "oof_acc": float((lo_oof.argmax(1) == oof_labels).mean()),
+        "oof_macro_f1": float(f1_score(oof_labels, lo_oof.argmax(1), average="macro")),
         "logit_gap_median_clean": float(np.median(clean_gap)),
         "logit_gap_median_noise_sigma1": float(np.median(noisy_gap)),
         "noise_sigma1_gap_retention": float(np.median(noisy_gap) / np.median(clean_gap))
@@ -158,137 +153,132 @@ def diagnose(X, y, classes, vmask, res, device, noise_sigma: float = 1.0, seed: 
     }
 
 
-def open_set_hold_one_class_out(X, y, classes, groups, vmask, device, seed, held_classes=None,
-                                 fold: int = 0, k: int = 5, min_confidence: float = 0.65,
-                                 min_gap: float = 0.08, cfg: tr.Config | None = None) -> list[dict]:
+def open_set_hold_one_class_out(sequences, labels, classes, groups, validation_mask, device, seed, held_classes=None,
+                                 fold: int = 0, fold_count: int = 5, min_confidence: float = 0.65,
+                                 min_gap: float = 0.08, config: tr.Config | None = None) -> list[dict]:
     tr.set_seed(seed)
-    cfg = cfg or _notebook_like_config(seed)
-    fold_of = _fold_assignment(y, groups, vmask, k, seed)
-    layout = tr.default_groups(X.shape[-1])
+    config = config or _notebook_like_config(seed)
+    fold_of = _fold_assignment(labels, groups, validation_mask, fold_count, seed)
+    layout = tr.default_groups(sequences.shape[-1])
     held_classes = list(held_classes) if held_classes else list(classes)
     results = []
     for held in held_classes:
-        h = classes.index(held)
-        keep = y != h
-        remaining = sorted({int(v) for v in y[keep].tolist()})
-        remap = {old: new for new, old in enumerate(remaining)}
-        y_remap = np.array([remap.get(int(v), 0) for v in y], dtype=np.int64)
+        held_index = classes.index(held)
+        keep = labels != held_index
+        remaining = sorted({int(label_index) for label_index in labels[keep].tolist()})
+        remap = {old_index: new_index for new_index, old_index in enumerate(remaining)}
+        y_remap = np.array([remap.get(int(label_index), 0) for label_index in labels], dtype=np.int64)
 
-        va = np.where((fold_of == fold) & vmask & keep)[0]
-        trn = np.where((fold_of != fold) & keep)[0]
-        m, norm, info = _fit_fold(X, trn, va, y_remap, len(remaining), layout, cfg, device)
-        lv, _ = _logits_and_embedding(m, norm(X[va]), device)
-        T_fit = tr.fit_temperature(torch.from_numpy(lv), torch.from_numpy(y_remap[va]))
+        validation_indices = np.where((fold_of == fold) & validation_mask & keep)[0]
+        train_indices = np.where((fold_of != fold) & keep)[0]
+        model, norm, info = _fit_fold(sequences, train_indices, validation_indices, y_remap, len(remaining), layout, config, device)
+        validation_logits, _ = _logits_and_embedding(model, norm(sequences[validation_indices]), device)
+        fitted_temperature = tr.fit_temperature(torch.from_numpy(validation_logits), torch.from_numpy(y_remap[validation_indices]))
 
-        test_idx = np.where((~keep) & vmask)[0]
-        lo, _ = _logits_and_embedding(m, norm(X[test_idx]), device)
-        row = {"held_class": held, "n_test": int(len(test_idx)), "fitted_T": T_fit,
+        test_idx = np.where((~keep) & validation_mask)[0]
+        logits, _ = _logits_and_embedding(model, norm(sequences[test_idx]), device)
+        row = {"held_class": held, "n_test": int(len(test_idx)), "fitted_T": fitted_temperature,
                "val_acc": info["val_acc"]}
-        for T, label in ((1.0, "T1"), (T_fit, "T_fit")):
-            p = _softmax(lo / T)
-            srt = np.sort(p, axis=1)
-            gap = srt[:, -1] - srt[:, -2]
-            accepted = (p.max(1) >= min_confidence) & (gap >= min_gap)
+        for temperature, label in ((1.0, "T1"), (fitted_temperature, "T_fit")):
+            probabilities = softmax(logits / temperature, axis=1)
+            sorted_probabilities = np.sort(probabilities, axis=1)
+            probability_gap = sorted_probabilities[:, -1] - sorted_probabilities[:, -2]
+            accepted = (probabilities.max(1) >= min_confidence) & (probability_gap >= min_gap)
             row[f"false_accept_rate_{label}"] = float(accepted.mean())
-            row[f"median_maxprob_{label}"] = float(np.median(p.max(1)))
+            row[f"median_maxprob_{label}"] = float(np.median(probabilities.max(1)))
         results.append(row)
     return results
 
 
-def gaussian_noise_false_acceptance(res, classes, device, n_samples: int = 50, seed: int = 0,
+def gaussian_noise_false_acceptance(cv_result, classes, device, n_samples: int = 50, seed: int = 0,
                                      min_confidence: float = 0.65, min_gap: float = 0.08,
                                      temperatures=(1.0, 0.2)) -> dict:
     rng = np.random.default_rng(seed)
-    in_dim = res["norms"][0].mean.shape[-1]
-    T = res["va"][0]
-    seq_len = None
-    for m in res["models"]:
-        seq_len = None
-        break
-    Z = rng.normal(size=(n_samples, 30, in_dim)).astype(np.float32)
+    in_dim = cv_result["norms"][0].mean.shape[-1]
+    noise_sequences = rng.normal(size=(n_samples, 30, in_dim)).astype(np.float32)
     per_model_logits = []
-    for m in res["models"]:
+    for model in cv_result["models"]:
         with torch.no_grad():
-            logits = m(torch.from_numpy(Z).to(device)).float().cpu().numpy()
+            logits = model(torch.from_numpy(noise_sequences).to(device)).float().cpu().numpy()
         per_model_logits.append(logits)
-    out = {}
-    for Temp in temperatures:
-        probs = np.mean([_softmax(logits / Temp) for logits in per_model_logits], axis=0)
-        srt = np.sort(probs, axis=1)
-        gap = srt[:, -1] - srt[:, -2]
-        accepted = (probs.max(1) >= min_confidence) & (gap >= min_gap)
-        pred_counts = {classes[i]: int(c) for i, c in
+    report = {}
+    for temperature in temperatures:
+        probs = np.mean([softmax(logits / temperature, axis=1) for logits in per_model_logits], axis=0)
+        sorted_probabilities = np.sort(probs, axis=1)
+        probability_gap = sorted_probabilities[:, -1] - sorted_probabilities[:, -2]
+        accepted = (probs.max(1) >= min_confidence) & (probability_gap >= min_gap)
+        pred_counts = {classes[class_index]: int(count) for class_index, count in
                        zip(*np.unique(probs.argmax(1), return_counts=True))}
-        out[f"T={Temp}"] = {
+        report[f"T={temperature}"] = {
             "median_maxprob": float(np.median(probs.max(1))),
             "false_accept_rate": float(accepted.mean()),
             "predicted_as": pred_counts,
         }
-    return out
+    return report
 
 
-def _composite_left_hand(target: np.ndarray, donor: np.ndarray, sl: dict, lowered_y: float | None):
-    T = len(target)
-    left = np.concatenate([np.arange(sl[n].start, sl[n].start + (sl[n].stop - sl[n].start) // 2)
-                           for n in ("hand_pos", "body_contact", "hand_scale", "handshape", "orientation",
+def _composite_left_hand(target: np.ndarray, donor: np.ndarray, slices: dict, lowered_y: float | None):
+    frame_count = len(target)
+    left = np.concatenate([np.arange(slices[group_name].start, slices[group_name].start + (slices[group_name].stop - slices[group_name].start) // 2)
+                           for group_name in ("hand_pos", "body_contact", "hand_scale", "handshape", "orientation",
                                      "presence")])
-    src = donor[np.round(np.linspace(0, len(donor) - 1, T)).astype(int)]
+    donor_frames = donor[np.round(np.linspace(0, len(donor) - 1, frame_count)).astype(int)]
     if lowered_y is not None:
-        valid = np.flatnonzero(np.isfinite(donor[:, sl["hand_pos"].start]))
-        src = np.repeat(donor[valid[len(valid) // 2]][None], T, axis=0)
-        hp = sl["hand_pos"].start
-        src[:, [hp + 1, hp + 4, hp + 7]] += lowered_y - src[:, [hp + 1]]
-    out = target.copy()
-    out[:, left] = src[:, left]
-    hp = out[:, sl["hand_pos"]]
-    lp, rp = hp[:, :9].reshape(T, 3, 3), hp[:, 9:].reshape(T, 3, 3)
-    d = np.concatenate([np.linalg.norm(lp - rp, axis=-1),
-                        np.linalg.norm(lp[:, :, None] - rp[:, None], axis=-1).reshape(T, -1).min(1, keepdims=True)], 1)
-    out[:, sl["inter_hand_vec"]] = lp[:, 0] - rp[:, 0]
-    out[:, sl["hand_contact"]] = np.exp(-8.0 * d ** 2)
-    return out
+        valid = np.flatnonzero(np.isfinite(donor[:, slices["hand_pos"].start]))
+        donor_frames = np.repeat(donor[valid[len(valid) // 2]][None], frame_count, axis=0)
+        hand_pos_start = slices["hand_pos"].start
+        donor_frames[:, [hand_pos_start + 1, hand_pos_start + 4, hand_pos_start + 7]] += lowered_y - donor_frames[:, [hand_pos_start + 1]]
+    composite = target.copy()
+    composite[:, left] = donor_frames[:, left]
+    hand_pos = composite[:, slices["hand_pos"]]
+    left_points, right_points = hand_pos[:, :9].reshape(frame_count, 3, 3), hand_pos[:, 9:].reshape(frame_count, 3, 3)
+    contact_distances = np.concatenate([np.linalg.norm(left_points - right_points, axis=-1),
+                        np.linalg.norm(left_points[:, :, None] - right_points[:, None], axis=-1).reshape(frame_count, -1).min(1, keepdims=True)], 1)
+    composite[:, slices["inter_hand_vec"]] = left_points[:, 0] - right_points[:, 0]
+    composite[:, slices["hand_contact"]] = np.exp(-8.0 * contact_distances ** 2)
+    return composite
 
 
-def distractor_flip_rate(raw, y, classes, vmask, res, device, fx, lowered_y: float = 1.1,
+def distractor_flip_rate(raw, labels, classes, validation_mask, cv_result, device, extract_module, lowered_y: float = 1.1,
                          min_confidence: float = 0.65, min_gap: float = 0.08) -> dict:
-    sl, hp = fx._SL, fx._SL["hand_pos"].start
-    left_frac = np.array([np.isfinite(r[:, hp]).mean() if v else np.nan for r, v in zip(raw, vmask)])
-    out = {}
-    for name, low in (("same_height", None), ("lowered_static", lowered_y)):
-        flips, wrong_acc, to_twohand, n = 0, 0, 0, 0
-        for m, norm, va in zip(res["models"], res["norms"], res["va"]):
-            targets = va[left_frac[va] < 0.1]
-            donors = va[left_frac[va] >= 0.5]
+    slices, hand_pos_start = extract_module.FEATURE_SLICES, extract_module.FEATURE_SLICES["hand_pos"].start
+    left_frac = np.array([np.isfinite(row_features[:, hand_pos_start]).mean() if is_validation else np.nan for row_features, is_validation in zip(raw, validation_mask)])
+    report = {}
+    for name, lowered in (("same_height", None), ("lowered_static", lowered_y)):
+        flips, wrong_acc, to_twohand, total = 0, 0, 0, 0
+        for model, norm, validation_indices in zip(cv_result["models"], cv_result["norms"], cv_result["va"]):
+            targets = validation_indices[left_frac[validation_indices] < 0.1]
+            donors = validation_indices[left_frac[validation_indices] >= 0.5]
             if not len(donors) or not len(targets):
                 continue
-            twohand = set(y[donors].tolist())
-            clean = np.stack([fx.process_sequence(raw[i], target_len=X_LEN) for i in targets])
-            comp = np.stack([fx.process_sequence(_composite_left_hand(raw[i], raw[donors[j % len(donors)]], sl, low),
-                                                 target_len=X_LEN) for j, i in enumerate(targets)])
-            pc = _logits_and_embedding(m, norm(clean.astype(np.float32)), device)[0].argmax(1)
-            p = _softmax(_logits_and_embedding(m, norm(comp.astype(np.float32)), device)[0])
-            pred, srt = p.argmax(1), np.sort(p, axis=1)
-            accepted = (srt[:, -1] >= min_confidence) & (srt[:, -1] - srt[:, -2] >= min_gap)
-            flips += int((pred != pc).sum())
-            wrong_acc += int((accepted & (pred != y[targets])).sum())
+            twohand = set(labels[donors].tolist())
+            clean = np.stack([extract_module.process_sequence(raw[sample_index], target_len=X_LEN) for sample_index in targets])
+            comp = np.stack([extract_module.process_sequence(_composite_left_hand(raw[sample_index], raw[donors[target_position % len(donors)]], slices, lowered),
+                                                 target_len=X_LEN) for target_position, sample_index in enumerate(targets)])
+            clean_predictions = _logits_and_embedding(model, norm(clean.astype(np.float32)), device)[0].argmax(1)
+            probabilities = softmax(_logits_and_embedding(model, norm(comp.astype(np.float32)), device)[0], axis=1)
+            pred, sorted_probabilities = probabilities.argmax(1), np.sort(probabilities, axis=1)
+            accepted = (sorted_probabilities[:, -1] >= min_confidence) & (sorted_probabilities[:, -1] - sorted_probabilities[:, -2] >= min_gap)
+            flips += int((pred != clean_predictions).sum())
+            wrong_acc += int((accepted & (pred != labels[targets])).sum())
             to_twohand += int(np.isin(pred, list(twohand)).sum())
-            n += len(targets)
-        out[name] = {"n": n, "flip_rate": flips / max(n, 1), "wrong_accept_rate": wrong_acc / max(n, 1),
-                     "to_two_hand_class_rate": to_twohand / max(n, 1)}
-    return out
+            total += len(targets)
+        report[name] = {"n": total, "flip_rate": flips / max(total, 1), "wrong_accept_rate": wrong_acc / max(total, 1),
+                     "to_two_hand_class_rate": to_twohand / max(total, 1)}
+    return report
 
 
 X_LEN = 30
 
 
-def _run_one_seed(X, y, classes, groups, vmask, seed, k, held_classes, out_dir, device):
-    cfg = _notebook_like_config(seed)
-    res = run_cv(X, y, classes, groups, vmask, cfg, device=device, k=k)
-    report = diagnose(X, y, classes, vmask, res, device, seed=seed)
+def _run_one_seed(sequences, labels, classes, groups, validation_mask, seed, fold_count, held_classes, out_dir, device):
+    config = _notebook_like_config(seed)
+    cv_result = run_cv(sequences, labels, classes, groups, validation_mask, config, device=device, fold_count=fold_count)
+    report = diagnose(sequences, labels, classes, validation_mask, cv_result, device, seed=seed)
     report["open_set_hold_one_class_out"] = open_set_hold_one_class_out(
-        X, y, classes, groups, vmask, device, seed, held_classes=held_classes, k=k,
+        sequences, labels, classes, groups, validation_mask, device, seed, held_classes=held_classes, fold_count=fold_count,
     )
-    report["gaussian_noise"] = gaussian_noise_false_acceptance(res, classes, device, seed=seed)
+    report["gaussian_noise"] = gaussian_noise_false_acceptance(cv_result, classes, device, seed=seed)
     report["seed"] = seed
     path = Path(out_dir) / f"diagnostics_seed{seed}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -306,11 +296,11 @@ def main() -> None:
                         help="Chỉ chạy hold-one-class-out trên các lớp này (mặc định: tất cả)")
     args = parser.parse_args()
 
-    X, y, classes, groups, vmask = load_dataset_npz(args.data)
+    sequences, labels, classes, groups, validation_mask = load_dataset_npz(args.data)
     device = tr.get_device()
     held_classes = args.classes if args.classes else classes
     for seed in args.seeds:
-        report = _run_one_seed(X, y, classes, groups, vmask, seed, args.k, held_classes, args.out, device)
+        report = _run_one_seed(sequences, labels, classes, groups, validation_mask, seed, args.k, held_classes, args.out, device)
         print(f"seed={seed} oof_acc={report['oof_acc']:.4f} "
               f"gap_retention_sigma1={report['noise_sigma1_gap_retention']:.3f}")
 

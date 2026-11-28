@@ -32,7 +32,7 @@ def available_sources(processed_root: Path, classes: list[str] | None = None) ->
             continue
         if wanted is not None and class_dir.name not in wanted:
             continue
-        for sample_dir in sorted(class_dir.iterdir(), key=lambda p: (not p.name.isdigit(), p.name)):
+        for sample_dir in sorted(class_dir.iterdir(), key=lambda entry: (not entry.name.isdigit(), entry.name)):
             if not sample_dir.is_dir() or not sample_dir.name.isdigit():
                 continue
             if "augmentation" in DataHandler._read_meta(sample_dir):
@@ -54,8 +54,8 @@ def plan_augmentation(
 
     root = Path(processed_root)
     sources = available_sources(root, classes)
-    selected = sorted({p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")
-                       and (classes is None or p.name in classes)})
+    selected = sorted({entry.name for entry in root.iterdir() if entry.is_dir() and not entry.name.startswith(".")
+                       and (classes is None or entry.name in classes)})
     by_class: dict[str, list[Path]] = {name: [] for name in selected}
     for source in sources:
         by_class[source.parent.name].append(source)
@@ -104,18 +104,18 @@ def add_feature_noise(features: np.ndarray, rng: np.random.Generator, strength: 
     if source.ndim != 2 or source.shape[1] != DataHandler.FEATURE_DIM:
         raise ValueError(f"Expected (frames, {DataHandler.FEATURE_DIM}), got {source.shape}")
     out = source.copy()
-    S = FEATURE_SLICES
-    position = slice(0, S["body_contact"].start)
-    contact = slice(S["body_contact"].start, S["face_vec"].start)
-    scales = ((position, 0.015), (contact, 0.01), (S["face_vec"], 0.015), (S["hand_scale"], 0.01),
-              (S["handshape"], 0.012), (S["hand_local"], 0.012), (S["finger_curl"], 0.012),
-              (S["hand_closure"], 0.012), (S["orientation"], 0.01))
+    slices = FEATURE_SLICES
+    position = slice(0, slices["body_contact"].start)
+    contact = slice(slices["body_contact"].start, slices["face_vec"].start)
+    scales = ((position, 0.015), (contact, 0.01), (slices["face_vec"], 0.015), (slices["hand_scale"], 0.01),
+              (slices["handshape"], 0.012), (slices["hand_local"], 0.012), (slices["finger_curl"], 0.012),
+              (slices["hand_closure"], 0.012), (slices["orientation"], 0.01))
     for cols, sigma in scales:
         block = out[:, cols]
         perturbation = rng.normal(0, sigma * strength, size=block.shape).astype(np.float32)
         np.add(block, perturbation, out=block, where=np.isfinite(block))
     np.clip(out[:, contact], 0, 1, out=out[:, contact])
-    np.clip(out[:, S["orientation"]], -1, 1, out=out[:, S["orientation"]])
+    np.clip(out[:, slices["orientation"]], -1, 1, out=out[:, slices["orientation"]])
     return out
 
 
@@ -166,10 +166,10 @@ def augment_sample(source_dir: Path, raw_root: Path, copies: int, strength: floa
     if np.isnan(features).all(axis=1).all():
         raise ValueError(f"Source has no detected pose: {source_dir}")
     landmarks = load_source_landmarks(source_dir, len(features))
-    used = {int(p.name) for p in class_dir.iterdir() if p.is_dir() and p.name.isdigit()}
+    used = {int(entry.name) for entry in class_dir.iterdir() if entry.is_dir() and entry.name.isdigit()}
     raw_class_dir = raw_root / class_dir.name
     if raw_class_dir.is_dir():
-        used.update(int(p.stem) for p in raw_class_dir.glob("*.mp4") if p.stem.isdigit())
+        used.update(int(entry.stem) for entry in raw_class_dir.glob("*.mp4") if entry.stem.isdigit())
     next_id = max(used, default=-1) + 1
     created = []
     for copy_number in range(copies):

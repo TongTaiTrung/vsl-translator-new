@@ -7,6 +7,7 @@ import os
 import shutil
 import unicodedata
 import uuid
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,18 +36,18 @@ def get_data_path() -> Path:
     return get_project_root_dir() / "data"
 
 
-def _nfc(name: str) -> str:
+def _normalize_nfc(name: str) -> str:
     return unicodedata.normalize("NFC", name.strip())
 
 
 def _check_class_name(name: str) -> str:
-    name = _nfc(name)
+    name = _normalize_nfc(name)
     if (
         not name
         or name in {".", ".."}
         or name.startswith(".")
         or name.endswith(".")
-        or any(c in _INVALID_NAME_CHARS or ord(c) < 32 for c in name)
+        or any(char in _INVALID_NAME_CHARS or ord(char) < 32 for char in name)
     ):
         raise ValueError(
             "class_name must be non-empty, must not start/end with '.', and must not "
@@ -102,13 +103,13 @@ class DataHandler:
         if not root.is_dir():
             return {}
         return {
-            _nfc(d.name): d
-            for d in sorted(root.iterdir())
-            if d.is_dir() and not d.name.startswith(".")
+            _normalize_nfc(directory.name): directory
+            for directory in sorted(root.iterdir())
+            if directory.is_dir() and not directory.name.startswith(".")
         }
 
     def _class_dir(self, root: Path, class_name: str) -> Path:
-        name = _nfc(class_name)
+        name = _normalize_nfc(class_name)
         return self._child_dirs(root).get(name, root / name)
 
     @property
@@ -141,13 +142,13 @@ class DataHandler:
         return name
 
     def remove_class(self, class_name: str) -> None:
-        name = _nfc(class_name)
+        name = _normalize_nfc(class_name)
         pdir, rdir = self._class_dir(self.processed, name), self._class_dir(self.raw, name)
         if not pdir.exists() and not rdir.exists():
             raise ValueError(f"Class not found: {class_name}")
-        for d in (pdir, rdir):
-            if d.is_dir():
-                shutil.rmtree(d)
+        for directory in (pdir, rdir):
+            if directory.is_dir():
+                shutil.rmtree(directory)
         self._invalidate_dataset_index()
 
     def _invalidate_dataset_index(self) -> None:
@@ -156,14 +157,14 @@ class DataHandler:
 
     @staticmethod
     def _frame_paths(sample_dir: Path) -> Tuple[List[Path], Optional[str]]:
-        stems = sorted(int(p.stem) for p in sample_dir.glob("*.npz") if p.stem.isdigit())
+        stems = sorted(int(path.stem) for path in sample_dir.glob("*.npz") if path.stem.isdigit())
         if not stems:
             return [], "no frame files"
         if stems != list(range(len(stems))):
             return [], f"non-contiguous frame files ({len(stems)} files, max index {stems[-1]})"
         if len(stems) < DataHandler.MIN_FRAMES:
             return [], f"only {len(stems)} frames (< {DataHandler.MIN_FRAMES})"
-        return [sample_dir / f"{i}.npz" for i in stems], None
+        return [sample_dir / f"{frame_index}.npz" for frame_index in stems], None
 
     @staticmethod
     def _read_meta(sample_dir: Path) -> dict:
@@ -175,13 +176,13 @@ class DataHandler:
     def _scan_dataset(self) -> Tuple[List[SampleRef], Dict[str, int]]:
         self.incomplete = []
         pending: List[Tuple[str, str, List[Path], str, str, bool]] = []
-        counts: Dict[str, int] = {}
-        origins: Dict[str, set[str]] = {}
+        counts: Counter = Counter()
+        origins: Dict[str, set[str]] = defaultdict(set)
 
         for class_name, class_dir in self._child_dirs(self.processed).items():
             sample_dirs = sorted(
-                (p for p in class_dir.iterdir() if p.is_dir() and not p.name.startswith(".")),
-                key=lambda p: (0 if p.name.isdigit() else 1, int(p.name) if p.name.isdigit() else p.name),
+                (entry for entry in class_dir.iterdir() if entry.is_dir() and not entry.name.startswith(".")),
+                key=lambda entry: (0 if entry.name.isdigit() else 1, int(entry.name) if entry.name.isdigit() else entry.name),
             )
             for sample_dir in sample_dirs:
                 frame_paths, problem = self._frame_paths(sample_dir)
@@ -195,21 +196,21 @@ class DataHandler:
                 augmented = "augmentation" in meta
                 origin_id = str(meta.get("origin_sample_id", sample_dir.name))
                 pending.append((class_name, sample_dir.name, frame_paths, session, origin_id, augmented))
-                counts[class_name] = counts.get(class_name, 0) + 1
+                counts[class_name] += 1
                 if not augmented:
-                    origins.setdefault(class_name, set()).add(origin_id)
+                    origins[class_name].add(origin_id)
 
-        self._counts = counts
-        self._origin_counts = {c: len(origins.get(c, set())) for c in counts}
-        active = [c for c in sorted(counts) if self._origin_counts[c] >= self.min_samples_per_class]
+        self._counts = dict(counts)
+        self._origin_counts = {class_key: len(origins[class_key]) for class_key in counts}
+        active = [class_key for class_key in sorted(counts) if self._origin_counts[class_key] >= self.min_samples_per_class]
         self.excluded_classes = {
-            c: self._origin_counts[c] for c in counts if self._origin_counts[c] < self.min_samples_per_class
+            class_key: self._origin_counts[class_key] for class_key in counts if self._origin_counts[class_key] < self.min_samples_per_class
         }
-        class_to_idx = {c: i for i, c in enumerate(active)}
+        class_to_idx = {class_key: class_index for class_index, class_key in enumerate(active)}
         samples = [
-            SampleRef(paths, class_to_idx[c], c, sid, sess, origin_id, augmented)
-            for c, sid, paths, sess, origin_id, augmented in pending
-            if c in class_to_idx
+            SampleRef(paths, class_to_idx[class_key], class_key, sample_id, sess, origin_id, augmented)
+            for class_key, sample_id, paths, sess, origin_id, augmented in pending
+            if class_key in class_to_idx
         ]
         return samples, class_to_idx
 
@@ -225,16 +226,16 @@ class DataHandler:
     def sample_groups(self, by: str = "sample") -> List[str]:
         self._ensure_dataset_index()
         if by == "session":
-            return [s.session for s in self._samples or []]
+            return [sample.session for sample in self._samples or []]
         if by == "sample":
-            return [f"{s.class_name}/{s.origin_id}" for s in self._samples or []]
+            return [f"{sample.class_name}/{sample.origin_id}" for sample in self._samples or []]
         raise ValueError("by must be 'sample' or 'session'")
 
     def describe(self, index: int) -> dict:
         self._ensure_dataset_index()
-        s = (self._samples or [])[index]
-        return {"class": s.class_name, "sample_id": s.sample_id, "label": s.label,
-                "session": s.session, "origin_sample_id": s.origin_id, "augmented": s.augmented}
+        sample = (self._samples or [])[index]
+        return {"class": sample.class_name, "sample_id": sample.sample_id, "label": sample.label,
+                "session": sample.session, "origin_sample_id": sample.origin_id, "augmented": sample.augmented}
 
     @classmethod
     def _load_feature(cls, path: Path, allow_nan: bool = True) -> np.ndarray:
@@ -258,9 +259,9 @@ class DataHandler:
 
     def validate_dataset(self) -> int:
         self.refresh_dataset()
-        for s in self._samples or []:
-            for p in s.frame_paths:
-                self._load_feature(p)
+        for sample in self._samples or []:
+            for frame_path in sample.frame_paths:
+                self._load_feature(frame_path)
         return len(self._samples or [])
 
     def __len__(self) -> int:
@@ -275,7 +276,7 @@ class DataHandler:
             index += len(samples)
         if index < 0 or index >= len(samples):
             raise IndexError(f"Dataset index out of range: {index}")
-        return np.stack([self._load_feature(p) for p in samples[index].frame_paths], axis=0)
+        return np.stack([self._load_feature(frame_path) for frame_path in samples[index].frame_paths], axis=0)
 
     def __getitem__(self, index: int) -> Tuple[np.ndarray, int]:
         index = int(index)
@@ -284,20 +285,20 @@ class DataHandler:
         raw = self.load_raw(index)
         label = (self._samples or [])[index].label
         if self.processor is not None:
-            seq = np.asarray(self.processor(raw), dtype=np.float32)
+            sequence = np.asarray(self.processor(raw), dtype=np.float32)
         elif raw.shape[0] == self.SEQUENCE_LENGTH:
-            seq = raw
+            sequence = raw
         else:
             raise ValueError(
                 f"Sample {index} has {raw.shape[0]} frames but SEQUENCE_LENGTH={self.SEQUENCE_LENGTH}. "
                 "Truyền processor=process_sequence để co giãn thời gian."
             )
-        return seq, label
+        return sequence, label
 
     def _next_sample_idx(self, proc_cls: Path, raw_cls: Path) -> int:
-        used = [int(d.name) for d in proc_cls.iterdir() if d.is_dir() and d.name.isdigit()] if proc_cls.is_dir() else []
+        used = [int(directory.name) for directory in proc_cls.iterdir() if directory.is_dir() and directory.name.isdigit()] if proc_cls.is_dir() else []
         if raw_cls.is_dir():
-            used += [int(p.stem) for p in raw_cls.glob("*.mp4") if p.stem.isdigit()]
+            used += [int(path.stem) for path in raw_cls.glob("*.mp4") if path.stem.isdigit()]
         return (max(used) + 1) if used else 0
 
     @staticmethod
@@ -308,8 +309,8 @@ class DataHandler:
         if not writer.isOpened():
             raise RuntimeError(f"Cannot open video writer for {path}")
         try:
-            for fr in frames:
-                writer.write(frame_padding(fr))
+            for frame in frames:
+                writer.write(frame_padding(frame))
         finally:
             writer.release()
 
@@ -323,26 +324,26 @@ class DataHandler:
         meta: Optional[dict] = None,
         require_hand: bool = True,
     ) -> int:
-        feats = [np.asarray(f) for f in features]
-        n = len(feats)
-        if n < self.MIN_FRAMES:
-            raise ValueError(f"Sample must contain at least {self.MIN_FRAMES} frames, got {n}.")
-        for i, f in enumerate(feats):
-            if f.shape != (self.FEATURE_DIM,):
-                raise ValueError(f"Invalid feature shape at frame {i}: {f.shape}, expected ({self.FEATURE_DIM},)")
-            if f.dtype != np.float32:
-                raise TypeError(f"Invalid feature dtype at frame {i}: {f.dtype}, expected float32")
-            if np.isinf(f).any():
-                raise ValueError(f"Inf detected at frame {i}.")
+        feats = [np.asarray(frame_feature) for frame_feature in features]
+        frame_count = len(feats)
+        if frame_count < self.MIN_FRAMES:
+            raise ValueError(f"Sample must contain at least {self.MIN_FRAMES} frames, got {frame_count}.")
+        for frame_index, frame_feature in enumerate(feats):
+            if frame_feature.shape != (self.FEATURE_DIM,):
+                raise ValueError(f"Invalid feature shape at frame {frame_index}: {frame_feature.shape}, expected ({self.FEATURE_DIM},)")
+            if frame_feature.dtype != np.float32:
+                raise TypeError(f"Invalid feature dtype at frame {frame_index}: {frame_feature.dtype}, expected float32")
+            if np.isinf(frame_feature).any():
+                raise ValueError(f"Inf detected at frame {frame_index}.")
         stack = np.stack(feats)
         if np.isnan(stack).all(axis=1).all():
             raise ValueError("Không detect được pose ở frame nào -> không lưu.")
         if require_hand and np.nan_to_num(stack[:, self.PRESENCE_COLS]).sum() == 0:
             raise ValueError("Không detect được tay ở frame nào -> không lưu (require_hand=False để bỏ qua).")
         if frames is not None:
-            if len(frames) != n:
+            if len(frames) != frame_count:
                 raise ValueError("Quantity of features and frames must be equal.")
-            if any(fr.dtype != np.uint8 or fr.ndim != 3 for fr in frames):
+            if any(frame.dtype != np.uint8 or frame.ndim != 3 for frame in frames):
                 raise TypeError("frames must be uint8 BGR images with shape (H, W, 3).")
 
         name = self.add_class(class_name)
@@ -355,12 +356,12 @@ class DataHandler:
         committed_dir = False
         try:
             tmp_dir.mkdir()
-            for i, feat in enumerate(feats):
-                np.savez_compressed(tmp_dir / f"{i}.npz", feature=feat)
+            for frame_index, feat in enumerate(feats):
+                np.savez_compressed(tmp_dir / f"{frame_index}.npz", feature=feat)
             info = {
                 "session": session or "unspecified",
                 "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                "n_frames": n,
+                "n_frames": frame_count,
                 "fps": float(fps),
                 "feature_dim": self.FEATURE_DIM,
                 **(meta or {}),
@@ -397,39 +398,39 @@ class DataHandler:
     def quality_report(self) -> List[dict]:
         self._ensure_dataset_index()
         rows = []
-        for i, s in enumerate(self._samples or []):
-            raw = self.load_raw(i)
-            pres = np.nan_to_num(raw[:, self.PRESENCE_COLS])
+        for index, sample in enumerate(self._samples or []):
+            raw = self.load_raw(index)
+            presence = np.nan_to_num(raw[:, self.PRESENCE_COLS])
             rows.append({
-                "index": i, "class": s.class_name, "sample_id": s.sample_id, "session": s.session,
+                "index": index, "class": sample.class_name, "sample_id": sample.sample_id, "session": sample.session,
                 "frames": int(raw.shape[0]),
                 "pose_coverage": float((~np.isnan(raw).all(axis=1)).mean()),
-                "left_hand": float(pres[:, 0].mean()), "right_hand": float(pres[:, 1].mean()),
+                "left_hand": float(presence[:, 0].mean()), "right_hand": float(presence[:, 1].mean()),
             })
         return rows
 
     def export_arrays(self, group_by: str = "sample", progress: bool = True) -> dict:
         self._ensure_dataset_index()
-        n = len(self)
-        if n == 0:
+        sample_count = len(self)
+        if sample_count == 0:
             raise RuntimeError("Dataset trống (chưa có mẫu hoàn chỉnh).")
-        xs, ys = [], []
-        for i in range(n):
-            seq, label = self[i]
-            xs.append(seq)
-            ys.append(label)
-            if progress and (i + 1) % 100 == 0:
-                print(f"  đã đọc {i + 1}/{n} mẫu", flush=True)
-        shapes = {x.shape for x in xs}
+        sequences, labels = [], []
+        for index in range(sample_count):
+            sequence, label = self[index]
+            sequences.append(sequence)
+            labels.append(label)
+            if progress and (index + 1) % 100 == 0:
+                print(f"  đã đọc {index + 1}/{sample_count} mẫu", flush=True)
+        shapes = {array.shape for array in sequences}
         if len(shapes) != 1:
             raise ValueError(f"Các mẫu có shape khác nhau: {sorted(shapes)} -> cần processor để co giãn.")
         return {
-            "X": np.stack(xs).astype(np.float32),
-            "y": np.asarray(ys, dtype=np.int64),
+            "X": np.stack(sequences).astype(np.float32),
+            "y": np.asarray(labels, dtype=np.int64),
             "classes": self.active_class_names,
             "groups": np.asarray(self.sample_groups(group_by)),
             "sessions": np.asarray(self.sample_groups("session")),
-            "augmented": np.asarray([s.augmented for s in self._samples or []], dtype=bool),
+            "augmented": np.asarray([sample.augmented for sample in self._samples or []], dtype=bool),
         }
 
     def save_npz(self, path: Union[str, Path], group_by: str = "sample") -> Path:

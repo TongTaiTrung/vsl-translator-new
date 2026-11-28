@@ -17,7 +17,7 @@ def draw(frame, results, point_color=(0,0,0), line_color=(255,255,255), secondar
     else: return frame
 
     if not multi_landmarks: return frame
-    h, w, _ = frame.shape
+    height, width, _ = frame.shape
 
     is_hand = hasattr(results, 'hand_landmarks')
     handedness = getattr(results, 'handedness', []) if is_hand else []
@@ -36,13 +36,13 @@ def draw(frame, results, point_color=(0,0,0), line_color=(255,255,255), secondar
                     start_pt = landmarks[start_idx]
                     end_pt = landmarks[end_idx]
                 
-                    start_xy = (int(start_pt.x * w), int(start_pt.y * h))
-                    end_xy = (int(end_pt.x * w), int(end_pt.y * h))
+                    start_xy = (int(start_pt.x * width), int(start_pt.y * height))
+                    end_xy = (int(end_pt.x * width), int(end_pt.y * height))
                     
                     cv2.line(frame, start_xy, end_xy, current_line_color, 2)
 
-        for pt in landmarks:
-            cx, cy = int(pt.x * w), int(pt.y * h)
-            cv2.circle(frame, (cx, cy), 4, current_color, -1)
+        for point in landmarks:
+            center_x, center_y = int(point.x * width), int(point.y * height)
+            cv2.circle(frame, (center_x, center_y), 4, current_color, -1)
 
     return frame

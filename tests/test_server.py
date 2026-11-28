@@ -19,8 +19,8 @@ from src.model.training import Config, Normalizer, VSLNet, default_groups, save_
 
 
 def encode_frame(frame: np.ndarray, data_url: bool = True) -> str:
-    ok, buffer = cv2.imencode(".jpg", frame)
-    assert ok
+    has_frame, buffer = cv2.imencode(".jpg", frame)
+    assert has_frame
     text = base64.b64encode(buffer.tobytes()).decode()
     return f"data:image/jpeg;base64,{text}" if data_url else text
 
@@ -96,7 +96,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(body["expected_frames"], 30)
 
     def test_predict_30_frames_returns_model_result(self):
-        frames = [encode_frame(self.frame, data_url=i % 2 == 0) for i in range(30)]
+        frames = [encode_frame(self.frame, data_url=index % 2 == 0) for index in range(30)]
         response = self.client.post("/api/predict", json={"frames": frames, "fps": 30, "top_k": 2})
         self.assertEqual(response.status_code, 200, response.get_json())
         body = response.get_json()
@@ -126,7 +126,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_predict_accepts_landmarks(self):
-        landmarks = [fake_landmarks(hand=i % 3 != 0, seed=i) for i in range(30)]
+        landmarks = [fake_landmarks(hand=index % 3 != 0, seed=index) for index in range(30)]
         response = self.client.post("/api/predict", json={"landmarks": landmarks, "mirror_data": True})
         self.assertEqual(response.status_code, 200, response.get_json())
         body = response.get_json()
@@ -150,7 +150,7 @@ class ServerTests(unittest.TestCase):
             {},
         ]
         for body in cases:
-            with self.subTest(body={k: (v if k != "frames" else len(v)) for k, v in body.items()}):
+            with self.subTest(body={key: (value if key != "frames" else len(value)) for key, value in body.items()}):
                 response = self.client.post("/api/predict", json=body)
                 self.assertEqual(response.status_code, 400)
                 self.assertIn("error", response.get_json())
@@ -315,7 +315,7 @@ class StreamTests(unittest.TestCase):
         self.assertTrue(response.get_json()["landmarks"])
         sid = response.get_json()["session_id"]
         send = lambda frames, **extra: self.client.post(f"/api/stream/{sid}", json={"landmarks": frames, **extra})
-        body = send([fake_landmarks(seed=i) for i in range(29)], predict=False).get_json()
+        body = send([fake_landmarks(seed=index) for index in range(29)], predict=False).get_json()
         self.assertEqual((body["ready"], body["buffered"], body["hand_frames"]), (False, 29, 29))
         body = send([fake_landmarks(hand=False)], timestamps=[1933.0]).get_json()
         self.assertEqual((body["predicted"], body["frames"], body["hand_frames"]), (True, 30, 29))
@@ -330,20 +330,20 @@ class StreamTests(unittest.TestCase):
     def test_window_follows_capture_time_not_frame_count(self):
         sid = self.client.post("/api/stream").get_json()["session_id"]
         send = lambda frames, **extra: self.client.post(f"/api/stream/{sid}", json={"landmarks": frames, **extra})
-        slow = [1000 + i * 1000 / 7.5 for i in range(16)]
-        body = send([fake_landmarks(seed=i) for i in range(16)], timestamps=slow).get_json()
+        slow = [1000 + index * 1000 / 7.5 for index in range(16)]
+        body = send([fake_landmarks(seed=index) for index in range(16)], timestamps=slow).get_json()
         self.assertTrue(body["ready"])
         self.assertEqual(body["buffered"], 30)
         self.assertEqual(body["frames"], 15)
         self.assertEqual(body["hand_frames"], 30)
         self.assertIn(body["label"], ("xin chào", "cảm ơn"))
 
-        fast = [9000 + i * 1000 / 30 for i in range(40)]
-        body = send([fake_landmarks(seed=i) for i in range(40)], timestamps=fast, reset=True).get_json()
+        fast = [9000 + index * 1000 / 30 for index in range(40)]
+        body = send([fake_landmarks(seed=index) for index in range(40)], timestamps=fast, reset=True).get_json()
         self.assertEqual((body["ready"], body["buffered"], body["hand_frames"]), (False, 20, 20))
 
-        more = [fast[-1] + (i + 1) * 1000 / 30 for i in range(30)]
-        body = send([fake_landmarks(seed=i) for i in range(30)], timestamps=more).get_json()
+        more = [fast[-1] + (index + 1) * 1000 / 30 for index in range(30)]
+        body = send([fake_landmarks(seed=index) for index in range(30)], timestamps=more).get_json()
         self.assertEqual((body["ready"], body["buffered"], body["hand_frames"]), (True, 30, 30))
         self.assertEqual(body["frames"], 60)
 
@@ -402,7 +402,7 @@ class StreamTests(unittest.TestCase):
             {"frames": [self.empty], "fill": "nearest"},
         ]
         for body in cases:
-            with self.subTest(body={k: (v if k != "frames" else len(v)) for k, v in body.items()}):
+            with self.subTest(body={key: (value if key != "frames" else len(value)) for key, value in body.items()}):
                 response = self.client.post(f"/api/stream/{sid}", json=body)
                 self.assertEqual(response.status_code, 400)
                 self.assertIn("error", response.get_json())

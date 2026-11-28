@@ -16,8 +16,8 @@ export function systemTheme(): Theme {
 
 export function storedTheme(): Theme | null {
   try {
-    const t = localStorage.getItem(THEME_KEY);
-    return t === "light" || t === "dark" ? t : null;
+    const stored = localStorage.getItem(THEME_KEY);
+    return stored === "light" || stored === "dark" ? stored : null;
   } catch {
     return null;
   }
@@ -29,8 +29,8 @@ export function currentTheme(): Theme {
 }
 
 export function applyStoredTheme(): void {
-  const t = storedTheme();
-  if (t) document.documentElement.setAttribute("data-theme", t);
+  const stored = storedTheme();
+  if (stored) document.documentElement.setAttribute("data-theme", stored);
   else document.documentElement.removeAttribute("data-theme");
 }
 

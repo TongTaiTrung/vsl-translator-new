@@ -45,9 +45,9 @@ class FeatureAugmentationTests(unittest.TestCase):
             self.assertTrue(all(-10.0 <= p <= 10.0 for p in pitches))
             self.assertGreater(len(set(pitches)), 1)
             flat = augment_sample(source, Path(tmp) / "raw", 1, 1.0, np.random.default_rng(3), pitch_degrees=0.0)[0]
-            features = np.stack([DataHandler._load_feature(source / f"{i}.npz") for i in range(8)])
+            features = np.stack([DataHandler._load_feature(source / f"{index}.npz") for index in range(8)])
             expected = add_feature_noise(features, np.random.default_rng(3), 1.0)
-            got = np.stack([DataHandler._load_feature(flat / f"{i}.npz") for i in range(8)])
+            got = np.stack([DataHandler._load_feature(flat / f"{index}.npz") for index in range(8)])
             np.testing.assert_allclose(got, expected, atol=1e-6)
             self.assertEqual(json.loads((flat / "meta.json").read_text())["augmentation"]["view_pitch_deg"], 0.0)
             with self.assertRaises(ValueError):

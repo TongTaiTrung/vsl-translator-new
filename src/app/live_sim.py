@@ -32,45 +32,45 @@ VIEWS = {
 IDLE_HAND_FRAMES = 3
 MIN_CONSECUTIVE = 2
 _POSE_WRISTS = (15, 16)
-_POSE_HAND_PTS = {15: (17, 19, 21), 16: (18, 20, 22)}
+_POSE_HAND_POINTS = {15: (17, 19, 21), 16: (18, 20, 22)}
 _POSE_ELBOWS = {15: 13, 16: 14}
 
 
-def _ease(n: int) -> np.ndarray:
-    s = np.arange(1, n + 1) / (n + 1)
-    return 1.0 - (3 * s ** 2 - 2 * s ** 3)
+def _ease(steps: int) -> np.ndarray:
+    progress = np.arange(1, steps + 1) / (steps + 1)
+    return 1.0 - (3 * progress ** 2 - 2 * progress ** 3)
 
 
-def _lift(pose_t, hands_t, world_t, dy: np.ndarray):
-    n = len(dy)
-    pose = np.repeat(pose_t[None], n, 0).copy()
-    hands = np.repeat(hands_t[None], n, 0).copy()
-    world = np.repeat(world_t[None], n, 0).copy()
-    for k in range(2):
-        if not np.isfinite(hands_t[k]).all():
+def _lift(pose_t, hands_t, world_t, y_offsets: np.ndarray):
+    step_count = len(y_offsets)
+    pose = np.repeat(pose_t[None], step_count, 0).copy()
+    hands = np.repeat(hands_t[None], step_count, 0).copy()
+    world = np.repeat(world_t[None], step_count, 0).copy()
+    for hand_index in range(2):
+        if not np.isfinite(hands_t[hand_index]).all():
             continue
-        w = _POSE_WRISTS[int(np.argmin([np.linalg.norm(hands_t[k, 0, :2] - pose_t[i, :2]) for i in _POSE_WRISTS]))]
-        for i in range(n):
-            hands[i, k, :, 1] += dy[i]
-            pose[i, [w, *_POSE_HAND_PTS[w]], 1] += dy[i]
-            pose[i, _POSE_ELBOWS[w], 1] += 0.5 * dy[i]
-            if (hands[i, k, :, 1] > 1.0).mean() > 0.5:
-                hands[i, k] = np.nan
-                world[i, k] = np.nan
+        wrist = _POSE_WRISTS[int(np.argmin([np.linalg.norm(hands_t[hand_index, 0, :2] - pose_t[step, :2]) for step in _POSE_WRISTS]))]
+        for step in range(step_count):
+            hands[step, hand_index, :, 1] += y_offsets[step]
+            pose[step, [wrist, *_POSE_HAND_POINTS[wrist]], 1] += y_offsets[step]
+            pose[step, _POSE_ELBOWS[wrist], 1] += 0.5 * y_offsets[step]
+            if (hands[step, hand_index, :, 1] > 1.0).mean() > 0.5:
+                hands[step, hand_index] = np.nan
+                world[step, hand_index] = np.nan
     return pose, hands, world
 
 
 def retime(pose, hands, world, *, speed: float = 1.0, pre_hold: int = 0, post_hold: int | None = None,
            still: bool = False):
-    T = len(pose)
+    frame_count = len(pose)
     if still:
         tip = hands[:, :, 8, :2]
         step = np.linalg.norm(np.diff(tip, axis=0), axis=2)
         step = np.where(np.isfinite(step), step, np.inf).min(1)
         calm = np.concatenate([[np.inf], step]) + np.concatenate([step, [np.inf]])
-        t = int(np.argmin(calm))
-        return tuple(np.repeat(a[t:t + 1], T, 0) for a in (pose, hands, world))
-    idx = np.round(np.arange(0, T - 1e-9, speed)).astype(int).clip(0, T - 1)
+        calm_frame = int(np.argmin(calm))
+        return tuple(np.repeat(array[calm_frame:calm_frame + 1], frame_count, 0) for array in (pose, hands, world))
+    idx = np.round(np.arange(0, frame_count - 1e-9, speed)).astype(int).clip(0, frame_count - 1)
     pose, hands, world = pose[idx], hands[idx], world[idx]
     if post_hold is not None:
         tip = hands[:, :, 8, :2]
@@ -80,7 +80,7 @@ def retime(pose, hands, world, *, speed: float = 1.0, pre_hold: int = 0, post_ho
             end = int(fast[-1]) + 1 + post_hold
             pose, hands, world = pose[:end + 1], hands[:end + 1], world[:end + 1]
     if pre_hold:
-        pose, hands, world = (np.concatenate([np.repeat(a[:1], pre_hold, 0), a]) for a in (pose, hands, world))
+        pose, hands, world = (np.concatenate([np.repeat(array[:1], pre_hold, 0), array]) for array in (pose, hands, world))
     return pose, hands, world
 
 
@@ -91,13 +91,13 @@ def build_live(pose, hands, world, *, entry: int, exit_: int, pre: int, post: in
     first, last = int(np.flatnonzero(has)[0]), int(np.flatnonzero(has)[-1])
     parts = []
 
-    def no_hands(t, n):
-        return (np.repeat(pose[t][None], n, 0), np.full((n, 2, 21, 3), np.nan, np.float32),
-                np.full((n, 2, 21, 3), np.nan, np.float32))
+    def no_hands(frame_index, frame_count):
+        return (np.repeat(pose[frame_index][None], frame_count, 0), np.full((frame_count, 2, 21, 3), np.nan, np.float32),
+                np.full((frame_count, 2, 21, 3), np.nan, np.float32))
 
-    def drop(t):
-        y = np.nanmin(hands[t, :, 0, 1])
-        return (1.15 - y)
+    def drop(frame_index):
+        top_y = np.nanmin(hands[frame_index, :, 0, 1])
+        return (1.15 - top_y)
 
     parts.append(no_hands(first, pre))
     if entry:
@@ -106,7 +106,7 @@ def build_live(pose, hands, world, *, entry: int, exit_: int, pre: int, post: in
     if exit_:
         parts.append(_lift(pose[last], hands[last], world[last], drop(last) * _ease(exit_)[::-1]))
     parts.append(no_hands(last, post))
-    return tuple(np.concatenate([p[i] for p in parts]).astype(np.float32) for i in range(3))
+    return tuple(np.concatenate([part[component_index] for part in parts]).astype(np.float32) for component_index in range(3))
 
 
 def replay(predictor, ensemble, features, preset) -> list[str]:
@@ -122,7 +122,7 @@ def replay(predictor, ensemble, features, preset) -> list[str]:
         if since % stride != stride - 1 or len(buffer) < min_frames:
             continue
         window = np.stack(buffer[-predict_frames:])
-        hands = int(sum(active_presence(f).any() for f in window))
+        hands = int(sum(active_presence(frame).any() for frame in window))
         if hands <= IDLE_HAND_FRAMES:
             candidate, count, blocked = None, 0, None
             continue
@@ -171,7 +171,7 @@ def main(argv=None) -> None:
         class_dir = args.data / name
         if not class_dir.is_dir():
             continue
-        for sample_dir in sorted(p for p in class_dir.iterdir() if p.is_dir()):
+        for sample_dir in sorted(entry for entry in class_dir.iterdir() if entry.is_dir()):
             meta = DataHandler._read_meta(sample_dir)
             lm_path = sample_dir / "landmarks.npz"
             if "augmentation" in meta or not lm_path.is_file():
@@ -182,13 +182,13 @@ def main(argv=None) -> None:
             fold = -1 if folds is None else int(folds[key])
             if fold not in ensembles:
                 ensembles[fold] = predictor.ensemble if fold < 0 else make_fast_ensemble(predictor, fold)
-            lm = load_landmarks(lm_path)
+            clip_landmarks = load_landmarks(lm_path)
             if args.view:
                 rng = np.random.default_rng([args.seed, *map(ord, key)])
-                lm = simulate_view(*lm, random_view(rng, **VIEWS[args.view]))
-            lm = retime(*lm, speed=args.speed, pre_hold=args.pre_hold,
+                clip_landmarks = simulate_view(*clip_landmarks, random_view(rng, **VIEWS[args.view]))
+            clip_landmarks = retime(*clip_landmarks, speed=args.speed, pre_hold=args.pre_hold,
                         post_hold=args.post_hold, still=args.still)
-            live = build_live(*lm, entry=args.entry, exit_=args.exit, pre=8, post=12)
+            live = build_live(*clip_landmarks, entry=args.entry, exit_=args.exit, pre=8, post=12)
             if live is None:
                 continue
             words = replay(predictor, ensembles[fold], features_from_landmarks(*live), PRESETS[args.preset])
@@ -196,20 +196,20 @@ def main(argv=None) -> None:
             stats[name]["n"] += 1
             stats[name]["first_ok" if first == name else "none" if first is None else "first_wrong"] += 1
             stats[name]["any_ok"] += name in words
-            stats[name]["extra"] += sum(w != name for w in words)
+            stats[name]["extra"] += sum(word != name for word in words)
             if first not in (None, name):
                 wrong[name][first] += 1
 
     total = Counter()
     print(f"{'lớp':12s}  n  đúng  sai  bỏ sót  thừa  nhầm thành")
-    for name, s in stats.items():
-        total.update(s)
-        print(f"{name:12s} {s['n']:2d} {s['first_ok'] / s['n']:5.0%} {s['first_wrong']:4d} {s['none']:6d} "
-              f"{s['extra']:5d}  {dict(wrong[name].most_common(3))}")
+    for name, class_stats in stats.items():
+        total.update(class_stats)
+        print(f"{name:12s} {class_stats['n']:2d} {class_stats['first_ok'] / class_stats['n']:5.0%} {class_stats['first_wrong']:4d} {class_stats['none']:6d} "
+              f"{class_stats['extra']:5d}  {dict(wrong[name].most_common(3))}")
     print(f"TỔNG: {total['first_ok']}/{total['n']} đúng ({total['first_ok'] / max(total['n'], 1):.1%}), "
           f"sai {total['first_wrong']}, bỏ sót {total['none']}, từ thừa {total['extra']}")
     if args.json:
-        args.json.write_text(json.dumps({k: dict(v) for k, v in stats.items()}, ensure_ascii=False, indent=1))
+        args.json.write_text(json.dumps({class_label: dict(counter) for class_label, counter in stats.items()}, ensure_ascii=False, indent=1))
 
 
 if __name__ == "__main__":

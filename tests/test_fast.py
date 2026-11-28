@@ -80,7 +80,7 @@ class FastVoterTests(unittest.TestCase):
 
 class FastStreamSessionTests(unittest.TestCase):
     def feed(self, session, seconds, fps=15):
-        return [session.update_features(hand_feature(), now=i / fps) for i in range(int(seconds * fps) + 1)]
+        return [session.update_features(hand_feature(), now=index / fps) for index in range(int(seconds * fps) + 1)]
 
     def test_strong_fast_prediction_starts_at_early_window_with_one_model(self):
         predictor = ScriptedPredictor(result("toi", 0.95, 0.9), result("toi", 0.9, 0.8))
@@ -134,7 +134,7 @@ class FastTranslatorTests(unittest.TestCase):
         session.update_frame = lambda feature, now=None: session.update_features(feature, now=now)
         translator = FastRealtimeTranslator(None, session=session, vote_config=VoteConfig(min_consecutive=5),
                                             composer=SentenceComposer(None, background=False))
-        committed = [translator.process(hand_feature(), now=i / 15)["committed"] for i in range(20)]
+        committed = [translator.process(hand_feature(), now=index / 15)["committed"] for index in range(20)]
         first = committed.index("toi")
         self.assertEqual(first, 17)
         self.assertEqual(translator.words, ["toi"])

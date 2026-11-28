@@ -124,11 +124,11 @@ class VSLPredictor:
         features = []
         landmarkers = LandmarkerLoader(running_mode=VisionRunningMode.VIDEO)
         try:
-            for i, frame in enumerate(frames_bgr):
+            for frame_index, frame in enumerate(frames_bgr):
                 if mirror_data:
                     frame = cv2.flip(frame, 1)
                 frame = frame_padding(frame)
-                timestamp = None if fps is None else round(i * 1000 / fps)
+                timestamp = None if fps is None else round(frame_index * 1000 / fps)
                 pose_result, hand_result, _ = landmarkers.detect(frame, timestamp_ms=timestamp)
                 features.append(extract(pose_result, hand_result))
         finally:

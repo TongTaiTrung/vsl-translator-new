@@ -49,7 +49,7 @@ class ReextractTests(unittest.TestCase):
             self.assertEqual(meta["frame_size"], FRAME_SIZE)
             self.assertEqual(meta["feature_version"], FEATURE_VERSION)
             self.assertEqual(meta["source_video"], "xin chao/3.mp4")
-            raw_features = np.stack([DataHandler._load_feature(target / f"{i}.npz") for i in range(8)])
+            raw_features = np.stack([DataHandler._load_feature(target / f"{index}.npz") for index in range(8)])
             self.assertEqual(process_sequence(raw_features).shape, (30, SEQ_FEATURE_DIM))
             self.assertEqual(find_raw_samples(raw), [video])
             pose, hands, _ = load_landmarks(target / LANDMARKS_FILE)

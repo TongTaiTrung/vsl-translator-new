@@ -114,9 +114,9 @@ def _is_vowel_mark(label: str) -> bool:
 def _apply_vowel_mark(text: str, label: str) -> str:
     mapping = {base: unicodedata.normalize("NFD", marked) for base, marked in VOWEL_MARKS[_mark_key(label)].items()}
     chars = unicodedata.normalize("NFD", text)
-    for i in range(len(chars) - 1, -1, -1):
-        if chars[i] in mapping and not (i + 1 < len(chars) and chars[i + 1] in "\u0302\u031b\u0306"):
-            chars = chars[:i] + mapping[chars[i]] + chars[i + 1:]
+    for position in range(len(chars) - 1, -1, -1):
+        if chars[position] in mapping and not (position + 1 < len(chars) and chars[position + 1] in "\u0302\u031b\u0306"):
+            chars = chars[:position] + mapping[chars[position]] + chars[position + 1:]
             break
     return unicodedata.normalize("NFC", chars)
 
@@ -162,10 +162,10 @@ def _split_syllables(run: str) -> list[str]:
 def _apply_tone(syllable: str, mark: str) -> str:
     match = _SYLLABLE_RE.match(syllable)
     if not match:
-        idx = max((i for i, c in enumerate(syllable) if c in _VOWELS), default=-1)
+        idx = max((position for position, char in enumerate(syllable) if char in _VOWELS), default=-1)
         return unicodedata.normalize("NFC", syllable[:idx + 1] + mark + syllable[idx + 1:]) if idx >= 0 else syllable
-    onset, vowels, coda = (g or "" for g in match.groups())
-    special = [i for i, c in enumerate(vowels) if c in "ăâêôơư"]
+    onset, vowels, coda = (group_text or "" for group_text in match.groups())
+    special = [position for position, char in enumerate(vowels) if char in "ăâêôơư"]
     if special:
         pos = special[-1]
     elif coda:

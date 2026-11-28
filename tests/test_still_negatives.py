@@ -9,15 +9,15 @@ from src.features import extract as fx
 from src.model import training as tr
 
 
-def _flick(start: int = 8, dy: float = -0.6, T: int = 30, side: int = 1, frames: int = 4) -> np.ndarray:
-    raw = np.full((T, fx.FEATURE_DIM), np.nan, dtype=np.float32)
+def _flick(start: int = 8, y_offset: float = -0.6, frame_count: int = 30, side: int = 1, frames: int = 4) -> np.ndarray:
+    raw = np.full((frame_count, fx.FEATURE_DIM), np.nan, dtype=np.float32)
     raw[:, fx.FEATURE_SLICES["presence"]] = 0.0
-    hp = fx.FEATURE_SLICES["hand_pos"].start + 9 * side
+    hand_pos_start = fx.FEATURE_SLICES["hand_pos"].start + 9 * side
     x = 0.3 if side else -0.3
     rng = np.random.default_rng(start)
-    y = 0.2 + dy * np.clip((np.arange(T) - start) / frames, 0.0, 1.0) + rng.normal(0, 0.002, T)
+    labels = 0.2 + y_offset * np.clip((np.arange(frame_count) - start) / frames, 0.0, 1.0) + rng.normal(0, 0.002, frame_count)
     for k, off in enumerate((0.0, 0.1, -0.2)):
-        raw[:, hp + 3 * k], raw[:, hp + 3 * k + 1], raw[:, hp + 3 * k + 2] = x, y + off, 0.0
+        raw[:, hand_pos_start + 3 * k], raw[:, hand_pos_start + 3 * k + 1], raw[:, hand_pos_start + 3 * k + 2] = x, labels + off, 0.0
     raw[:, fx.PRESENCE_SLICE.start + side] = 1.0
     return raw
 
@@ -42,7 +42,7 @@ class StillVersionTests(unittest.TestCase):
         self.assertEqual(len(versions), 2)
 
     def test_static_or_missing_hand_gives_nothing(self):
-        self.assertEqual(fx.still_versions(fx.process_sequence(_flick(dy=0.0))), [])
+        self.assertEqual(fx.still_versions(fx.process_sequence(_flick(y_offset=0.0))), [])
         empty = np.full((30, fx.FEATURE_DIM), np.nan, dtype=np.float32)
         empty[:, fx.PRESENCE_SLICE] = 0.0
         self.assertEqual(fx.still_versions(fx.process_sequence(empty)), [])
@@ -53,16 +53,16 @@ class StillVersionTests(unittest.TestCase):
 
 class DynamicClassTests(unittest.TestCase):
     def test_classes_split_by_median_stroke(self):
-        X = np.stack([fx.process_sequence(_flick(start=s, dy=dy)) for dy in (-0.6, 0.0) for s in (5, 10, 15)])
-        y = np.repeat([0, 1], 3)
-        np.testing.assert_array_equal(tr.dynamic_classes(X, y, 3, 0.25), [True, False, False])
-        self.assertFalse(tr.dynamic_classes(X[..., :fx.FEATURE_DIM], y, 3, 0.25).any())
+        sequences = np.stack([fx.process_sequence(_flick(start=s, y_offset=y_offset)) for y_offset in (-0.6, 0.0) for s in (5, 10, 15)])
+        labels = np.repeat([0, 1], 3)
+        np.testing.assert_array_equal(tr.dynamic_classes(sequences, labels, 3, 0.25), [True, False, False])
+        self.assertFalse(tr.dynamic_classes(sequences[..., :fx.FEATURE_DIM], labels, 3, 0.25).any())
 
     def test_pool_is_capped_and_empty_for_static_clips(self):
-        X = np.stack([fx.process_sequence(_flick(start=s)) for s in (5, 10, 15)])
-        self.assertEqual(tr.still_negative_pool(X).shape, (9, 30, fx.SEQ_FEATURE_DIM))
-        self.assertEqual(len(tr.still_negative_pool(X, max_count=4)), 4)
-        static = np.stack([fx.process_sequence(_flick(dy=0.0))])
+        sequences = np.stack([fx.process_sequence(_flick(start=s)) for s in (5, 10, 15)])
+        self.assertEqual(tr.still_negative_pool(sequences).shape, (9, 30, fx.SEQ_FEATURE_DIM))
+        self.assertEqual(len(tr.still_negative_pool(sequences, max_count=4)), 4)
+        static = np.stack([fx.process_sequence(_flick(y_offset=0.0))])
         self.assertEqual(tr.still_negative_pool(static).shape, (0, 30, fx.SEQ_FEATURE_DIM))
 
 
@@ -73,16 +73,16 @@ class UniformLossTests(unittest.TestCase):
 
     def test_negatives_push_the_model_towards_uniform_output(self):
         rng = np.random.default_rng(0)
-        y = np.arange(24) % 3
-        X = (rng.normal(size=(24, 30, fx.SEQ_FEATURE_DIM)) + y[:, None, None]).astype(np.float32)
+        labels = np.arange(24) % 3
+        sequences = (rng.normal(size=(24, 30, fx.SEQ_FEATURE_DIM)) + labels[:, None, None]).astype(np.float32)
         neg = (rng.normal(size=(16, 30, fx.SEQ_FEATURE_DIM)) + 1.0).astype(np.float32)
-        X, y, neg = torch.from_numpy(X), torch.from_numpy(y.astype(np.int64)), torch.from_numpy(neg)
+        sequences, labels, neg = torch.from_numpy(sequences), torch.from_numpy(labels.astype(np.int64)), torch.from_numpy(neg)
         cfg = dict(d_model=16, gru_hidden=8, n_blocks=1, warmup_epochs=1, batch_size=8,
                    extra_hand_probability=0.0, seed=0)
         entropy = []
         for weight in (0.0, 2.0):
             tr.set_seed(0)
-            model, _ = tr.train_one(X, y, None, None, 3, tr.default_groups(fx.SEQ_FEATURE_DIM),
+            model, _ = tr.train_one(sequences, labels, None, None, 3, tr.default_groups(fx.SEQ_FEATURE_DIM),
                                     tr.Config(**cfg, still_negative_weight=weight), torch.device("cpu"),
                                     fixed_epochs=8, log_every=0, negatives=neg)
             with torch.no_grad():

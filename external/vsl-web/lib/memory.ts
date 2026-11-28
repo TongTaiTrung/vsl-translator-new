@@ -23,7 +23,7 @@ export interface MemoryPayload {
 export const MAX_PER_LABEL = 5;
 export const MAX_AUTO_PER_LABEL = 3;
 
-export const sourceOf = (s: Sample): SampleSource => s.source ?? "manual";
+export const sourceOf = (sample: Sample): SampleSource => sample.source ?? "manual";
 
 const DB_NAME = "vsl-web";
 const STORE = "samples";
@@ -41,29 +41,29 @@ function open(): Promise<IDBDatabase> {
 }
 
 async function run<T>(mode: IDBTransactionMode, work: (store: IDBObjectStore) => IDBRequest<T> | void): Promise<T | undefined> {
-  const db = await open();
+  const database = await open();
   try {
     return await new Promise<T | undefined>((resolve, reject) => {
-      const tx = db.transaction(STORE, mode);
-      const request = work(tx.objectStore(STORE));
-      tx.oncomplete = () => resolve(request ? request.result : undefined);
-      tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error);
+      const transaction = database.transaction(STORE, mode);
+      const request = work(transaction.objectStore(STORE));
+      transaction.oncomplete = () => resolve(request ? request.result : undefined);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
     });
   } finally {
-    db.close();
+    database.close();
   }
 }
 
 export async function listSamples(): Promise<Sample[]> {
   const all = (await run<Sample[]>("readonly", (store) => store.getAll())) ?? [];
-  return all.sort((a, b) => a.createdAt - b.createdAt);
+  return all.sort((first, second) => first.createdAt - second.createdAt);
 }
 
 export function evictionFor(existing: Sample[], sample: Sample): Sample[] | null {
-  const same = existing.filter((s) => s.label === sample.label).sort((a, b) => a.createdAt - b.createdAt);
-  const autos = same.filter((s) => sourceOf(s) === "auto");
-  const manuals = same.filter((s) => sourceOf(s) === "manual");
+  const same = existing.filter((sample) => sample.label === sample.label).sort((first, second) => first.createdAt - second.createdAt);
+  const autos = same.filter((sample) => sourceOf(sample) === "auto");
+  const manuals = same.filter((sample) => sourceOf(sample) === "manual");
   const drop: Sample[] = [];
   if (sourceOf(sample) === "auto") {
     if (manuals.length >= MAX_PER_LABEL) return null;
@@ -80,7 +80,7 @@ export async function addSample(sample: Sample): Promise<boolean> {
   const drop = evictionFor(await listSamples(), sample);
   if (drop === null) return false;
   await run("readwrite", (store) => {
-    drop.forEach((s) => store.delete(s.id));
+    drop.forEach((sample) => store.delete(sample.id));
     store.put(sample);
   });
   return true;
@@ -91,7 +91,7 @@ export async function deleteSample(id: string): Promise<void> {
 }
 
 export async function deleteLabel(label: string): Promise<void> {
-  const ids = (await listSamples()).filter((s) => s.label === label).map((s) => s.id);
+  const ids = (await listSamples()).filter((sample) => sample.label === label).map((sample) => sample.id);
   await run("readwrite", (store) => ids.forEach((id) => store.delete(id)));
 }
 
@@ -100,7 +100,7 @@ export async function clearSamples(): Promise<void> {
 }
 
 export function memoryPayload(samples: Sample[], strength: number, featureDim: number | undefined): MemoryPayload | null {
-  const usable = samples.filter((s) => featureDim === undefined || s.featureDim === featureDim);
+  const usable = samples.filter((sample) => featureDim === undefined || sample.featureDim === featureDim);
   if (usable.length === 0) return null;
   return { strength, exemplars: usable.map(({ label, features, frames }) => ({ label, features, frames })) };
 }

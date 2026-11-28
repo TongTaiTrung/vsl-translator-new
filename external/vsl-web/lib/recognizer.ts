@@ -414,7 +414,7 @@ export class Recognizer {
     const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
     this.emit({
       resolution: `${this.video.videoWidth}×${this.video.videoHeight}`,
-      cameraCount: devices.filter((d) => d.kind === "videoinput").length,
+      cameraCount: devices.filter((device) => device.kind === "videoinput").length,
     });
   }
 
@@ -524,13 +524,13 @@ export class Recognizer {
     if (frame) this.addFrame(frame);
   }
 
-  private measureFps(t: number): void {
+  private measureFps(timestamp: number): void {
     if (this.lastFrameT !== null) {
-      const dt = t - this.lastFrameT;
-      this.frameInterval = this.frameInterval === null ? dt : this.frameInterval * 0.9 + dt * 0.1;
+      const delta = timestamp - this.lastFrameT;
+      this.frameInterval = this.frameInterval === null ? delta : this.frameInterval * 0.9 + delta * 0.1;
       this.emit({ captureFps: Math.round(10000 / this.frameInterval) / 10 });
     }
-    this.lastFrameT = t;
+    this.lastFrameT = timestamp;
   }
 
   private captureFrame(frame: Frame): void {
@@ -547,7 +547,7 @@ export class Recognizer {
     if (!capture) return;
     this.capture = null;
     if (err) capture.reject(err);
-    else capture.resolve(capture.frames.map((f) => f.lm));
+    else capture.resolve(capture.frames.map((captured) => captured.lm));
     this.resetWindow();
     this.idleSince = null;
     this.emit({ capture: null });
@@ -574,11 +574,11 @@ export class Recognizer {
   private grab(): Frame | null {
     const { video, detector } = this;
     if (!detector || !video.videoWidth || !video.videoHeight || video.readyState < 2) return null;
-    const t = performance.now();
+    const timestamp = performance.now();
     try {
-      const lm = detector.detect(video, t, this.options.mirrorData);
-      this.emit({ detectMs: Math.round(performance.now() - t) });
-      return { lm, t };
+      const landmarks = detector.detect(video, timestamp, this.options.mirrorData);
+      this.emit({ detectMs: Math.round(performance.now() - timestamp) });
+      return { lm: landmarks, t: timestamp };
     } catch (err) {
       this.emit({ error: `Lỗi MediaPipe: ${(err as Error).message}` });
       return null;
@@ -646,8 +646,8 @@ export class Recognizer {
     const reset = this.resetNext;
     this.resetNext = false;
     const payload = {
-      landmarks: frames.map((f) => f.lm),
-      timestamps: frames.map((f) => f.t),
+      landmarks: frames.map((frame) => frame.lm),
+      timestamps: frames.map((frame) => frame.t),
       reset,
       predict,
       window: this.options.predictFrames,
@@ -740,7 +740,7 @@ export class Recognizer {
     if (committed) {
       const since = (this.windowLandmarks.at(-1)?.t ?? 0) - (this.options.predictFrames - 0.5) * this.frameMs;
       this.committedWindow = {
-        word: committed, frames: this.windowLandmarks.filter((f) => f.t >= since).map((f) => f.lm),
+        word: committed, frames: this.windowLandmarks.filter((frame) => frame.t >= since).map((frame) => frame.lm),
         confidence: prediction.confidence, memory: prediction.memory,
       };
       this.sentenceWindows.push(this.committedWindow);

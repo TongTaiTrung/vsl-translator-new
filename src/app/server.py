@@ -82,8 +82,8 @@ class FrameFeatureExtractor:
 def extract_features(frames_bgr: list[np.ndarray], *, fps: float, mirror_data: bool) -> np.ndarray:
     extractor = FrameFeatureExtractor()
     try:
-        return np.stack([extractor.extract(frame, timestamp_ms=round(i * 1000 / fps), mirror_data=mirror_data)
-                         for i, frame in enumerate(frames_bgr)])
+        return np.stack([extractor.extract(frame, timestamp_ms=round(frame_index * 1000 / fps), mirror_data=mirror_data)
+                         for frame_index, frame in enumerate(frames_bgr)])
     finally:
         _close_later(extractor)
 
@@ -123,12 +123,12 @@ class StreamSession:
         if timestamps is None:
             step = 1000 / fps
             start = 0.0 if self.last_timestamp < 0 else self.last_timestamp + step
-            raw = [start + step * i for i in range(count)]
+            raw = [start + step * offset for offset in range(count)]
         else:
             raw = timestamps
         result = []
-        for t in raw:
-            self.last_timestamp = max(self.last_timestamp + 1, round(t))
+        for raw_time in raw:
+            self.last_timestamp = max(self.last_timestamp + 1, round(raw_time))
             result.append(self.last_timestamp)
         return result
 
@@ -258,10 +258,10 @@ FILL_MODES = ("interp", "repeat")
 
 
 def repeat_frames(features: np.ndarray, target_len: int) -> np.ndarray:
-    n = len(features)
-    if n == 0 or n >= target_len:
+    frame_count = len(features)
+    if frame_count == 0 or frame_count >= target_len:
         return features
-    return features[(np.arange(target_len) * n) // target_len]
+    return features[(np.arange(target_len) * frame_count) // target_len]
 
 
 def _int_option(body: dict, key: str, default: int, low: int, high: int) -> int:
@@ -307,11 +307,11 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
             raise BadRequest("Body phải là JSON object")
         return body
 
-    def check_count(n: int, name: str) -> None:
-        if n == 0:
+    def check_count(item_count: int, name: str) -> None:
+        if item_count == 0:
             raise BadRequest(f"'{name}' không được rỗng")
-        if expected_frames is not None and n != expected_frames:
-            raise BadRequest(f"Cần đúng {expected_frames} frame, nhận {n}")
+        if expected_frames is not None and item_count != expected_frames:
+            raise BadRequest(f"Cần đúng {expected_frames} frame, nhận {item_count}")
 
     def stream_body() -> tuple[dict, list[np.ndarray] | None, np.ndarray | None]:
         if request.mimetype == "multipart/form-data":
@@ -324,7 +324,7 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
             files = request.files.getlist("frames")
             if not 1 <= len(files) <= MAX_STREAM_FRAMES:
                 raise BadRequest(f"'frames' phải là mảng 1–{MAX_STREAM_FRAMES} ảnh")
-            return body, [decode_image(f.read()) for f in files], None
+            return body, [decode_image(item.read()) for item in files], None
         body = json_body()
         if "landmarks" in body:
             landmarks = body["landmarks"]
@@ -334,7 +334,7 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
         frames = body.get("frames")
         if not isinstance(frames, list) or not 1 <= len(frames) <= MAX_STREAM_FRAMES:
             raise BadRequest(f"'frames' phải là mảng 1–{MAX_STREAM_FRAMES} ảnh base64")
-        return body, [decode_frame(f) for f in frames], None
+        return body, [decode_frame(item) for item in frames], None
 
     @app.after_request
     def allow_cors(response):
@@ -375,7 +375,7 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
             if not isinstance(frames, list):
                 raise BadRequest("'frames' phải là mảng ảnh base64")
             check_count(len(frames), "frames")
-            features = feature_extractor([decode_frame(f) for f in frames], fps=fps, mirror_data=mirror_data)
+            features = feature_extractor([decode_frame(encoded_frame) for encoded_frame in frames], fps=fps, mirror_data=mirror_data)
         elif "landmarks" in body:
             landmarks = body["landmarks"]
             if not isinstance(landmarks, list):
@@ -443,12 +443,12 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
         except ValueError as exc:
             raise BadRequest(str(exc)) from None
         hand_frames = count_hand_frames(features)
-        ok = hand_frames >= max(MIN_SAMPLE_HAND_FRAMES, len(features) // 2)
-        result = run_model(features, 3) if ok else None
+        accepted = hand_frames >= max(MIN_SAMPLE_HAND_FRAMES, len(features) // 2)
+        result = run_model(features, 3) if accepted else None
         warning = None
         if result is not None and result["top"][0]["label"] != label and result["top"][0]["confidence"] >= 0.9:
             warning = "model_disagrees"
-        return jsonify(ok=ok, reason=None if ok else "few_hands", warning=warning, label=label,
+        return jsonify(ok=accepted, reason=None if accepted else "few_hands", warning=warning, label=label,
                        features=encode_features(features), frames=int(len(features)), hand_frames=hand_frames,
                        prediction=result)
 
@@ -466,7 +466,7 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
         timestamps = body.get("timestamps")
         if timestamps is not None and (
             not isinstance(timestamps, list) or len(timestamps) != count
-            or not all(isinstance(t, (int, float)) and not isinstance(t, bool) and np.isfinite(t) for t in timestamps)
+            or not all(isinstance(timestamp, (int, float)) and not isinstance(timestamp, bool) and np.isfinite(timestamp) for timestamp in timestamps)
         ):
             raise BadRequest("'timestamps' phải là mảng số, cùng độ dài với 'frames'/'landmarks'")
         reset, predict_now = body.get("reset", False), body.get("predict", True)
@@ -486,8 +486,8 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
                 session.clear()
             times = session.next_timestamps(timestamps, count, fps)
             if given is None:
-                given = [session.extractor.extract(frame, timestamp_ms=ts, mirror_data=mirror_data)
-                         for frame, ts in zip(decoded, times)]
+                given = [session.extractor.extract(frame, timestamp_ms=timestamp_ms, mirror_data=mirror_data)
+                         for frame, timestamp_ms in zip(decoded, times)]
             session.append(given, times, fps)
             session.touched = time.monotonic()
             recent, covered, buffered = session.recent(window_size, fps)

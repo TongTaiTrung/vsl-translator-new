@@ -49,12 +49,12 @@ export function PersonalizeSheet(props: Props) {
   useEffect(() => setCorrection(committed?.word ?? ""), [committed]);
 
   const counts = new Map<string, { manual: number; auto: number }>();
-  samples.forEach((s) => {
-    const c = counts.get(s.label) ?? { manual: 0, auto: 0 };
-    c[sourceOf(s)] += 1;
-    counts.set(s.label, c);
+  samples.forEach((sample) => {
+    const labelCounts = counts.get(sample.label) ?? { manual: 0, auto: 0 };
+    labelCounts[sourceOf(sample)] += 1;
+    counts.set(sample.label, labelCounts);
   });
-  const autoTotal = samples.filter((s) => sourceOf(s) === "auto").length;
+  const autoTotal = samples.filter((sample) => sourceOf(sample) === "auto").length;
   const recordable = running && !busy;
 
   const status = !enabled
@@ -142,7 +142,7 @@ export function PersonalizeSheet(props: Props) {
                 </p>
                 <div className="memory-correct">
                   <select value={correction} onChange={(e) => setCorrection(e.target.value)} aria-label="Từ đúng">
-                    {classes.map((c) => <option key={c} value={c}>{c}</option>)}
+                    {classes.map((label) => <option key={label} value={label}>{label}</option>)}
                   </select>
                   <button className="btn btn-ghost" disabled={busy || !correction}
                     onClick={() => props.onSaveCorrection(correction)}>
@@ -160,21 +160,21 @@ export function PersonalizeSheet(props: Props) {
             {!running && <p className="help">Bật camera để ghi mẫu.</p>}
             <ul className="memory-list">
               {classes.map((label) => {
-                const c = counts.get(label) ?? { manual: 0, auto: 0 };
-                const n = c.manual + c.auto;
+                const labelCounts = counts.get(label) ?? { manual: 0, auto: 0 };
+                const total = labelCounts.manual + labelCounts.auto;
                 return (
                   <li key={label}>
                     <span className="memory-label">{label}</span>
-                    <span className="memory-dots" aria-label={`${c.manual} mẫu ghi tay, ${c.auto} mẫu tự học, tối đa ${MAX_PER_LABEL}`}
-                      title={`${c.manual} ghi tay · ${c.auto} tự học`}>
+                    <span className="memory-dots" aria-label={`${labelCounts.manual} mẫu ghi tay, ${labelCounts.auto} mẫu tự học, tối đa ${MAX_PER_LABEL}`}
+                      title={`${labelCounts.manual} ghi tay · ${labelCounts.auto} tự học`}>
                       {Array.from({ length: MAX_PER_LABEL }, (_, i) => (
-                        <i key={i} className={i < c.manual ? "on" : i < n ? "auto" : ""} />
+                        <i key={i} className={i < labelCounts.manual ? "on" : i < total ? "auto" : ""} />
                       ))}
                     </span>
                     <button className="link" disabled={!recordable} onClick={() => props.onRecord(label)}>
                       Ghi mẫu
                     </button>
-                    <button className="link danger" disabled={n === 0 || busy} onClick={() => props.onDeleteLabel(label)}
+                    <button className="link danger" disabled={total === 0 || busy} onClick={() => props.onDeleteLabel(label)}
                       aria-label={`Xoá mẫu của ${label}`}>
                       Xoá
                     </button>

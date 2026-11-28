@@ -15,10 +15,10 @@ class LandmarkerLoader:
         def __init__(self):
             self._offset_ns = _clock() - 500_000
             self.timestamp = -1
-        def get2update(self):
+        def next_timestamp(self):
             current = (_clock() - self._offset_ns) // 1_000_000
-            ts = self.timestamp
-            self.timestamp = current if current > ts else ts + 1
+            last_timestamp = self.timestamp
+            self.timestamp = current if current > last_timestamp else last_timestamp + 1
             return self.timestamp
         def reset(self):
             self._offset_ns = _clock() - 500_000
@@ -106,7 +106,7 @@ class LandmarkerLoader:
             return self._pose_landmarker.detect(mp_img), self._hand_landmarker.detect(mp_img), None
 
         if timestamp_ms is None:
-            timestamp_ms = self._time_stamper.get2update()
+            timestamp_ms = self._time_stamper.next_timestamp()
         elif timestamp_ms <= self._time_stamper.timestamp:
             raise ValueError("timestamp_ms must increase on every frame.")
         else:

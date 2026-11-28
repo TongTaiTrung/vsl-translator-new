@@ -21,11 +21,11 @@ RIGHT_SHAPE = slice(S["handshape"].start + 38, S["handshape"].stop)
 RIGHT_SCALE = S["hand_scale"].start + 1
 
 
-def _clip(T: int = 10, seed: int = 0):
+def _clip(frame_count: int = 10, seed: int = 0):
     rng = np.random.default_rng(seed)
     pose0, image0, world0 = _scene()
     marks = []
-    for t in range(T):
+    for t in range(frame_count):
         pose, image = pose0.copy(), image0.copy()
         drift = np.array([0.003 * t, -0.002 * t, 0.0]) + rng.normal(0, 0.001, 3)
         pose[16] += drift
@@ -99,8 +99,8 @@ class LandmarkAugmentTests(unittest.TestCase):
             raw = Path(d) / "raw"
             source = Path(d) / "processed" / "m" / "0"
             source.mkdir(parents=True)
-            for i, f in enumerate(features):
-                np.savez_compressed(source / f"{i}.npz", feature=f)
+            for index, f in enumerate(features):
+                np.savez_compressed(source / f"{index}.npz", feature=f)
             (source / "meta.json").write_text(json.dumps({"session": "s1", "feature_version": FEATURE_VERSION}))
             save_landmarks(source / LANDMARKS_FILE, *marks)
             self.assertEqual(len(DataHandler._frame_paths(source)[0]), len(features))
@@ -129,9 +129,9 @@ class BenchmarkTests(unittest.TestCase):
     def test_build_excludes_holdout_and_keeps_groups(self):
         marks = _clip()
         feats = features_from_landmarks(*marks)
-        clips = [Clip("m", "day1", str(i), feats, marks) for i in range(2)]
-        clips += [Clip("m", "day2", str(i + 2), feats, marks) for i in range(2)]
-        clips += [Clip("n", "day1", str(i), feats, marks) for i in range(2)]
+        clips = [Clip("m", "day1", str(index), feats, marks) for index in range(2)]
+        clips += [Clip("m", "day2", str(index + 2), feats, marks) for index in range(2)]
+        clips += [Clip("n", "day1", str(index), feats, marks) for index in range(2)]
         data = build_dataset(clips, parse_holdout(["m@day2"]), "landmark", 5, np.random.default_rng(0))
         self.assertEqual(list(data["classes"]), ["m", "n"])
         self.assertNotIn("day2", set(data["sessions"]))
@@ -146,10 +146,10 @@ class BenchmarkTests(unittest.TestCase):
         clips = []
         for cls, offset in (("m", 0.0), ("n", 3.0)):
             for day in ("day1", "day2"):
-                for i in range(3):
+                for index in range(3):
                     f = base.copy()
                     f[:, S["hand_pos"]] += offset + rng.normal(0, 0.01, f[:, S["hand_pos"]].shape)
-                    clips.append(Clip(cls, day, str(i), f, None))
+                    clips.append(Clip(cls, day, str(index), f, None))
         report = session_invariance(clips, day_chars=4)
         self.assertEqual(report["m"]["cross_session_nn"], 1.0)
         self.assertLess(report["m"]["ratio"], 1.0)

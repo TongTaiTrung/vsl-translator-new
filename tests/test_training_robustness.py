@@ -44,8 +44,8 @@ class TrainingRobustnessTests(unittest.TestCase):
         self.assertEqual(report[0]["samples"], 1)
 
     def test_adding_one_hand_keeps_original_hand_and_neutralizes_shared_features(self):
-        D = SEQ_FEATURE_DIM
-        x = torch.arange(2 * 4 * D, dtype=torch.float32).reshape(2, 4, D)
+        feature_dim = SEQ_FEATURE_DIM
+        x = torch.arange(2 * 4 * feature_dim, dtype=torch.float32).reshape(2, 4, feature_dim)
         donor = torch.full_like(x, 9.0)
         masked = add_distractor_hand_features(x, donor, torch.tensor([0, 1]))
         left, right, shared = (SIDE_COLUMNS[k] for k in ("left", "right", "shared"))

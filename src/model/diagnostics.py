@@ -1,16 +1,6 @@
-"""Chẩn đoán độc lập cho ensemble: open-set, nhiễu, hình học embedding.
+"""Standalone ensemble diagnostics: open-set, noise robustness, distractor hand and embedding geometry.
 
-Chuyển thể từ scratch audit của Agent 2 (/tmp/vsl_audit/agent2/common.py,
-stress_extra.py) thành một module dùng lại được + CLI. Chỉ gọi các hàm/lớp
-PUBLIC của ``src.model.training`` (train_one, make_folds, Config, get_device,
-set_seed, default_groups, fit_temperature, Normalizer) — KHÔNG sửa training.py.
-
-Lấy embedding (vector trước lớp head) bằng forward-pre-hook trên
-``model.head`` thay vì sửa VSLNet, như Agent 2 đã làm trong common.py.
-
-CLI:
-    python -m src.model.diagnostics --data data/cache/dataset.npz \
-        --out runs/experiments/p1/agent3 --seeds 42 7 1
+Usage: python -m src.model.diagnostics --data <npz> --out <dir>
 """
 
 from __future__ import annotations
@@ -32,7 +22,6 @@ __all__ = [
 
 
 def load_dataset_npz(path):
-    """Đọc 1 file .npz kiểu data/cache/dataset.npz; các khoá groups/augmented là tuỳ chọn."""
     d = np.load(path, allow_pickle=True)
     X = d["X"].astype(np.float32)
     y = d["y"].astype(np.int64)
@@ -45,10 +34,6 @@ def load_dataset_npz(path):
 
 
 def _fit_fold(X, trn, va, y_used, n_classes, layout, cfg, device):
-    """Normalizer + train_one giống run_training (presence/norm_stats theo cfg).
-
-    getattr: cũng chạy được với module training P1 đóng băng (baseline S0, không có các cờ mới).
-    """
     presence_norm = getattr(cfg, "presence_norm", False)
     norm = tr.Normalizer(X[trn], presence_norm) if presence_norm else tr.Normalizer(X[trn])
     kwargs = {}
@@ -69,7 +54,6 @@ def _fit_fold(X, trn, va, y_used, n_classes, layout, cfg, device):
 
 
 def _fold_assignment(y, groups, vmask, k, seed):
-    """Gán fold cho MỌI mẫu dựa trên fold của nhóm gốc (augmentation theo origin)."""
     fold_of_originals = tr.make_folds(y[vmask], k, groups[vmask], seed)
     fold_by_group = dict(zip(groups[vmask], fold_of_originals))
     return np.asarray([fold_by_group.get(g, -1) for g in groups], dtype=np.int64)
@@ -90,7 +74,6 @@ def _softmax(z: np.ndarray) -> np.ndarray:
 
 @torch.no_grad()
 def _logits_and_embedding(model, Xn: np.ndarray, device):
-    """logits + vector trước head, qua forward-pre-hook (không cần sửa VSLNet)."""
     captured = []
     hook = model.head.register_forward_pre_hook(lambda _mod, inp: captured.append(inp[0].detach()))
     model.eval()
@@ -101,7 +84,6 @@ def _logits_and_embedding(model, Xn: np.ndarray, device):
 
 def run_cv(X, y, classes, groups, vmask, cfg: tr.Config, device=None, k: int = 5,
            folds_to_run: int | None = None):
-    """Lặp lại đúng vòng lặp fold của run_training (không lưu), trả về model/norm/va mỗi fold."""
     device = device or tr.get_device()
     tr.set_seed(cfg.seed)
     layout = tr.default_groups(X.shape[-1])
@@ -119,8 +101,6 @@ def run_cv(X, y, classes, groups, vmask, cfg: tr.Config, device=None, k: int = 5
 
 
 def diagnose(X, y, classes, vmask, res, device, noise_sigma: float = 1.0, seed: int = 0) -> dict:
-    """Chỉ số OOF-trên-mẫu-gốc: logit gap, hình học embedding (cặp lớp gần nhau),
-    và tỉ lệ logit-gap trung vị giữ được khi thêm nhiễu Gauss sigma=1 (đơn vị: std toàn cục/cột)."""
     C = len(classes)
     N = len(y)
     global_std = X.reshape(-1, X.shape[-1]).std(0).astype(np.float32)
@@ -181,9 +161,6 @@ def diagnose(X, y, classes, vmask, res, device, noise_sigma: float = 1.0, seed: 
 def open_set_hold_one_class_out(X, y, classes, groups, vmask, device, seed, held_classes=None,
                                  fold: int = 0, k: int = 5, min_confidence: float = 0.65,
                                  min_gap: float = 0.08, cfg: tr.Config | None = None) -> list[dict]:
-    """Huấn luyện bỏ hẳn 1 lớp khỏi vocab, đo tỉ lệ bị NHẬN NHẦM khi lớp đó xuất
-    hiện lúc suy luận (proxy cho 1 dấu hiệu KHÁC chưa học, không phải cho input
-    không phải dấu hiệu nào cả — xem gaussian_noise_false_acceptance)."""
     tr.set_seed(seed)
     cfg = cfg or _notebook_like_config(seed)
     fold_of = _fold_assignment(y, groups, vmask, k, seed)
@@ -221,9 +198,6 @@ def open_set_hold_one_class_out(X, y, classes, groups, vmask, device, seed, held
 def gaussian_noise_false_acceptance(res, classes, device, n_samples: int = 50, seed: int = 0,
                                      min_confidence: float = 0.65, min_gap: float = 0.08,
                                      temperatures=(1.0, 0.2)) -> dict:
-    """Đưa nhiễu Gauss chuẩn (đã ở thang 'đã chuẩn hoá', không qua Normalizer vì
-    không đại diện cho dấu hiệu nào) qua các model fold đã train sẵn trong `res`
-    (từ run_cv) -> tỉ lệ bị chấp nhận nhầm theo luật của predictor thật."""
     rng = np.random.default_rng(seed)
     in_dim = res["norms"][0].mean.shape[-1]
     T = res["va"][0]
@@ -254,12 +228,6 @@ def gaussian_noise_false_acceptance(res, classes, device, n_samples: int = 50, s
 
 
 def _composite_left_hand(target: np.ndarray, donor: np.ndarray, sl: dict, lowered_y: float | None):
-    """Clip thô một tay + tay trái của donor (hai tay); tính lại inter_hand_vec/hand_contact.
-
-    lowered_y: tay phụ đứng yên (frame giữa của donor) hạ tâm lòng bàn tay xuống y này.
-    shortcut: body_contact của tay hạ giữ nguyên của donor, và cặp gần nhất chỉ xét 3x3 điểm
-    (palm/cái/trỏ) vì không lưu landmark; cần landmark gốc nếu muốn mô phỏng tuyệt đối.
-    """
     T = len(target)
     left = np.concatenate([np.arange(sl[n].start, sl[n].start + (sl[n].stop - sl[n].start) // 2)
                            for n in ("hand_pos", "body_contact", "hand_scale", "handshape", "orientation",
@@ -283,11 +251,6 @@ def _composite_left_hand(target: np.ndarray, donor: np.ndarray, sl: dict, lowere
 
 def distractor_flip_rate(raw, y, classes, vmask, res, device, fx, lowered_y: float = 1.1,
                          min_confidence: float = 0.65, min_gap: float = 0.08) -> dict:
-    """Chèn tay trái của clip hai tay (val cùng fold) vào clip một tay (val), xử lý qua đúng
-    fx.process_sequence, đo % đổi nhãn và % chấp nhận một nhãn sai. Chỉ dùng mẫu gốc.
-
-    raw: mảng object các clip thô (T, F) khớp chỉ số với X; fx: module extract (v2 hoặc v3).
-    """
     sl, hp = fx._SL, fx._SL["hand_pos"].start
     left_frac = np.array([np.isfinite(r[:, hp]).mean() if v else np.nan for r, v in zip(raw, vmask)])
     out = {}

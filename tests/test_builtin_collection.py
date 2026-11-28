@@ -1,3 +1,5 @@
+"""Tests for MediaPipe wrapper and data collection."""
+
 import tempfile
 import unittest
 from pathlib import Path

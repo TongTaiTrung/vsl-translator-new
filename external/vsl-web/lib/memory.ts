@@ -1,3 +1,4 @@
+/** Personal sign memory stored in the browser and sent to the API. */
 
 import type { FrameLandmarks } from "./landmarks";
 

@@ -1,10 +1,4 @@
-"""Quản lý các run trong ``runs/``: ``runs/best`` là run mới nhất, chỉ giữ ``KEEP_RUNS`` run gần nhất.
-
-Một "run" là thư mục con trực tiếp của ``runs/`` có ``ensemble.pt`` (``train.ipynb`` và
-``vsl_model_finetuner.ipynb`` lưu vào thư mục tạm ``<thời gian>`` rồi ``publish_run`` đổi nó thành ``runs/best``;
-best cũ được đổi tên thành thời điểm của nó). ``runs/experiments/`` và các thư mục sâu hơn
-không bao giờ bị đụng tới.
-"""
+"""Manage training runs in runs/: runs/best is the newest run and only KEEP_RUNS runs are kept."""
 
 from __future__ import annotations
 
@@ -22,10 +16,6 @@ _STAMP = re.compile(r"(\d{8}_\d{6})")
 
 
 def run_time(run_dir: Path) -> datetime:
-    """Thời điểm tạo run: lấy từ tên (``vsl_20261123_204353``); không có thì dùng mtime của ensemble.pt.
-
-    mtime không tin được (copy/khôi phục thư mục làm mọi file cùng mtime) nên tên được ưu tiên.
-    """
     match = _STAMP.search(run_dir.name)
     if match:
         return datetime.strptime(match.group(1), "%Y%m%d_%H%M%S")
@@ -33,7 +23,6 @@ def run_time(run_dir: Path) -> datetime:
 
 
 def list_runs(runs_dir: Path = RUNS_DIR) -> list[Path]:
-    """Các run trực tiếp trong runs_dir (bỏ symlink ``best`` và ``experiments``), mới nhất trước."""
     runs_dir = Path(runs_dir)
     if not runs_dir.is_dir():
         return []
@@ -43,7 +32,6 @@ def list_runs(runs_dir: Path = RUNS_DIR) -> list[Path]:
 
 
 def latest_checkpoint(runs_dir: Path = RUNS_DIR) -> Path:
-    """``runs/best/ensemble.pt`` nếu có; không thì ensemble.pt của run mới nhất."""
     runs_dir = Path(runs_dir)
     best = runs_dir / BEST_NAME / "ensemble.pt"
     if best.is_file():
@@ -55,7 +43,6 @@ def latest_checkpoint(runs_dir: Path = RUNS_DIR) -> Path:
 
 
 def _archive_name(best: Path) -> str:
-    """Tên lưu trữ của best cũ: ``.run_name`` (tên lúc train) nếu có; không thì mtime của ensemble.pt."""
     marker = best / RUN_NAME_FILE
     if marker.is_file() and marker.read_text(encoding="utf-8").strip():
         return marker.read_text(encoding="utf-8").strip()
@@ -63,13 +50,6 @@ def _archive_name(best: Path) -> str:
 
 
 def publish_run(run_dir: str | Path, runs_dir: Path = RUNS_DIR, keep: int = KEEP_RUNS) -> Path | None:
-    """Biến run vừa lưu thành ``runs/best`` (thư mục thật, không phải symlink) rồi xoá run cũ.
-
-    ``runs/best`` cũ được đổi tên thành thời điểm của nó (``20261124_143705``) và nằm cạnh các run lưu trữ; chỉ giữ
-    ``keep`` run gần nhất tính cả best. Chỉ áp dụng cho run nằm trực tiếp trong runs_dir; run ở nơi khác
-    (vd. ``runs/experiments/...``, thư mục tạm của test) được bỏ qua và trả về None. Trả về đường dẫn ``runs/best``
-    mới: thư mục run đã được di chuyển nên đường dẫn cũ không còn dùng được.
-    """
     if keep < 1:
         raise ValueError("keep phải >= 1")
     run_dir, runs_dir = Path(run_dir).resolve(), Path(runs_dir).resolve()

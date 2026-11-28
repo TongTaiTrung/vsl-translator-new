@@ -1,3 +1,5 @@
+"""Pad frames to a square FRAME_SIZE canvas."""
+
 import cv2
 import numpy as np
 
@@ -5,12 +7,6 @@ FRAME_SIZE = 1280
 
 
 def frame_padding(frame: np.ndarray) -> np.ndarray:
-    """Fit a BGR frame into a centered FRAME_SIZE x FRAME_SIZE canvas without distortion.
-
-    Ảnh luôn được scale đều sao cho cạnh dài bằng FRAME_SIZE (thu nhỏ hoặc phóng to),
-    nên toạ độ landmark chuẩn hoá [0, 1] giống nhau bất kể độ phân giải đầu vào
-    (vd. video cũ 720x720 và camera 1280x720 cho cùng hình học).
-    """
     if not isinstance(frame, np.ndarray) or frame.ndim != 3 or frame.shape[2] != 3:
         raise ValueError(f"Expected a BGR frame with shape (H, W, 3), got {getattr(frame, 'shape', None)}.")
     if frame.dtype != np.uint8:

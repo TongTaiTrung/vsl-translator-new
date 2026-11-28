@@ -1,3 +1,5 @@
+/** Personal sign memory UI: record, list and delete user exemplars. */
+
 "use client";
 
 import { useEffect, useRef, useState } from "react";

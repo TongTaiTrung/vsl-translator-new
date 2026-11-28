@@ -1,3 +1,5 @@
+"""StreamProcess: holds the latest LIVE_STREAM callback result."""
+
 class StreamProcess:
     def __init__(self):
         self.latest_result = None

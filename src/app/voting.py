@@ -1,4 +1,4 @@
-"""Bỏ phiếu theo frame: một nhãn phải thắng N frame liên tiếp mới được thêm vào chuỗi từ."""
+"""Per-frame voting: a label must win N consecutive frames to be added to the word sequence."""
 
 from __future__ import annotations
 
@@ -20,19 +20,6 @@ class VoteConfig:
 
 
 class WordVoter:
-    """Đếm chuỗi dự đoán liên tiếp và chốt từ vào ``sequence``.
-
-    - ``vote(label)``: một frame có dự đoán mới; ``None`` = bị từ chối, làm đứt chuỗi đếm.
-    - ``interrupt()``: frame không có dự đoán (đang gom cửa sổ); đứt chuỗi đếm.
-    - ``release()``: tay đã rời khung hình; đứt chuỗi đếm và cho phép lặp lại từ vừa chốt.
-
-    Từ vừa chốt bị chặn cho tới khi tay rời khung hoặc một từ khác được chốt, nên giữ
-    nguyên một ký hiệu sẽ không thêm cùng từ nhiều lần.
-
-    Nhánh nhanh: ``vote(label, strong=True)`` đánh dấu phiếu rất chắc chắn. Nếu cả chuỗi
-    đều mạnh, chỉ cần ``early_votes`` phiếu. ``confirm(label, early)`` (nếu có) được gọi ngay
-    trước khi chốt; trả về False thì chuỗi bị huỷ và từ không được thêm.
-    """
 
     def __init__(self, config: VoteConfig | None = None) -> None:
         self.config = config or VoteConfig()
@@ -44,7 +31,6 @@ class WordVoter:
 
     def vote(self, label: str | None, *, strong: bool = False,
              confirm: Callable[[str, bool], bool] | None = None) -> str | None:
-        """Ghi nhận một dự đoán; trả về nhãn nếu nó vừa được thêm vào chuỗi."""
         if label is None:
             self.interrupt()
             return None

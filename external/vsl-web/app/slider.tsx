@@ -1,3 +1,4 @@
+/** Range slider control. */
 
 export function Slider(props: {
   min: number;

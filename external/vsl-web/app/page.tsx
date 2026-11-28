@@ -1,3 +1,5 @@
+/** Main page: camera, live recognition, subtitles, settings and conversation. */
+
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";

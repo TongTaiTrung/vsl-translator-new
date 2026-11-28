@@ -1,3 +1,5 @@
+"""Tests for feature augmentation and grouping."""
+
 import json
 import tempfile
 import unittest

@@ -1,4 +1,4 @@
-"""Ghép chuỗi nhãn thô thành câu tiếng Việt bằng LLM trên Groq (mặc định Qwen 3.8 27B)."""
+"""Compose a Vietnamese sentence from raw sign labels with an LLM on Groq."""
 
 from __future__ import annotations
 
@@ -112,7 +112,6 @@ def _is_vowel_mark(label: str) -> bool:
 
 
 def _apply_vowel_mark(text: str, label: str) -> str:
-    """Đổi nguyên âm gốc gần cuối nhất (a/o/e/u) thành chữ có dấu mũ/móc, giữ nguyên dấu thanh nếu đã có."""
     mapping = {base: unicodedata.normalize("NFD", marked) for base, marked in VOWEL_MARKS[_mark_key(label)].items()}
     chars = unicodedata.normalize("NFD", text)
     for i in range(len(chars) - 1, -1, -1):
@@ -150,7 +149,6 @@ _MAX_SYLLABLE = 7
 
 
 def _split_syllables(run: str) -> list[str]:
-    """Tách chuỗi chữ cái liền thành ít âm tiết hợp lệ nhất (ưu tiên âm tiết trước dài hơn); không tách được thì giữ nguyên."""
     best: list[list[str] | None] = [[]] + [None] * len(run)
     for end in range(1, len(run) + 1):
         for start in range(end - 1, max(0, end - _MAX_SYLLABLE) - 1, -1):
@@ -162,7 +160,6 @@ def _split_syllables(run: str) -> list[str]:
 
 
 def _apply_tone(syllable: str, mark: str) -> str:
-    """Đặt dấu thanh lên đúng nguyên âm theo chính tả (kiểu cũ: hòa, thúy)."""
     match = _SYLLABLE_RE.match(syllable)
     if not match:
         idx = max((i for i, c in enumerate(syllable) if c in _VOWELS), default=-1)
@@ -180,7 +177,6 @@ def _apply_tone(syllable: str, mark: str) -> str:
 
 
 def _spelled_text(items: Sequence[str]) -> str:
-    """Câu dự phòng cho một nhóm đánh vần: tách âm tiết, đổi chữ theo dấu mũ/móc, đặt dấu thanh lên âm tiết ngay trước dấu."""
     words: list[str] = []
     run = ""
     for item in items:
@@ -214,7 +210,6 @@ def build_system_prompt(glossary: Mapping[str, str] = DEFAULT_GLOSSARY) -> str:
 
 
 def group_labels(words: Sequence[str]) -> list[str | list[str]]:
-    """Gom các chữ cái đơn liên tiếp (đánh vần) thành một nhóm; dấu thanh và dấu chữ ngay sau chữ cái thuộc nhóm đó."""
     groups: list[str | list[str]] = []
     for word in words:
         if _is_letter(word) or (_is_mark(word) and groups and isinstance(groups[-1], list)):
@@ -235,7 +230,6 @@ def format_labels(words: Sequence[str]) -> str:
 
 
 def naive_sentence(words: Sequence[str], glossary: Mapping[str, str] = DEFAULT_GLOSSARY) -> str:
-    """Câu dự phòng khi không gọi được LLM: dịch nhãn theo chú giải và ghép chữ cái."""
     parts = [
         _spelled_text(item) if isinstance(item, list) else label_text(item, glossary)
         for item in group_labels(words)
@@ -253,7 +247,6 @@ def clean_completion(text: str) -> str:
 
 
 def load_api_key(env_var: str = "GROQ_API_KEY", env_file: str | Path | None = None) -> str | None:
-    """Đọc key từ biến môi trường, sau đó từ file ``.env`` ở gốc dự án (không commit)."""
     key = os.environ.get(env_var)
     if key:
         return key.strip()
@@ -267,7 +260,6 @@ def load_api_key(env_var: str = "GROQ_API_KEY", env_file: str | Path | None = No
 
 
 class GroqClient:
-    """Client tối giản cho endpoint chat completions (tương thích OpenAI) của Groq."""
 
     def __init__(self, api_key: str | None = None, *, model: str = DEFAULT_MODEL, url: str = GROQ_URL,
                  timeout: float = 15.0, session: requests.Session | None = None) -> None:
@@ -296,11 +288,6 @@ class GroqClient:
 
 
 class SentenceComposer:
-    """Gọi LLM trong luồng nền để vòng lặp camera không bị chặn.
-
-    ``submit(words)`` chỉ giữ yêu cầu mới nhất; các chuỗi cũ chưa kịp gửi bị bỏ qua và
-    kết quả của yêu cầu cũ không ghi đè kết quả mới hơn.
-    """
 
     def __init__(self, client: GroqClient | None = None, *, glossary: Mapping[str, str] = DEFAULT_GLOSSARY,
                  on_update: Callable[[dict], None] | None = None, background: bool = True) -> None:
@@ -330,7 +317,6 @@ class SentenceComposer:
         ]
 
     def compose(self, words: Iterable[str]) -> tuple[str, str, str | None]:
-        """Ghép đồng bộ; trả về ``(câu, status, lỗi)``. Dùng câu dự phòng nếu LLM lỗi."""
         words = tuple(words)
         if not words:
             return "", "idle", None

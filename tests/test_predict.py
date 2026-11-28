@@ -1,3 +1,5 @@
+"""Tests for VSLPredictor and streaming sessions."""
+
 import json
 import tempfile
 import unittest

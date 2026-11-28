@@ -1,3 +1,5 @@
+"""Draw pose and hand landmarks on BGR frames."""
+
 from src.builtin.mediapipe_builtin import defs
 import cv2
 import numpy as np

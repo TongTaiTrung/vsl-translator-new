@@ -1,9 +1,6 @@
-"""Dịch VSL liên tục từ webcam: dự đoán theo frame → bỏ phiếu → chuỗi từ → câu (LLM).
+"""Continuous webcam translation: per-frame prediction, voting, word sequence, sentence (LLM).
 
-Chạy: ``.venv/bin/python -m src.app [--checkpoint runs/.../ensemble.pt] [--no-llm] [--fast]``
-
-``--fast``: nhánh nhanh (``src/app/fast.py``) — sàng lọc bằng một model, chốt sớm khi rất chắc
-chắn và xác nhận bằng cả ensemble trước khi thêm từ.
+Usage: python -m src.app [--checkpoint runs/best/ensemble.pt] [--no-llm] [--fast]
 """
 
 from __future__ import annotations
@@ -23,12 +20,6 @@ from src.model.predict import StreamConfig, VSLPredictor
 
 
 class RealtimeTranslator:
-    """Ghép ``VSLStreamSession`` + ``WordVoter`` + ``SentenceComposer`` cho một camera/client.
-
-    Mỗi frame có dự đoán mới được tính là một phiếu. Khi một nhãn thắng
-    ``VoteConfig.min_consecutive`` phiếu liên tiếp, nó được thêm vào chuỗi từ; chuỗi đổi
-    thì composer được gọi (trong luồng nền) để viết lại câu.
-    """
 
     def __init__(self, predictor: VSLPredictor, *, stream_config: StreamConfig | None = None,
                  vote_config: VoteConfig | None = None, composer: SentenceComposer | None = None,
@@ -76,7 +67,6 @@ class RealtimeTranslator:
         return {**self._snapshot, "sentence": self.composer.state()}
 
     def _vote(self, prediction: dict) -> str | None:
-        """Một dự đoán mới = một phiếu; trả về nhãn nếu vừa được chốt."""
         return self.voter.vote(prediction["label"])
 
     def undo(self) -> str | None:

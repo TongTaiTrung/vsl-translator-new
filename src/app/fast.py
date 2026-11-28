@@ -1,22 +1,4 @@
-"""Nhánh dự đoán nhanh: sàng lọc bằng một model, xác nhận bằng cả ensemble trước khi chốt từ.
-
-Nhánh thường chạy cả ensemble (5 fold + 1 full) ở MỌI frame và chỉ bắt đầu dự đoán khi cửa
-sổ đủ ``min_window_seconds`` (1.5 s). Nhánh nhanh:
-
-1. **Cascade**: mỗi frame chỉ chạy một model (mặc định model toàn bộ dữ liệu, ~1/6 chi phí);
-   cả ensemble chỉ chạy ở bước xác nhận. ``escalate=True`` chạy thêm ensemble mỗi khi model
-   nhanh từ chối (sau ``min_window_seconds``); mô phỏng held-out cho thấy không cải thiện
-   WER mà tốn gấp ~3 lần số lần gọi ensemble, nên mặc định tắt.
-2. **Thoát sớm có điều kiện**: từ ``early_window_seconds`` (1.0 s) đã dự đoán, nhưng trước
-   ``min_window_seconds`` chỉ những phiếu "mạnh" (confidence >= ``strong_confidence`` và
-   gap >= ``strong_gap``) mới được tính. Chuỗi toàn phiếu mạnh chốt sau ``early_votes`` phiếu
-   thay vì ``min_consecutive``.
-3. **Xác nhận**: ngay trước khi chốt, cả ensemble chạy lại trên đúng cửa sổ đó và phải đồng ý
-   nhãn. Chốt sớm (ít phiếu hoặc cửa sổ ngắn) đòi ensemble cũng đạt ngưỡng chặt
-   (``strict_confidence`` / ``strict_gap``).
-
-Mọi dự đoán thêm ``source`` (fast | ensemble), ``strong`` và ``early`` vào dict kết quả.
-"""
+"""Fast prediction branch: screen with a single model, confirm with the full ensemble before committing a word."""
 
 from __future__ import annotations
 
@@ -56,7 +38,6 @@ class FastConfig:
 
 
 def make_fast_ensemble(predictor: VSLPredictor, index: int = -1) -> training.VSLEnsemble:
-    """Ensemble con gồm đúng một model của checkpoint (dùng chung trọng số, không copy)."""
     ensemble = predictor.ensemble
     n = len(ensemble.models)
     if not -n <= index < n:
@@ -72,10 +53,6 @@ def make_fast_ensemble(predictor: VSLPredictor, index: int = -1) -> training.VSL
 
 
 class FastStreamSession(VSLStreamSession):
-    """``VSLStreamSession`` dùng cascade + thoát sớm. Một session cho mỗi camera/client.
-
-    ``stats`` đếm số lần chạy model nhanh / ensemble và số lần xác nhận bị từ chối.
-    """
 
     def __init__(self, predictor: VSLPredictor, config: StreamConfig | None = None,
                  fast_config: FastConfig | None = None, landmarkers=None,
@@ -115,10 +92,6 @@ class FastStreamSession(VSLStreamSession):
         return {**result, "source": source, "strong": strong, "early": early}
 
     def confirm(self, label: str, early: bool = False) -> bool:
-        """Chạy cả ensemble trên cửa sổ của dự đoán gần nhất; True nếu nó đồng ý ``label``.
-
-        early: lần chốt dùng ít phiếu hơn ``min_consecutive`` -> đòi ngưỡng chặt.
-        """
         if self.sequence is None:
             return False
         cfg = self.fast_config
@@ -135,7 +108,6 @@ class FastStreamSession(VSLStreamSession):
 
 
 class FastRealtimeTranslator(RealtimeTranslator):
-    """``RealtimeTranslator`` dùng ``FastStreamSession``: phiếu mạnh chốt sớm, ensemble xác nhận."""
 
     def __init__(self, predictor: VSLPredictor, *, stream_config: StreamConfig | None = None,
                  fast_config: FastConfig | None = None, vote_config: VoteConfig | None = None,

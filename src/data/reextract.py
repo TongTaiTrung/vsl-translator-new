@@ -1,4 +1,4 @@
-"""Rebuild per-frame VSL features from the original recorded videos."""
+"""Rebuild per-frame features and landmarks from the original recorded videos."""
 
 from __future__ import annotations
 
@@ -44,11 +44,6 @@ def find_raw_samples(raw_root: Path, classes: list[str] | None = None) -> list[P
 
 
 def extract_video_features(video_path: Path, with_landmarks: bool = False):
-    """Decode every frame, pad it to the FRAME_SIZE square, and run the builtin landmarks.
-
-    Trả ``(features, fps)``; ``with_landmarks=True`` trả thêm ``(pose, hands, world)`` thô của từng frame
-    (xem ``src.features.landmarks.results_to_arrays``) để augment góc nhìn trên landmark.
-    """
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         cap.release()
@@ -102,7 +97,6 @@ def reextract_sample(
     processed_root: Path,
     backup_root: Path,
 ) -> dict:
-    """Replace one processed sample after validation, retaining its old directory."""
     video_path = Path(video_path)
     raw_root = Path(raw_root)
     processed_root = Path(processed_root)

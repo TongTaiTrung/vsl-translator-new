@@ -1,87 +1,6 @@
-"""HTTP API dự đoán VSL: frontend gửi 30 frame của một clip, server trả kết quả của mô hình.
+"""Flask HTTP API for VSL prediction (single clip, streaming sessions, personal memory).
 
-Endpoint:
-
-- ``GET  /``            → trang HTML test API (``static/test_client.html``: webcam hoặc file video).
-- ``GET  /api/health``  → trạng thái server, checkpoint và danh sách lớp.
-- ``POST /api/predict`` → JSON body::
-
-      {
-        "frames": ["data:image/jpeg;base64,...", ...],   # đúng 30 ảnh (JPEG/PNG, base64, có/không tiền tố data URL)
-        "fps": 15,             # tuỳ chọn; nhịp thu frame, mặc định 15 (giống lúc thu dữ liệu)
-        "mirror_data": false,  # tuỳ chọn; phải giống MIRROR_DATA lúc thu dữ liệu
-        "top_k": 3             # tuỳ chọn
-      }
-
-  Thay cho ``frames`` có thể gửi ``landmarks`` (landmark MediaPipe client đã chạy trên frame pad 1280x1280,
-  định dạng ở ``src/features/landmarks.py``; ``mirror_data`` khi đó bị bỏ qua vì client tự lật ảnh) hoặc
-  ``features``: mảng ``(frames, FEATURE_DIM)`` feature thô đã trích.
-
-  Trả về dict của ``VSLPredictor.predict_raw`` (``label``, ``confidence``, ``probability_gap``,
-  ``accepted``, ``rejection_reason``, ``top``) cộng ``frames``, ``hand_frames`` (số frame có tay
-  đang ký, không tính tay buông — 0 nghĩa là người dùng đang nghỉ) và ``elapsed_ms``.
-  Lỗi đầu vào trả 400 ``{"error": ...}``.
-
-Luồng liên tục (nhanh hơn nhiều): mỗi client mở một phiên giữ landmarker MediaPipe và cửa sổ feature
-``expected_frames`` frame trên server, mỗi request chỉ gửi các frame MỚI nên chỉ phải trích chừng đó frame:
-
-- ``POST   /api/stream``        → ``{"session_id", "window", "binary": true, "landmarks": true}`` (201). 503 khi
-  đã đủ số phiên. ``binary`` báo server nhận multipart và cờ ``predict`` bên dưới; ``landmarks`` báo server nhận
-  landmark thay cho ảnh.
-- ``POST   /api/stream/<id>``   → JSON body::
-
-      {
-        "frames": ["data:image/jpeg;base64,...", ...],  # 1–60 frame mới, theo thứ tự thời gian
-        "timestamps": [1234.5, ...],  # tuỳ chọn; ms lúc thu từng frame (tăng dần), mặc định theo fps
-        "reset": false,               # tuỳ chọn; xoá cửa sổ trước khi thêm (vd. sau khi chốt một từ)
-        "predict": true,              # tuỳ chọn; false = chỉ trích feature các frame mới, không chạy model
-        "window": 30,                 # tuỳ chọn; dự đoán trên N nhịp (frame ở ``fps``) gần nhất (1–cửa sổ phiên)
-        "min_frames": 30,             # tuỳ chọn; dự đoán khi đã có >= N nhịp (1–window), mặc định = window
-        "fill": "interp",             # tuỳ chọn; cửa sổ ít hơn 30 frame: "interp" (nội suy) | "repeat" (lặp frame)
-        "fps": 15, "mirror_data": false, "top_k": 3
-      }
-
-  Hoặc ``multipart/form-data`` (nhanh hơn: ảnh nhị phân, không base64, trình duyệt không phải gửi
-  preflight CORS): mỗi frame là một phần ``frames`` (JPEG/PNG, đúng thứ tự), các tuỳ chọn còn lại nằm
-  trong phần ``meta`` dạng chuỗi JSON như trên (không có ``frames``).
-
-  Hoặc JSON có ``landmarks`` thay cho ``frames`` (1–60 frame landmark, như ``/api/predict``): server không chạy
-  MediaPipe (phiên chỉ tạo landmarker khi nhận ảnh) nên mỗi request chỉ còn ``extract`` + model.
-
-  Client nhanh nhất gửi từng frame ngay khi thu (``predict: false``) để server trích feature dần, và chỉ
-  bật ``predict`` mỗi vài frame: request dự đoán khi đó chỉ còn phải trích 1 frame rồi chạy model.
-
-  ``window``/``min_frames`` nhỏ hơn cho kết quả sớm hơn (model thấy ít ký hiệu hơn nên kém chính xác hơn);
-  ``predict_raw`` tự nội suy số frame đó về 30. ``fill: "repeat"`` thay vào đó chép lặp từng frame thật cho
-  đủ 30 (``repeat_frames``): cửa sổ 1–3 frame (siêu tốc x20–x40 trên web) thành một tư thế giữ yên, vận tốc ≈ 0.
-
-  Cửa sổ tính theo THỜI GIAN (timestamp của client, thiếu thì suy từ ``fps``): ``window`` = 30 ở ``fps`` 15 là
-  2 giây gần nhất, dù client thu 7 fps (điện thoại, ~15 frame) hay 30 fps (~60 frame). Cửa sổ theo số frame
-  từng làm máy chậm đưa cho model 4 giây cử chỉ (lẫn lúc nghỉ / ký hiệu trước) và ngưỡng ``hand_frames``
-  không bao giờ đạt.
-  Trả ``ready`` (đã đủ ``min_frames``), ``predicted``, ``buffered`` (thời lượng đang giữ, đơn vị nhịp ``fps``),
-  ``window``, ``frames`` (số frame thật đem dự đoán), ``hand_frames`` (thời lượng có tay trong cửa sổ đó, đơn
-  vị nhịp ``fps``), ``capture_fps`` (nhịp thu thật của client), ``elapsed_ms``; khi ``predicted`` (``ready`` và ``predict``) thêm kết quả dự
-  đoán như ``/api/predict``.
-  Phiên không tồn tại/hết hạn → 404.
-- ``DELETE /api/stream/<id>``   → đóng phiên (204). Phiên không dùng quá ``stream_idle_s`` tự đóng.
-
-Cá nhân hoá (bộ nhớ mẫu, ``src/model/memory.py``): mẫu được lưu ở client, server chỉ giữ trong phiên.
-
-- ``POST /api/memory/sample`` → JSON ``{"label": "toi", "landmarks": [...]}`` (hoặc ``features``) của một lần
-  ký mẫu. Trả ``{"ok", "reason", "warning", "features", "frames", "hand_frames", "prediction"}``: ``features``
-  là feature thô float32 little-endian mã hoá base64 để client lưu; ``ok: false`` (``reason: "few_hands"``)
-  khi tay không xuất hiện đủ lâu; ``warning: "model_disagrees"`` khi mô hình gốc rất chắc đó là từ khác.
-- ``POST /api/stream`` nhận thêm body tuỳ chọn ``{"memory": {"strength": 0.5, "exemplars": [{"label",
-  "features", "frames"}, ...]}}``: mọi dự đoán của phiên dùng bộ nhớ đó, kết quả có thêm ``memory``
-  (lớp có mẫu giống nhất và độ giống). Phản hồi mở phiên có ``memory`` (số mẫu theo lớp, lớp bị bỏ qua).
-- ``POST /api/stream/<id>/memory`` → body ``{"memory": {...}}`` như trên (``null`` hoặc không có mẫu = tắt):
-  thay bộ mẫu của phiên đang mở mà KHÔNG xoá cửa sổ frame (dùng khi tự học theo thời gian thực).
-  Trả ``{"memory": tóm tắt | null}``; phiên không tồn tại → 404.
-
-Chạy::
-
-    .venv/bin/python -m src.app.server --host 0.0.0.0 --port 8000
+Usage: python -m src.app.server --port 8000
 """
 
 from __future__ import annotations
@@ -118,11 +37,10 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 class BadRequest(ValueError):
-    """Lỗi do dữ liệu client gửi lên (trả HTTP 400)."""
+    pass
 
 
 def decode_frame(data: str) -> np.ndarray:
-    """Giải mã một ảnh base64 (JPEG/PNG, cho phép tiền tố ``data:image/...;base64,``) thành frame BGR."""
     if not isinstance(data, str) or not data:
         raise BadRequest("Mỗi frame phải là chuỗi base64 không rỗng")
     if data.startswith("data:"):
@@ -135,7 +53,6 @@ def decode_frame(data: str) -> np.ndarray:
 
 
 def decode_image(raw: bytes) -> np.ndarray:
-    """Giải mã bytes JPEG/PNG thành frame BGR."""
     buffer = np.frombuffer(raw, dtype=np.uint8)
     frame = cv2.imdecode(buffer, cv2.IMREAD_COLOR) if buffer.size else None
     if frame is None:
@@ -144,15 +61,10 @@ def decode_image(raw: bytes) -> np.ndarray:
 
 
 def _close_later(closable) -> None:
-    """Đóng ở luồng nền: ``LandmarkerLoader.close`` mất ~300 ms (có lúc rất lâu khi MediaPipe gửi telemetry)."""
     threading.Thread(target=closable.close, name="landmarker-close", daemon=True).start()
 
 
 class FrameFeatureExtractor:
-    """Một landmarker VIDEO (pose ‖ hand song song) → feature thô ``(FEATURE_DIM,)`` cho từng frame BGR.
-
-    Giữ trạng thái tracking giữa các frame nên mỗi luồng video/phiên cần một đối tượng riêng.
-    """
 
     def __init__(self) -> None:
         self._landmarkers = LandmarkerLoader(running_mode=VisionRunningMode.VIDEO, parallel=True)
@@ -168,7 +80,6 @@ class FrameFeatureExtractor:
 
 
 def extract_features(frames_bgr: list[np.ndarray], *, fps: float, mirror_data: bool) -> np.ndarray:
-    """Trích feature thô ``(len(frames), FEATURE_DIM)``; landmarker riêng cho mỗi request (giống predict_frames)."""
     extractor = FrameFeatureExtractor()
     try:
         return np.stack([extractor.extract(frame, timestamp_ms=round(i * 1000 / fps), mirror_data=mirror_data)
@@ -178,7 +89,6 @@ def extract_features(frames_bgr: list[np.ndarray], *, fps: float, mirror_data: b
 
 
 def landmarks_to_features(frames) -> np.ndarray:
-    """Landmark JSON của từng frame (MediaPipe chạy ở client) → feature thô ``(len(frames), FEATURE_DIM)``."""
     try:
         return np.stack([extract(*dict_to_results(frame)) for frame in frames])
     except ValueError as exc:
@@ -186,10 +96,6 @@ def landmarks_to_features(frames) -> np.ndarray:
 
 
 class StreamSession:
-    """Phiên của một client: extractor giữ tracking MediaPipe + cửa sổ feature trượt.
-
-    Extractor (landmarker MediaPipe, nặng) chỉ được tạo khi phiên nhận ảnh; phiên gửi landmark không cần nó.
-    """
 
     def __init__(self, factory, window: int) -> None:
         self._factory = factory
@@ -214,7 +120,6 @@ class StreamSession:
             self._extractor = None
 
     def next_timestamps(self, timestamps, count: int, fps: float) -> list[int]:
-        """Timestamp ms tăng ngặt cho ``count`` frame mới (VIDEO mode bắt buộc)."""
         if timestamps is None:
             step = 1000 / fps
             start = 0.0 if self.last_timestamp < 0 else self.last_timestamp + step
@@ -232,11 +137,9 @@ class StreamSession:
         self.times.clear()
 
     def _interval(self, step: float) -> float:
-        """Khoảng cách thật giữa hai frame của client (trung vị), mặc định ``step`` khi chưa đủ frame."""
         return float(np.median(np.diff(self.times))) if len(self.times) > 1 else step
 
     def append(self, features, times, fps: float) -> None:
-        """Thêm frame mới rồi bỏ frame đã ra ngoài cửa sổ ``window`` frame ở nhịp ``fps``."""
         self.features.extend(features)
         self.times.extend(times)
         step = 1000 / fps
@@ -246,12 +149,6 @@ class StreamSession:
             self.features.popleft()
 
     def recent(self, window: int, fps: float) -> tuple[np.ndarray, int, int]:
-        """Feature của ``window`` frame (quy về nhịp ``fps``) gần nhất theo thời gian.
-
-        Trả ``(features, covered, buffered)``: ``covered``/``buffered`` là thời lượng của cửa sổ này / của cả
-        bộ đệm, đổi ra số frame ở nhịp ``fps`` (thời lượng = khoảng từ frame đầu tới frame cuối + một khoảng
-        thu của client).
-        """
         step = 1000 / fps
         interval = self._interval(step)
         times = np.asarray(self.times, dtype=np.float64)
@@ -263,7 +160,6 @@ class StreamSession:
 
 
 class StreamStore:
-    """Các phiên đang mở; phiên không dùng quá ``idle_s`` giây bị đóng khi có request kế tiếp."""
 
     def __init__(self, factory, *, window: int, max_sessions: int, idle_s: float) -> None:
         self.factory, self.window, self.max_sessions, self.idle_s = factory, window, max_sessions, idle_s
@@ -319,12 +215,10 @@ def _parse_options(body: dict, default_mirror_data: bool) -> tuple[float, bool, 
 
 
 def encode_features(features: np.ndarray) -> str:
-    """Feature thô -> base64 của float32 little-endian (gọn hơn JSON số ~3 lần, giữ nguyên NaN)."""
     return base64.b64encode(np.ascontiguousarray(features, dtype="<f4").tobytes()).decode("ascii")
 
 
 def decode_features(data, frames) -> np.ndarray:
-    """Ngược với ``encode_features``: ``(frames, FEATURE_DIM)``; dữ liệu sai -> BadRequest."""
     if not isinstance(data, str) or isinstance(frames, bool) or not isinstance(frames, int):
         raise BadRequest("Mỗi mẫu cần 'features' (chuỗi base64) và 'frames' (số nguyên)")
     if not 1 <= frames <= MAX_FRAMES:
@@ -342,7 +236,6 @@ def decode_features(data, frames) -> np.ndarray:
 
 
 def parse_memory(body) -> tuple[list[Exemplar], float] | None:
-    """``{"strength", "exemplars": [{"label", "features", "frames"}]}`` -> (mẫu, strength); không có -> None."""
     if body is None:
         return None
     if not isinstance(body, dict):
@@ -365,10 +258,6 @@ FILL_MODES = ("interp", "repeat")
 
 
 def repeat_frames(features: np.ndarray, target_len: int) -> np.ndarray:
-    """Chép lặp đều từng frame cho đủ ``target_len`` (giữ thứ tự, không tạo giá trị mới như nội suy).
-
-    Chỉ dùng khi cửa sổ ngắn hơn ``target_len``; dài hơn thì giữ nguyên để ``process_sequence`` co lại.
-    """
     n = len(features)
     if n == 0 or n >= target_len:
         return features
@@ -386,13 +275,6 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
                default_mirror_data: bool = False, feature_extractor=extract_features,
                stream_extractor_factory=FrameFeatureExtractor, max_streams: int = 8,
                stream_idle_s: float = 60.0) -> Flask:
-    """Tạo Flask app dùng chung một ``predictor`` cho mọi request.
-
-    expected_frames: số frame mỗi request phải gửi (mặc định 30); ``None`` nhận mọi số frame > 0
-        (khi đó cửa sổ của luồng liên tục là ``EXPECTED_FRAMES``).
-    feature_extractor: ``(frames, fps=, mirror_data=) -> (N, FEATURE_DIM)``; thay được khi test.
-    stream_extractor_factory: ``() -> obj`` có ``extract(frame, timestamp_ms=, mirror_data=)`` và ``close()``.
-    """
     app = Flask(__name__, static_folder=None)
     app.json.ensure_ascii = False
     app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -408,7 +290,6 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
             raise BadRequest(str(exc)) from None
 
     def build_memory(parsed):
-        """Kết quả ``parse_memory`` -> ``MemoryEnsemble`` (None khi không có mẫu)."""
         if parsed is None or not parsed[0]:
             return None
         try:
@@ -433,8 +314,6 @@ def create_app(predictor: VSLPredictor, *, expected_frames: int = EXPECTED_FRAME
             raise BadRequest(f"Cần đúng {expected_frames} frame, nhận {n}")
 
     def stream_body() -> tuple[dict, list[np.ndarray] | None, np.ndarray | None]:
-        """Body của /api/stream/<id>: ``(body, ảnh, None)`` cho JSON (frame base64) hoặc multipart (frame nhị
-        phân + ``meta`` JSON); ``(body, None, feature thô)`` cho JSON ``landmarks``."""
         if request.mimetype == "multipart/form-data":
             try:
                 body = json.loads(request.form.get("meta") or "{}")

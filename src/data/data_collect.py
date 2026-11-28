@@ -1,6 +1,6 @@
-"""Record square webcam clips and their processed VSL feature sequences.
+"""Record webcam clips and their processed feature sequences.
 
-Run from the project root with ``python -m src.data.data_collect -c xin_chao``.
+Usage: python -m src.data.data_collect -c <class>
 """
 
 import argparse
@@ -15,7 +15,6 @@ from src.features.frame import frame_padding
 
 
 def get_next_id(raw_dir: Path, class_name: str, extracted_dir: Path | None = None) -> int:
-    """Find the next unused ID across raw videos and extracted sequences."""
     existing_ids = []
     directories = [(raw_dir / class_name, "*.mp4")]
     if extracted_dir is not None:

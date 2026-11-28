@@ -1,16 +1,5 @@
-"""Landmark MediaPipe dạng JSON ↔ đối tượng kết quả mà ``extract`` đọc.
+"""Convert MediaPipe landmarks between JSON/array form and result objects read by `extract`."""
 
-Client (web) chạy MediaPipe trên frame đã pad về ``FRAME_SIZE`` x ``FRAME_SIZE`` (như ``frame_padding``,
-lật gương trước nếu ``mirror_data``) rồi gửi landmark thay cho ảnh. Mỗi frame là một dict::
-
-    {
-      "pose": [[x, y, z, visibility], ...] | null,   # 33 điểm của người đầu tiên; null = không có người
-      "hands": [[[x, y, z], ...], ...],              # 0–2 tay, mỗi tay 21 điểm (toạ độ ảnh chuẩn hoá)
-      "hands_world": [[[x, y, z], ...], ...]         # tuỳ chọn; cùng số tay, toạ độ mét (hand_world_landmarks)
-    }
-
-``extract`` chỉ dùng các trường trên (không dùng handedness / pose_world_landmarks).
-"""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -46,7 +35,6 @@ def _points(arr: np.ndarray) -> list[_Point]:
 
 
 def dict_to_results(frame: dict) -> tuple[SimpleNamespace, SimpleNamespace]:
-    """Một frame landmark JSON → ``(pose_res, hand_res)`` cho ``extract``. Sai định dạng → ``ValueError``."""
     if not isinstance(frame, dict):
         raise ValueError("Mỗi frame landmark phải là object")
     pose = frame.get("pose")
@@ -65,7 +53,6 @@ def dict_to_results(frame: dict) -> tuple[SimpleNamespace, SimpleNamespace]:
 
 
 def results_to_dict(pose_res, hand_res) -> dict:
-    """Ngược lại ``dict_to_results`` (kết quả MediaPipe Python → JSON), dùng để test / ghi log."""
     def rows(landmarks, with_vis: bool = False) -> list[list[float]]:
         return [[lm.x, lm.y, lm.z] + ([1.0 if lm.visibility is None else lm.visibility] if with_vis else [])
                 for lm in landmarks]
@@ -83,11 +70,6 @@ LANDMARKS_FILE = "landmarks.npz"
 
 
 def results_to_arrays(pose_res, hand_res) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Kết quả MediaPipe của 1 frame → ``pose (33, 4)``, ``hands (2, 21, 3)``, ``world (2, 21, 3)`` float32.
-
-    Phần không có (không người, < 2 tay, thiếu world) là NaN. Thứ tự tay giữ nguyên như MediaPipe trả về
-    (``extract`` tự ghép trái/phải theo cổ tay pose nên thứ tự không quan trọng).
-    """
     frame = results_to_dict(pose_res, hand_res)
     pose = np.full((POSE_POINTS, 4), np.nan, dtype=np.float32)
     hands = np.full((MAX_HANDS, HAND_POINTS, 3), np.nan, dtype=np.float32)
@@ -102,7 +84,6 @@ def results_to_arrays(pose_res, hand_res) -> tuple[np.ndarray, np.ndarray, np.nd
 
 
 def arrays_to_results(pose: np.ndarray, hands: np.ndarray, world: np.ndarray) -> tuple[SimpleNamespace, SimpleNamespace]:
-    """Ngược lại ``results_to_arrays`` cho 1 frame: hàng/tay có NaN coi như không detect được."""
     frame = {"pose": pose.tolist() if np.isfinite(pose).all() else None, "hands": []}
     kept_world = []
     for h, w in zip(hands, world):
@@ -115,7 +96,6 @@ def arrays_to_results(pose: np.ndarray, hands: np.ndarray, world: np.ndarray) ->
 
 
 def save_landmarks(path, pose: np.ndarray, hands: np.ndarray, world: np.ndarray) -> None:
-    """Ghi landmark của cả clip: pose (T, 33, 4), hands / world (T, 2, 21, 3)."""
     pose, hands, world = check_landmarks(pose, hands, world)
     np.savez_compressed(path, pose=pose, hands=hands, world=world)
 

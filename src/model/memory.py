@@ -1,16 +1,4 @@
-"""Bộ nhớ mẫu cá nhân: người dùng ký mẫu vài từ, mô hình ưu tiên các từ có mẫu giống clip đang ký.
-
-Không train lại. Mỗi mẫu (feature thô của một lần ký) được đưa qua từng model của ensemble để lấy
-embedding (``training.logits_and_embedding``). Khi dự đoán, với mỗi lớp có mẫu, cộng vào logit của model k::
-
-    bonus_k[c] = alpha * max_i exp(-sharpness * (1 - cos(emb_k(clip), emb_k(mẫu_i))))   (mẫu_i thuộc lớp c)
-
-- ``max`` theo lớp (không cộng dồn) để lớp có 5 mẫu không thắng lớp có 1 mẫu chỉ vì nhiều mẫu hơn.
-- Mẫu ít giống (cos thấp) gần như không cộng gì, nên lớp không có mẫu vẫn dự đoán như mô hình gốc.
-- ``strength`` (0–1) đổi sang ``alpha = strength * MAX_BONUS`` (đơn vị logit sau nhiệt độ); 0 = tắt hẳn.
-
-Dữ liệu mẫu nằm ở phía client (trình duyệt); server chỉ giữ bộ nhớ trong phiên stream.
-"""
+"""Personal exemplar memory: user-signed samples bias the ensemble logits without retraining."""
 
 from __future__ import annotations
 
@@ -47,11 +35,6 @@ def check_exemplar_features(features: np.ndarray) -> np.ndarray:
 
 
 class MemoryEnsemble(nn.Module):
-    """Bọc ``VSLEnsemble``: cùng giao diện (x thô (B, T, D) -> xác suất (B, C)) cộng bonus từ bộ nhớ mẫu.
-
-    Dùng được ở mọi chỗ nhận ensemble (``VSLPredictor.predict_processed(ensemble=...)``). Sau mỗi lần
-    gọi, ``last_match`` giữ lớp có mẫu giống clip cuối cùng nhất và độ giống (cos, trung bình các model).
-    """
 
     def __init__(self, ensemble, classes, exemplars: list[Exemplar], *, target_len: int,
                  strength: float = 0.5, sharpness: float = DEFAULT_SHARPNESS,
@@ -101,7 +84,6 @@ class MemoryEnsemble(nn.Module):
         return int(self.labels.numel())
 
     def class_similarity(self, emb: torch.Tensor) -> torch.Tensor:
-        """emb (K, B, E) -> cos lớn nhất với mẫu của từng lớp (K, B, C); lớp không có mẫu = -1."""
         sim = torch.einsum("kbe,kne->kbn", emb, self.keys)
         masked = sim.unsqueeze(-1).masked_fill(~self.onehot, -1.0)
         return masked.amax(2)

@@ -1,3 +1,5 @@
+/** Light/dark theme toggle. */
+
 "use client";
 
 import { useLayoutEffect, useState } from "react";

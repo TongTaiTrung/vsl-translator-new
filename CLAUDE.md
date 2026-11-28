@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Vietnamese Sign Language (VSL) translator. The pipeline is: BGR video → pad every frame to 1280×1280 (`src/features/frame.py:frame_padding`, scales up or down so the long side fills the canvas; raw videos recorded before this are 720×720) → MediaPipe pose and hand landmarkers → **383 raw features per frame** (`src/features/extract.py:extract`) → `process_sequence` resamples and expands each clip to a **`(30, 434)` sequence** (383 raw + 39 velocity + 12 stroke columns) → an ensemble classifier (`VSLNet`, `HandPairNet` or `SignFormer`) with rejection.
 
-Comments, docstrings and many CLI messages are written in Vietnamese. Match that style when editing nearby code. Source files carry no `#` comments; design rationale lives in docstrings and in the Obsidian vault at `vault/` (start at `vault/Home.md`).
+Many CLI messages and UI strings are in Vietnamese. Each code file has only a short English doc comment at the top (module docstring in Python, `/** */` in TS/CSS); no other comments or docstrings. Design rationale lives in the Obsidian vault at `vault/` (start at `vault/Home.md`).
 
 ## Commands
 

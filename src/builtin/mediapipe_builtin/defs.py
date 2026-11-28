@@ -1,3 +1,5 @@
+"""MediaPipe model paths, type aliases and landmark connections."""
+
 import mediapipe as mp
 from pathlib import Path
 

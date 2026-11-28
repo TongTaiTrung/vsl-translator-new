@@ -1,3 +1,5 @@
+"""Tests for out-of-fold evaluation metrics."""
+
 import unittest
 
 import numpy as np

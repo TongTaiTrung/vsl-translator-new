@@ -1,18 +1,6 @@
-"""Benchmark xuyên bối cảnh: model có nhận đúng ký hiệu quay ở bối cảnh (session) chưa từng thấy không?
+"""Cross-session benchmark: hold out whole class@session groups to measure generalization to unseen setups.
 
-CV hiện tại (StratifiedGroupKFold theo mẫu gốc) để train và val cùng bối cảnh quay, nên đạt ~100% mà vẫn
-nhầm khi dùng thật. Ở đây ta giữ hẳn một số (lớp, session) ra ngoài: không train, không augment, chỉ test.
-
-Quy ước holdout: ``lớp@session`` (session so khớp theo tiền tố, vd. ``m@20261118``) hoặc ``@session`` (mọi lớp
-của session đó, dùng khi quay một bộ test mới cho tất cả các lớp).
-
-    # 1. Đo không cần train: cùng ký hiệu khác bối cảnh có gần nhau hơn ký hiệu khác không
-    python -m src.model.benchmark invariance
-    # 2. Dựng dataset train bỏ holdout, augment trong bộ nhớ (không đụng data/processed)
-    python -m src.model.benchmark build --mode landmark --holdout m@20261118 --out data/cache/bench_landmark.npz
-    # 3. Train (CLI training, hoặc `benchmark train` dùng config của một run có sẵn) rồi chấm trên holdout
-    python -m src.model.benchmark train --data data/cache/bench_landmark.npz --out runs/experiments/bench/landmark
-    python -m src.model.benchmark eval --ckpt runs/experiments/bench/landmark/ensemble.pt --holdout m@20261118
+Usage: python -m src.model.benchmark {invariance,build,train,eval}
 """
 
 from __future__ import annotations
@@ -54,7 +42,6 @@ def is_held_out(clip: Clip, holdout: list[tuple[str | None, str]]) -> bool:
 
 
 def load_originals(processed_root: Path | None = None, with_landmarks: bool = True) -> list[Clip]:
-    """Mọi mẫu gốc (không phải bản augment) hoàn chỉnh trong data/processed."""
     root = Path(processed_root) if processed_root else get_data_path() / "processed"
     clips = []
     for class_dir in sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")):
@@ -77,13 +64,6 @@ def _pool(sequence: np.ndarray) -> np.ndarray:
 
 
 def session_invariance(clips: list[Clip], day_chars: int = 8) -> dict:
-    """Với mỗi lớp có >= 2 bối cảnh (session gộp theo ngày, ``day_chars`` ký tự đầu):
-
-    - ``cross_session_nn``: tỉ lệ clip có láng giềng gần nhất (trong mọi clip của bối cảnh KHÁC + mọi lớp khác)
-      là chính lớp đó. 1.0 = feature nhận ra ký hiệu dù đổi bối cảnh.
-    - ``ratio``: khoảng cách tâm (cùng lớp, khác bối cảnh) / khoảng cách tới tâm lớp khác gần nhất. < 1 là tốt.
-    Feature: trung bình + độ lệch chuẩn theo thời gian của chuỗi đã ``process_sequence``, chuẩn hoá z-score.
-    """
     pooled = np.stack([_pool(process_sequence(c.features)) for c in clips])
     pooled = (pooled - pooled.mean(0)) / (pooled.std(0) + 1e-6)
     days = np.array([c.session[:day_chars] for c in clips])
@@ -113,11 +93,6 @@ def session_invariance(clips: list[Clip], day_chars: int = 8) -> dict:
 
 def build_dataset(clips: list[Clip], holdout: list[tuple[str | None, str]], mode: str, per_class: int,
                   rng: np.random.Generator, strength: float = 1.0, pitch_degrees: float = PITCH_AUG_DEG) -> dict:
-    """Mẫu gốc ngoài holdout + bản augment cho tới ``per_class`` mẫu/lớp (chia đều các mẫu gốc).
-
-    mode: ``landmark`` (giả lập bối cảnh trên landmark; mẫu chưa có landmark sẽ báo lỗi), ``feature``
-    (nhiễu feature + pitch, cách cũ) hoặc ``none`` (chỉ mẫu gốc). Định dạng giống ``DataHandler.save_npz``.
-    """
     if mode not in ("landmark", "feature", "none"):
         raise ValueError("mode phải là landmark, feature hoặc none")
     train = [c for c in clips if not is_held_out(c, holdout)]
@@ -152,7 +127,6 @@ def build_dataset(clips: list[Clip], holdout: list[tuple[str | None, str]], mode
 
 
 def evaluate_holdout(predictor, clips: list[Clip], holdout: list[tuple[str | None, str]]) -> dict:
-    """Top-1 (bỏ qua từ chối), tỉ lệ được chấp nhận và đúng, và nhãn dự đoán theo từng lớp."""
     test = [c for c in clips if is_held_out(c, holdout)]
     if not test:
         raise ValueError("Không có mẫu gốc nào khớp holdout")

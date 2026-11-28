@@ -1,3 +1,5 @@
+/** Next.js configuration: API proxy to the Flask server. */
+
 import { networkInterfaces } from "node:os";
 import type { NextConfig } from "next";
 

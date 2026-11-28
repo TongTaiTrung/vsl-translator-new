@@ -1,1 +1,2 @@
-"""Utilities for preparing labeled video data."""
+"""Dataset storage, re-extraction and augmentation."""
+

@@ -1,3 +1,4 @@
+/** Sentence composition helpers (port of src/app/sentence.py). */
 
 export const DEFAULT_MODEL = "qwen/qwen3.8-27b";
 

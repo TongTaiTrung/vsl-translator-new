@@ -1,29 +1,8 @@
+"""Model definitions and training for the VSL classifier (k-fold ensemble, calibration, rejection).
+
+Usage: python -m src.model.training --data <file.npz> --out runs/vsl
 """
-Xây dựng & huấn luyện bộ phân loại VSL từ chuỗi đặc trưng (30, feature_dim).
 
-Thiết kế cho dữ liệu ÍT (vd. 100 lớp x ~15 mẫu):
-  - Mô hình nhỏ, nhận biết nhóm đặc trưng (vị trí / thủ hình / hướng / hiện diện / chuyển động),
-    conv đa tỉ lệ + BiGRU + attention pooling.
-  - Huấn luyện tự điều chỉnh:
-      * AdaptiveController: tăng/giảm độ mạnh augmentation, mixup, dropout theo khoảng cách
-        train-val (overfit -> tăng, underfit -> giảm).
-      * LR: warmup + cosine, tự giảm khi val loss đứng yên (plateau), AdamW tách weight decay.
-      * EMA trọng số, early stopping, tự chọn batch size, tự cân trọng số lớp khi lệch.
-  - Đánh giá trung thực bằng k-fold phân tầng (có hỗ trợ `groups` để tránh rò rỉ giữa các mẫu
-    cùng 1 lần ghi), gộp thành ensemble + 1 model huấn luyện trên toàn bộ dữ liệu.
-  - Hiệu chỉnh xác suất (temperature scaling từ OOF) + ngưỡng từ chối "không phải ký hiệu".
-  - Xuất 1 file ONNX (đã gồm chuẩn hoá + ensemble) để chạy ONNX Runtime Web.
-
-Dữ liệu vào: file .npz với
-    X       (N, 30, D) float   -- đầu ra của process_sequence
-    y       (N,)       int|str -- nhãn
-    classes (C,)       tuỳ chọn -- tên lớp
-    groups  (N,)       tuỳ chọn -- id nhóm (cùng video/lần ghi/người) để chia fold không rò rỉ
-
-Ví dụ:
-    python -m src.model.training --data dataset.npz --out runs/vsl
-    python -m src.model.training --demo --out runs/demo --folds 3 --epochs 60      # chạy thử nhanh
-"""
 from __future__ import annotations
 
 import argparse
@@ -107,7 +86,6 @@ def get_device() -> torch.device:
 
 
 def default_groups(d: int) -> list[tuple[int, int]]:
-    """Nhóm cột theo bố cục FEATURE_SLICES (FEATURE_DIM hoặc SEQ_FEATURE_DIM). Khác -> 1 nhóm."""
     if d in (FEATURE_DIM, SEQ_FEATURE_DIM):
         S = FEATURE_SLICES
         b = [0, S["handshape"].start, S["hand_local"].start, S["finger_curl"].start, S["hand_closure"].start,
@@ -148,7 +126,6 @@ def load_dataset(path: str):
 
 
 def make_demo_dataset(n_classes=20, per_class=15, T=30, D=SEQ_FEATURE_DIM, seed=0):
-    """Dữ liệu giả để kiểm tra pipeline: mỗi lớp = 1 quỹ đạo đặc trưng riêng + nhiễu + lệch thời gian."""
     rng = np.random.default_rng(seed)
     knots = rng.normal(size=(n_classes, 6, D)).astype(np.float32)
     t_src = np.linspace(0, 1, 6)
@@ -165,7 +142,6 @@ def make_demo_dataset(n_classes=20, per_class=15, T=30, D=SEQ_FEATURE_DIM, seed=
 
 
 def make_folds(y: np.ndarray, k: int, groups, seed: int) -> np.ndarray:
-    """Stratify while assigning every sample of a group to one fold."""
     from sklearn.model_selection import StratifiedGroupKFold
 
     y = np.asarray(y)
@@ -180,10 +156,6 @@ def make_folds(y: np.ndarray, k: int, groups, seed: int) -> np.ndarray:
 
 
 def hand_feature_columns(feature_dim: int) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
-    """(trái, phải, dùng chung) chỉ số cột cho bố cục FEATURE_DIM/SEQ_FEATURE_DIM; khác -> None.
-
-    Cột dùng chung (vector/tiếp xúc tay-tay) chỉ có nghĩa khi cả hai tay có mặt.
-    """
     if feature_dim not in (FEATURE_DIM, SEQ_FEATURE_DIM):
         return None
     return tuple(SIDE_COLUMNS[k][SIDE_COLUMNS[k] < feature_dim] for k in ("left", "right", "shared"))
@@ -193,11 +165,6 @@ _HAND_POS = FEATURE_SLICES["hand_pos"]
 
 
 def hand_validity(x: torch.Tensor) -> torch.Tensor:
-    """(…, T, D) đặc trưng THÔ -> (…, T, 2) cờ 0/1: tay trái/phải có hình học ở frame đó.
-
-    process_sequence điền 0 cho tay vắng dài, nên hand_pos toàn 0 = vắng. Không dùng presence mềm
-    (tay thật vẫn có thể ~0.02, vd. cảm ơn).
-    """
     hp = torch.nan_to_num(x[..., _HAND_POS], nan=0.0).abs()
     half = hp.shape[-1] // 2
     return torch.stack([hp[..., :half].sum(-1) > 0, hp[..., half:].sum(-1) > 0], dim=-1).to(x.dtype)
@@ -215,10 +182,6 @@ def _membership(d: int, device=None) -> torch.Tensor | None:
 
 def normalize_features(x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor,
                        presence_aware: bool = False) -> torch.Tensor:
-    """Đặc trưng thô -> z-score; dùng chung cho Normalizer, VSLEnsemble (predict) và ONNX.
-
-    presence_aware: cột của tay vắng (và cột tay-tay khi thiếu một tay) -> 0; cột presence -> cờ 0/1.
-    """
     z = torch.nan_to_num(((x - mean) / std).clamp(-8.0, 8.0), nan=0.0)
     m = _membership(x.shape[-1], x.device) if presence_aware else None
     if m is None:
@@ -231,11 +194,6 @@ def normalize_features(x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor,
 
 
 class Normalizer:
-    """z-score theo cột đặc trưng. Luôn fit trên đúng tập train của từng model (không nhìn thấy val).
-
-    presence_aware: mean/std cột của mỗi tay chỉ tính trên frame tay đó có mặt (không bị số 0 của
-    tay vắng kéo lệch -> tay trái không còn bị khuếch đại).
-    """
 
     def __init__(self, X: np.ndarray, presence_aware: bool = False):
         flat = X.reshape(-1, X.shape[-1])
@@ -258,7 +216,6 @@ class Normalizer:
 
 
 def _motion(src: torch.Tensor) -> torch.Tensor:
-    """Giống bước 4 của process_sequence: làm mượt [1,2,1]/4 (biên lặp) rồi np.gradient * (T-1)."""
     T = src.shape[1]
     if T >= 3:
         pad = torch.cat([src[:, :1], src, src[:, -1:]], dim=1)
@@ -270,11 +227,6 @@ def _motion(src: torch.Tensor) -> torch.Tensor:
 
 
 def _inter_hand_raw(raw: torch.Tensor) -> torch.Tensor:
-    """(B,T,D) thô -> (B,T,10) cột dùng chung [inter_hand_vec(3), hand_contact(4), motion inter(3)].
-
-    shortcut: tiếp xúc "cặp gần nhất" chỉ xét 3x3 điểm (palm/cái/trỏ) có trong hand_pos thay vì 6x6
-    như extract(); đủ cho tay phụ ở xa, cần lưu đủ 6 điểm nếu muốn khớp tuyệt đối khi hai tay chạm.
-    """
     hp = raw[..., _HAND_POS]
     lp, rp = hp[..., :9].unflatten(-1, (3, 3)), hp[..., 9:].unflatten(-1, (3, 3))
     inter = lp[..., 0, :] - rp[..., 0, :]
@@ -286,11 +238,6 @@ def _inter_hand_raw(raw: torch.Tensor) -> torch.Tensor:
 def add_distractor_hand_features(
     x: torch.Tensor, donor: torch.Tensor, side: torch.Tensor | int, norm_stats=None,
 ) -> torch.Tensor:
-    """Chèn tay bên `side` của clip donor vào clip x (đều đã chuẩn hoá).
-
-    norm_stats=(mean, std, presence_aware): tính lại cột tay-tay trong không gian thô từ vị trí hai tay
-    (giống lúc chạy thật khi tay thứ 2 lọt khung). Không có norm_stats -> gán 0 (hành vi cũ).
-    """
     layout = hand_feature_columns(x.shape[-1])
     if layout is None:
         return x
@@ -320,10 +267,6 @@ def add_distractor_hand_features(
 
 
 def dynamic_classes(X: np.ndarray, y: np.ndarray, n_classes: int, min_stroke: float) -> np.ndarray:
-    """(C,) bool: lớp có nét chuyển động rõ (trung vị |nét xy| của các mẫu trong X >= ``min_stroke``).
-
-    Ký hiệu tĩnh (chữ cái) có trung vị <= ~0.15 độ rộng vai; dấu sắc/huyền/nặng/hỏi, gặp, xin chào... >= ~0.28.
-    """
     out = np.zeros(n_classes, dtype=bool)
     if X.ndim != 3 or X.shape[-1] != SEQ_FEATURE_DIM:
         return out
@@ -335,7 +278,6 @@ def dynamic_classes(X: np.ndarray, y: np.ndarray, n_classes: int, min_stroke: fl
 
 
 def still_negative_pool(X: np.ndarray, max_count: int = 1024, seed: int = 0) -> np.ndarray:
-    """Các bản "đứng yên" (``still_versions``) của các chuỗi X, tối đa ``max_count`` (chọn ngẫu nhiên)."""
     pool = [v for x in X for v in still_versions(x)]
     if not pool:
         return np.zeros((0, *X.shape[1:]), dtype=np.float32)
@@ -347,10 +289,6 @@ def still_negative_pool(X: np.ndarray, max_count: int = 1024, seed: int = 0) -> 
 
 def still_negatives_for(X: np.ndarray, y: np.ndarray, idx: np.ndarray, originals: np.ndarray, n_classes: int,
                         cfg: Config, norm: Normalizer, device) -> torch.Tensor | None:
-    """Tham số ``negatives`` của ``train_one`` cho tập train ``idx``: bản đứng yên của các mẫu thuộc lớp có nét,
-    đã chuẩn hoá bằng ``norm``. Lớp có nét chỉ xác định trên mẫu gốc (``originals`` (N,) bool) của idx.
-    None khi tắt (``still_negative_weight`` = 0) hoặc không có mẫu âm nào.
-    """
     if cfg.still_negative_weight <= 0:
         return None
     idx = np.asarray(idx)
@@ -363,7 +301,6 @@ def still_negatives_for(X: np.ndarray, y: np.ndarray, idx: np.ndarray, originals
 
 
 def uniform_target_loss(logits: torch.Tensor) -> torch.Tensor:
-    """Cross-entropy với nhãn đều trên mọi lớp, trừ log C để về 0 khi logits đều (mẫu "không phải lớp nào")."""
     return -F.log_softmax(logits, dim=-1).mean(dim=-1).mean() - math.log(logits.shape[-1])
 
 
@@ -411,7 +348,6 @@ class Augmenter:
 
 
 class GroupStem(nn.Module):
-    """Mã hoá riêng từng nhóm đặc trưng rồi trộn; group-dropout khi train -> chịu được thiếu tay."""
 
     def __init__(self, groups, d_model, dropout, presence_scale=0.25):
         super().__init__()
@@ -445,7 +381,6 @@ class GroupStem(nn.Module):
 
 
 class MultiScaleBlock(nn.Module):
-    """Conv depthwise đa kích thước kernel (bắt cử động nhanh + chậm) + pointwise + residual."""
 
     def __init__(self, d, kernels, dropout):
         super().__init__()
@@ -461,7 +396,6 @@ class MultiScaleBlock(nn.Module):
 
 
 class CosineHead(nn.Module):
-    """Classifier cosine: ổn định hơn khi nhiều lớp, ít mẫu."""
 
     def __init__(self, d_in, n_classes, emb=128, scale=12.0):
         super().__init__()
@@ -498,11 +432,6 @@ class VSLNet(nn.Module):
 
 
 class HandPairNet(nn.Module):
-    """Mã hoá hai tay bằng CÙNG một encoder (tay trái được soi gương về hệ tay phải).
-
-    Tay vắng -> token học được (không phải "tay ở giữa vai"); nhánh tay-tay nhân với p_trái * p_phải,
-    nên có/không có tay thứ 2 không còn là một cột mà model bám vào được. Cần presence_norm=True.
-    """
 
     def __init__(self, in_dim: int, n_classes: int, cfg: Config, d_hand: int = 64, d_inter: int = 16,
                  d_model: int = 64, gru_hidden: int = 32):
@@ -553,7 +482,6 @@ class HandPairNet(nn.Module):
 
 
 class PreLNBlock(nn.Module):
-    """Lớp Transformer pre-LN + stochastic depth (bỏ cả nhánh residual theo mẫu khi train)."""
 
     def __init__(self, d: int, heads: int, ff: int, dropout: float, drop_path: float = 0.0):
         super().__init__()
@@ -584,8 +512,6 @@ def _sinusoid(T: int, d: int, device) -> torch.Tensor:
 
 
 class PointShapeEncoder(nn.Module):
-    """20 điểm bàn tay (hệ trục lòng bàn tay) -> vector thủ hình: mỗi điểm là 1 token,
-    attention giữa các điểm tự học quan hệ ngón (cái nằm dưới ngón nào, trỏ-giữa bắt chéo...)."""
 
     def __init__(self, d: int, dropout: float, n_points: int = 20):
         super().__init__()
@@ -602,9 +528,6 @@ class PointShapeEncoder(nn.Module):
 
 
 class SignFormer(nn.Module):
-    """Hai tay qua CÙNG encoder (tay trái soi gương), thủ hình đọc từ 20 điểm hand_local bằng attention,
-    tay vắng -> token học được, nhánh tay-tay nhân p_trái*p_phải; thời gian: conv đa kernel + 2 lớp
-    Transformer pre-LN (vị trí sinusoid -> chạy được với mọi T). Cần presence_norm=True."""
 
     def __init__(self, in_dim: int, n_classes: int, cfg: Config, d_point: int = 32, d_hand: int = 128,
                  d_inter: int = 16, d_model: int = 128, n_layers: int = 2, heads: int = 4):
@@ -700,15 +623,6 @@ class EMA:
 
 
 class AdaptiveController:
-    """
-    Tự điều chỉnh mức điều hoà (regularization) bằng HAI tín hiệu:
-      - gap  = acc(train sạch) - acc(val): đo overfit
-      - aug_acc = acc trên batch train ĐÃ augment/dropout/mixup: đo "còn sức học không"
-    Luật: aug_acc thấp (<0.75)         -> giảm s (điều hoà đã quá tay, model không fit nổi)
-          gap lớn VÀ aug_acc còn >0.85 -> tăng s (overfit nhưng vẫn còn dư sức chịu thêm)
-    Nhờ phanh aug_acc, s không thể bị đẩy lên cực đại chỉ vì train sạch ~100%.
-    `s` thuộc [0.1, 1] điều khiển: biên độ augmentation, xác suất mixup, dropout, group-dropout.
-    """
 
     def __init__(self, cfg: Config, init: float = 0.5, frozen: bool = False, period: int = 3):
         self.cfg, self.s, self.frozen, self.period = cfg, init, frozen, period
@@ -754,7 +668,6 @@ def eval_metrics(logits: torch.Tensor, y: torch.Tensor):
 
 
 def hard_negative_margin_loss(logits: torch.Tensor, target: torch.Tensor, margin: float) -> torch.Tensor:
-    """Push the true class beyond each sample's strongest competing class."""
     if logits.ndim != 2 or logits.shape[1] < 2 or target.shape != (logits.shape[0],):
         raise ValueError("Expected logits (batch, classes>=2) and target (batch,)")
     true_logits = logits.gather(1, target[:, None]).squeeze(1)
@@ -763,13 +676,6 @@ def hard_negative_margin_loss(logits: torch.Tensor, target: torch.Tensor, margin
 
 
 class ReplaySampler:
-    """Chọn mẫu train cho từng epoch khi fine-tune nhanh (chỉ vài lớp có mẫu mới).
-
-    Mỗi epoch: MỌI mẫu `always` (mẫu mới) + tối đa `quota[c]` mẫu khác của lớp c, rút ngẫu nhiên lại ở mỗi
-    epoch (qua nhiều epoch vẫn ôn được phần lớn dữ liệu cũ). Số mẫu mỗi epoch cố định -> lịch LR ổn định.
-    `train_one` bù trọng số lớp theo tỉ lệ (số mẫu lớp đó trong Xtr / số mẫu được rút) nên kỳ vọng loss vẫn
-    bằng loss trên toàn bộ Xtr: lớp được ôn nhiều hơn không vì thế mà được model "thiên vị".
-    """
 
     def __init__(self, y, quota, always=None, seed: int = 0):
         y = np.asarray(y)
@@ -797,18 +703,6 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
               freeze_strength: bool = False, tag: str = "", log_every: int = 5,
               hand_presence: torch.Tensor | None = None, norm_stats=None, init_state: dict | None = None,
               sampler=None, negatives: torch.Tensor | None = None):
-    """Huấn luyện 1 model. Có (Xva,yva): early stopping + tự thích ứng. Không có: chạy `fixed_epochs`.
-
-    norm_stats=(mean, std, presence_aware) tensor trên device: để augmentation tay phụ tính lại cột tay-tay.
-    init_state: state_dict để fine-tune (warm-start) thay vì khởi tạo ngẫu nhiên. Khi có val, model ban đầu
-    được chấm trước epoch 1 và là ứng viên "best" (best_epoch=0) -> fine-tune không thể trả về model tệ hơn
-    trên val so với lúc bắt đầu.
-    sampler: callable epoch -> chỉ số vào Xtr (số lượng cố định, vd. `ReplaySampler`): mỗi epoch chỉ train trên
-    tập con đó thay vì toàn bộ Xtr (fine-tune nhanh). Batch size vẫn tính theo len(Xtr) như khi train đầy đủ.
-    negatives: (M, T, D) đã chuẩn hoá như Xtr: mẫu "không phải lớp nào" (``still_negative_pool``); mỗi bước
-    ``ceil(cfg.still_negative_fraction * bs)`` mẫu được augment rồi train về xác suất đều (trọng số
-    ``cfg.still_negative_weight``).
-    """
     has_val = Xva is not None
     model = build_model(Xtr.shape[-1], n_classes, groups, cfg).to(device)
     if init_state is not None:
@@ -1005,11 +899,6 @@ def train_one(Xtr, ytr, Xva, yva, n_classes, groups, cfg: Config, device,
 
 
 def logits_and_embedding(model: nn.Module, z: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """Một lượt chạy model -> (logits (B, C), embedding chuẩn hoá L2 (B, E)).
-
-    Embedding là không gian head dùng để phân lớp: head cosine -> vector ``emb`` của nó (so với tâm lớp
-    bằng cosine), head tuyến tính -> vector sau LayerNorm. Dùng cho bộ nhớ mẫu cá nhân (src/model/memory.py).
-    """
     h = model.norm(model.pool(z))
     logits = model.head(model.drop(h))
     emb = model.head.emb(h) if isinstance(model.head, CosineHead) else h
@@ -1017,11 +906,6 @@ def logits_and_embedding(model: nn.Module, z: torch.Tensor) -> tuple[torch.Tenso
 
 
 class VSLEnsemble(nn.Module):
-    """
-    Nhận đặc trưng THÔ (B, T, D) -> xác suất (B, C). Đã gồm chuẩn hoá + xử lý NaN + ensemble.
-    Mỗi model giữ mean/std RIÊNG (tính chỉ trên tập train của fold đó) -> không rò rỉ khi CV.
-    means, stds: (K, D) với K = số model.
-    """
 
     def __init__(self, models, means, stds, temperature=1.0, presence_aware: bool = False):
         super().__init__()
@@ -1039,7 +923,6 @@ class VSLEnsemble(nn.Module):
         return torch.stack(probs).mean(0)
 
     def logits_and_embeddings(self, x) -> tuple[torch.Tensor, torch.Tensor]:
-        """x thô (B, T, D) -> (logits đã chia nhiệt độ (K, B, C), embedding (K, B, E)) của từng model."""
         logits, embs = [], []
         for k, m in enumerate(self.models):
             z = normalize_features(x, self.means[k], self.stds[k], self.presence_aware)
@@ -1050,16 +933,10 @@ class VSLEnsemble(nn.Module):
 
 
 def full_model_epochs(best_epochs, cfg: Config) -> int:
-    """Số epoch model toàn bộ dữ liệu: theo CV nhưng luôn >= warmup + 20 để thật sự đi qua pha cosine."""
     return max(int(np.median(best_epochs) * 1.15) + 1, cfg.warmup_epochs + 20)
 
 
 def fit_temperature(logits: torch.Tensor, y: torch.Tensor, t_min: float = 1.0, t_max: float = 10.0) -> float:
-    """
-    Fit T bằng LBFGS với T luôn nằm trong [t_min, t_max] ngay trong lúc tối ưu
-    (tham số hoá qua sigmoid, không có exp không giới hạn) + line search; lỗi/NaN -> T=1.
-    Mặc định t_min=1: không bao giờ làm sắc xác suất (T<1 phá ngưỡng từ chối).
-    """
     logits = torch.nan_to_num(logits.float(), nan=0.0, posinf=1e4, neginf=-1e4)
     lo, hi = math.log(t_min), math.log(t_max)
     u = torch.zeros(1, requires_grad=True)
@@ -1085,10 +962,6 @@ def fit_temperature(logits: torch.Tensor, y: torch.Tensor, t_min: float = 1.0, t
 
 def calibrate_temperature(logits: torch.Tensor, y: torch.Tensor, t_min: float = 1.0,
                           t_max: float = 10.0) -> tuple[float, str]:
-    """
-    Temperature từ OOF logits -> (T, status), status thuộc fitted | at_bound | skipped_no_errors.
-    OOF không có lỗi top-1 thì NLL giảm đơn điệu khi T -> 0 (không có tín hiệu hiệu chỉnh) -> giữ T=1.
-    """
     if bool((logits.argmax(1) == y).all()):
         return 1.0, "skipped_no_errors"
     t = fit_temperature(logits, y, t_min, t_max)
@@ -1140,7 +1013,6 @@ def load_ensemble(path, device="cpu") -> tuple[VSLEnsemble, dict]:
 
 @torch.no_grad()
 def predict_topk(ens: VSLEnsemble, X: np.ndarray, classes, k=5, reject_threshold=0.0):
-    """X: (B,30,D) hoặc (30,D) -> list[list[(tên_lớp, xác_suất)]]; dưới ngưỡng -> ('unknown', conf) đứng đầu."""
     dev = next(ens.buffers()).device
     x = torch.as_tensor(np.asarray(X, dtype=np.float32), device=dev)
     if x.ndim == 2:
@@ -1186,7 +1058,6 @@ def report_errors(oof_logits: np.ndarray, y: np.ndarray, classes, mask: np.ndarr
 
 
 def confusion_pairs(oof_logits: np.ndarray, y: np.ndarray, classes, mask: np.ndarray) -> list[dict]:
-    """Count directed mistakes on original, held-out samples only."""
     pred = oof_logits[mask].argmax(axis=1)
     truth = y[mask]
     counts: dict[tuple[int, int], int] = {}
@@ -1201,7 +1072,6 @@ def confusion_pairs(oof_logits: np.ndarray, y: np.ndarray, classes, mask: np.nda
 
 
 def closest_rivals(probs: np.ndarray, y: np.ndarray, classes) -> list[dict]:
-    """Find the strongest rival for each class on original OOF examples."""
     rivals = []
     for class_index, class_name in enumerate(classes):
         rows = probs[y == class_index]
@@ -1223,13 +1093,6 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
                  folds: int = 5, folds_to_run: int = 0, add_full: bool = True,
                  export_onnx_model: bool = True, device=None,
                  validation_mask: np.ndarray | None = None, publish: bool = True) -> dict:
-    """
-    Huấn luyện trên MỌI lớp trong (X, y, classes): k-fold -> hiệu chỉnh -> (tuỳ chọn) model toàn bộ
-    dữ liệu -> lưu ensemble.pt / classes.json / metrics.json / vsl_classifier.onnx.
-    publish: nếu out_dir nằm trực tiếp trong runs/ thì nó được đổi tên thành runs/best (out_dir trả về là đường dẫn mới) và chỉ giữ 5 run gần nhất
-    (``checkpoints.publish_run``).
-    Trả về dict kết quả (CV, lịch sử từng fold, OOF logits, đường dẫn).
-    """
     cfg = cfg or Config()
     set_seed(cfg.seed)
     device = device or get_device()
@@ -1416,10 +1279,6 @@ def run_training(X, y, classes, groups=None, out_dir="runs/vsl", cfg: Config | N
 
 
 def load_validation_mask(path: str, n: int, groups) -> np.ndarray | None:
-    """
-    validation_mask = ~augmented nếu .npz có cột 'augmented' (mẫu tăng cường không bao giờ dùng để
-    validate/OOF). Có mẫu tăng cường mà thiếu groups (origin) -> từ chối: CV sẽ rò rỉ giữa bản gốc và bản sao.
-    """
     d = np.load(path, allow_pickle=True)
     if "augmented" not in d.files:
         return None

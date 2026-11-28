@@ -1,3 +1,5 @@
+"""Tests for voting, sentence composition and the realtime translator."""
+
 import os
 import tempfile
 import threading
@@ -25,7 +27,6 @@ class FakeClient:
 
 
 class FakeSession:
-    """Phát lại danh sách (status, label); label=None nghĩa là dự đoán bị từ chối."""
 
     def __init__(self, script):
         self.script = list(script)

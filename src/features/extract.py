@@ -1,18 +1,5 @@
-"""
-Trích xuất đặc trưng VSL cho bài toán phân loại cửa sổ 30 frame.
+"""Feature extraction: per-frame features (FEATURE_DIM) and 30-frame sequences (SEQ_FEATURE_DIM)."""
 
-Tập trung 4 thành tố: Thủ hình (handshape), Vị trí (location),
-Hướng bàn tay (palm orientation), Chuyển động (movement).
-Không dùng thành tố phi thủ công.
-
-Hàm vào/ra giữ nguyên:
-    extract(pose_res, hand_res)            -> (FEATURE_DIM,)          mỗi frame
-    process_sequence(raw_sequence, ...)    -> (target_len, SEQ_FEATURE_DIM)
-    rotate_view_pitch(features, degrees)   -> cùng shape, mô phỏng camera cao/thấp hơn (dùng khi augment)
-
-Giả định đầu vào: frame đã qua frame_padding thành FRAME_SIZE x FRAME_SIZE (1280) nên toạ độ
-chuẩn hoá x, y của MediaPipe cùng một tỉ lệ, không cần W/H.
-"""
 from __future__ import annotations
 
 import numpy as np
@@ -70,7 +57,6 @@ STROKE_SLICE = slice(MOTION_SLICE.stop, SEQ_FEATURE_DIM)
 
 
 def _side_raw_cols(side: int) -> np.ndarray:
-    """Cột thô (trong FEATURE_DIM) chỉ thuộc tay trái (0) hoặc phải (1)."""
     cols = []
     for name in ("hand_pos", "body_contact", "face_vec", "hand_scale", "handshape", "hand_local", "finger_curl",
                  "hand_closure", "orientation", "presence"):
@@ -85,7 +71,6 @@ _PALM_Y = (_SL["hand_pos"].start + 1, _SL["hand_pos"].start + 10)
 
 
 def _with_motion(raw_cols: np.ndarray, side: int | None = None) -> np.ndarray:
-    """Thêm cột chuyển động (trong SEQ_FEATURE_DIM) sinh ra từ các cột thô đã cho, và cột nét của tay `side`."""
     motion = FEATURE_DIM + np.flatnonzero(np.isin(_MOTION_COLS, raw_cols))
     half = STROKE_DIM // 2
     stroke = np.arange(0) if side is None else np.arange(STROKE_SLICE.start + side * half,
@@ -101,10 +86,6 @@ SIDE_COLUMNS: dict[str, np.ndarray] = {
 
 
 def _left_mirror() -> tuple[np.ndarray, np.ndarray]:
-    """(perm, sign) đưa cột tay trái (thứ tự SIDE_COLUMNS["left"]) về hệ của tay phải qua gương trục x:
-    đảo dấu toạ độ x, palm_dir.x, palm_normal.x (normal trái đã lật), góc cổ tay ngang, face_vec.x;
-    đổi chỗ neo má trái/phải và vai trái/phải. hand_local, hand_scale, finger_curl, hand_closure (góc, tỉ số độ dài)
-    tự đối xứng gương nên giữ nguyên."""
     cols = SIDE_COLUMNS["left"]
     pos = {int(c): i for i, c in enumerate(cols)}
     hp, bc, ori = _SL["hand_pos"].start, _SL["body_contact"].start, _SL["orientation"].start
@@ -130,14 +111,6 @@ _PITCH_DIR = _SL["orientation"].start + np.array([0, 3, 9, 12])
 
 
 def rotate_view_pitch(features: np.ndarray, degrees: float) -> np.ndarray:
-    """Mô phỏng camera đặt thấp hơn (degrees > 0, nhìn hất lên) hoặc cao hơn (< 0) trên feature THÔ (..., FEATURE_DIM).
-
-    Xoay quanh trục x của thân (qua giữa hai vai): y' = y cos + z sin, z' = -y sin + z cos, với z hướng ra xa camera,
-    nên điểm ở trước thân hiện cao hơn khi nhìn từ dưới. Vị trí (hand_pos, inter_hand_vec, face_vec) xoay trong thang
-    độ sâu thật (z lưu = Z_POSE * POSE_Z_GAIN * độ sâu thật); palm_dir, palm_normal xoay trực tiếp. Bất biến, giữ nguyên: thủ hình,
-    hand_local, finger_curl, hand_scale, góc cổ tay (tích vô hướng với cẳng tay cùng xoay), tiếp xúc, presence. body_contact chỉ xấp xỉ
-    bất biến (neo ngực/bụng cố định, z giảm trọng số) nên cũng giữ nguyên. NaN giữ NaN.
-    """
     out = np.array(features, dtype=np.float32, copy=True)
     if out.shape[-1] != FEATURE_DIM:
         raise ValueError(f"Expected (..., {FEATURE_DIM}), got {out.shape}")
@@ -169,7 +142,6 @@ def _unit_vector(v: np.ndarray, eps: float = 1e-6) -> np.ndarray:
 
 
 def _contact_kernel(dist: np.ndarray, gamma) -> np.ndarray:
-    """exp(-gamma d^2): ~1 khi chạm, ~0 khi xa -> phóng đại thay đổi nhỏ ở gần, triệt jitter ở xa."""
     return np.exp(-gamma * (dist ** 2))
 
 
@@ -179,7 +151,6 @@ def _vis(lm) -> float:
 
 
 def _body_anchors(P: np.ndarray) -> np.ndarray:
-    """11 neo cơ thể trong hệ quy chiếu thân (P = pose đã chuẩn hoá, gốc = giữa hai vai)."""
     nose = P[0]
     eye_mid = 0.5 * (P[2] + P[5])
     mouth = 0.5 * (P[9] + P[10])
@@ -197,7 +168,6 @@ def _body_anchors(P: np.ndarray) -> np.ndarray:
 
 
 def _body_contacts(pts: np.ndarray, anchors: np.ndarray) -> np.ndarray:
-    """pts (6,3): tâm lòng bàn tay + 5 đầu ngón. Trả (11,): độ gần lớn nhất của bất kỳ điểm nào."""
     diff = anchors[None, :, :] - pts[:, None, :]
     diff[..., 2] *= CONTACT_Z
     d = np.linalg.norm(diff, axis=-1)
@@ -205,11 +175,6 @@ def _body_contacts(pts: np.ndarray, anchors: np.ndarray) -> np.ndarray:
 
 
 def _hand_scale(img: np.ndarray, shoulder_width: float) -> float:
-    """img (21,3): landmark ảnh của tay (z cùng thang với x). Trả cỡ lòng bàn tay / độ rộng vai.
-
-    Lấy trung bình độ dài 3D 5 xương lòng bàn tay nên ít đổi khi xoay/gập bàn tay; tỉ số với vai
-    tăng khi tay đưa lại gần camera hơn thân (vd. "m" giơ ra trước, "tôi" áp vào ngực).
-    """
     bones = np.linalg.norm(img[_PALM_BONES[:, 0]] - img[_PALM_BONES[:, 1]], axis=-1)
     return float(bones.mean() / max(shoulder_width, 1e-6))
 
@@ -220,13 +185,6 @@ CURL_DIM = 45
 
 
 def _curl_stats(pts: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """pts (21,3) -> (góc gập 15 khớp [rad], tổng gập mỗi ngón 5, gập PIP+DIP mỗi ngón 5, độ thẳng mỗi ngón 5).
-
-    Góc (rad) tuyến tính theo độ gập, khác cos (cos 16° = 0.96, cos 32° = 0.85: phần gập nhẹ bị nén).
-    Tổng theo ngón cộng 2-3 khớp nên lệch ngẫu nhiên từng khớp của MediaPipe triệt bớt nhau.
-    Độ thẳng = |đầu ngón - gốc ngón| / tổng độ dài 3 đốt: 1 = duỗi thẳng, nhỏ dần khi móc/cuộn.
-    Mọi giá trị bất biến khi xoay, tịnh tiến, co giãn và soi gương.
-    """
     bones = np.diff(pts[_FINGER_CHAINS], axis=1)
     lengths = np.linalg.norm(bones, axis=-1)
     a, b = bones[:, :-1].astype(np.float64), bones[:, 1:].astype(np.float64)
@@ -239,16 +197,6 @@ def _curl_stats(pts: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np
 
 
 def _finger_curl(img: np.ndarray, world: np.ndarray) -> np.ndarray:
-    """(CURL_DIM,) độ cong ngón của một tay, đo trên CẢ landmark ảnh lẫn hand_world.
-
-    [ảnh: góc 15 khớp, tổng gập 5, gập PIP+DIP 5, độ thẳng 5 | world: tổng gập 5, gập PIP+DIP 5, độ thẳng 5]
-
-    Thủ hình cũ (cos khớp, hand_local) chỉ lấy từ hand_world, nhưng đo trên dữ liệu thật hand_world làm phẳng
-    độ móc của ngón: "u" và dấu â/ô/ê (trỏ + giữa duỗi thẳng / móc xuống, PIP+DIP lệch ~40-90°), "i" và
-    dấu ơ/ư (út duỗi / móc, ngón cái duỗi) tách xa gấp 2-3 lần khi đo trên landmark ảnh, kể cả khi giả lập
-    đổi bối cảnh quay (src/features/view.py). Hai nguồn là hai đầu ra khác nhau của mạng nên giữ cả hai.
-    z ảnh của tay cùng thang với x, y (frame vuông) nên góc 3D đo trực tiếp được.
-    """
     i_ang, i_total, i_hook, i_straight = _curl_stats(img)
     _, w_total, w_hook, w_straight = _curl_stats(world)
     return np.concatenate([i_ang, i_total, i_hook, i_straight, w_total, w_hook, w_straight]).astype(np.float32)
@@ -261,13 +209,6 @@ CLOSURE_DIM = 8
 
 
 def _closure_stats(pts: np.ndarray) -> np.ndarray:
-    """pts (21,3) -> (4,): [khe cái-trỏ, khe cái-giữa, khe cái-đốt gần nhất của trỏ/giữa, tỉ lệ hở của vòng].
-
-    Ba khe đầu chia cỡ lòng bàn tay (trung bình 5 xương _PALM_BONES). Tỉ lệ hở = khe cái-trỏ / (khe + độ dài
-    đường vòng _THUMB_LOOP): 0 = vòng khép kín, lớn dần khi miệng vòng mở; không phụ thuộc vòng to hay nhỏ.
-    Khe tới đốt gần nhất bắt được cả kiểu "o" ngón cái chạm cạnh đốt DIP thay vì chạm đầu ngón.
-    Bất biến khi xoay, tịnh tiến, co giãn và soi gương.
-    """
     pts = pts.astype(np.float64)
     palm = np.linalg.norm(pts[_PALM_BONES[:, 0]] - pts[_PALM_BONES[:, 1]], axis=-1).mean() + 1e-9
     tip = pts[4]
@@ -282,18 +223,10 @@ def _closure_stats(pts: np.ndarray) -> np.ndarray:
 
 
 def _hand_closure(img: np.ndarray, world: np.ndarray) -> np.ndarray:
-    """(CLOSURE_DIM,) độ khép của vòng ngón cái - ngón trỏ/giữa: [ảnh 4 | world 4], xem _closure_stats.
-
-    "o" (vòng khép kín) và "c" (vòng hở) gần như cùng độ cong ngón, nên model học tách chúng qua độ cuộn và chỉ
-    nhận "o" khi tay gần thành nắm đấm. Khe hở đầu ngón cái là thứ phân biệt thật: đo trên clip gốc kèm giả lập
-    đổi bối cảnh quay (src/features/view.py), tỉ lệ hở ảnh 0.09±0.03 ("o") so với 0.22±0.04 ("c"), d' ≈ 3.4.
-    hand_world làm phẳng/mở bớt vòng ("o" còn hở ~0.5 cỡ lòng bàn tay) nên giữ cả hai nguồn như finger_curl.
-    """
     return np.concatenate([_closure_stats(img), _closure_stats(world)]).astype(np.float32)
 
 
 def _hand_hand_contacts(lp: np.ndarray, rp: np.ndarray) -> np.ndarray:
-    """lp, rp (6,3) theo thứ tự [palm, thumb, index, middle, ring, pinky]."""
     d = np.array([
         np.linalg.norm(lp[0] - rp[0]),
         np.linalg.norm(lp[1] - rp[1]),
@@ -304,10 +237,6 @@ def _hand_hand_contacts(lp: np.ndarray, rp: np.ndarray) -> np.ndarray:
 
 
 def _assign_hands(hand_wrists: np.ndarray, pose_wrists: np.ndarray, sw: float) -> list:
-    """
-    Ghép tay detect được với cổ tay trái/phải của POSE bằng hình học (không tin nhãn handedness,
-    vì nhãn phụ thuộc ảnh có lật gương hay không). Trả [idx_tay_cho_trái, idx_tay_cho_phải].
-    """
     assign = [None, None]
     n = len(hand_wrists)
     if n == 0:
@@ -326,7 +255,6 @@ def _assign_hands(hand_wrists: np.ndarray, pose_wrists: np.ndarray, sw: float) -
 
 
 def _hand_match_confidence(hand_wrist: np.ndarray, pose_wrist: np.ndarray, shoulder_width: float) -> float:
-    """Confidence of a hand/pose wrist match, used instead of a hard 0/1 flag."""
     distance = float(np.linalg.norm(hand_wrist - pose_wrist) / max(shoulder_width, 1e-6))
     if distance > MAX_MATCH_DIST:
         return 0.0
@@ -338,10 +266,6 @@ def _hand_shape_and_orientation(
     is_left: bool,
     forearm: np.ndarray | None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """
-    local: (21,3) bàn tay đã xoay vào hệ trục thân (chỉ dùng hiệu vector, bất biến tịnh tiến).
-    Trả: handshape (38), orientation (9), hand_local (60).
-    """
     palm_size = np.linalg.norm(local[9] - local[0]) + 1e-6
 
     palm_dir = _unit_vector(local[9] - local[0])
@@ -391,10 +315,6 @@ def _hand_shape_and_orientation(
 
 
 def extract(pose_res: PoseLandmarkerResult, hand_res: HandLandmarkerResult) -> np.ndarray:
-    """
-    Trích xuất FEATURE_DIM (=383) đặc trưng của 4 thành tố VSL trên 1 frame.
-    Giá trị không xác định được trả NaN (process_sequence sẽ xử lý).
-    """
     nan_out = np.full(FEATURE_DIM, np.nan, dtype=np.float32)
     if not pose_res or not pose_res.pose_landmarks:
         return nan_out
@@ -496,7 +416,6 @@ def extract(pose_res: PoseLandmarkerResult, hand_res: HandLandmarkerResult) -> n
 
 
 def _fill_gaps(col: np.ndarray, max_gap: int) -> np.ndarray:
-    """Nội suy các đoạn NaN ngắn (<= max_gap). Đoạn dài hơn -> 0.0 (đã có cờ presence báo vắng)."""
     nan = np.isnan(col)
     if not nan.any():
         return col
@@ -538,11 +457,6 @@ def _spike_scales() -> np.ndarray:
 
 
 def _drop_resting_hands(seq: np.ndarray) -> None:
-    """Bỏ (in-place) tay có trung vị tâm lòng bàn tay thấp hơn REST_Y: tay buông/để bàn lọt khung.
-
-    Đặt NaN cho mọi cột của bên đó (kể cả cột tay-tay dùng chung) và presence = 0,
-    để model thấy đúng một clip một tay. Chạy chung cho train, reextract và predict.
-    """
     for side in (0, 1):
         palm_y = seq[:, _PALM_Y[side]]
         palm_y = palm_y[~np.isnan(palm_y)]
@@ -553,25 +467,17 @@ def _drop_resting_hands(seq: np.ndarray) -> None:
 
 
 def active_presence(feature: np.ndarray) -> np.ndarray:
-    """(2,) bool cho 1 frame thô: tay được detect (có hình học) và không ở vị trí nghỉ."""
     palm_y = np.asarray(feature, dtype=np.float32)[list(_PALM_Y)]
     return palm_y <= REST_Y
 
 
 def _hand_valid(seq: np.ndarray) -> np.ndarray:
-    """(T, 2) bool trên chuỗi đã lấp gap: tay có hình học (hand_pos khác 0) và không ở vị trí nghỉ."""
     hp = _SL["hand_pos"].start
     return np.stack([(np.abs(seq[:, hp + 9 * s: hp + 9 * (s + 1)]).sum(1) > 0) & (seq[:, _PALM_Y[s]] <= REST_Y)
                      for s in (0, 1)], axis=1)
 
 
 def _stroke(pos: np.ndarray, valid: np.ndarray, lag: int = STROKE_LAG) -> np.ndarray:
-    """(STROKE_DIM,) nét chính của mỗi tay: [Δ đầu trỏ (3), Δ tâm lòng bàn tay (3)] trên đoạn `lag` frame
-    có |Δ đầu trỏ| lớn nhất mà cả đoạn tay đều hợp lệ. Không có đoạn nào -> 0.
-
-    pos: (T, FEATURE_DIM) đã làm mượt; valid: (T, 2). Chỉ xét đoạn tay hợp lệ suốt đoạn nên tay vừa lọt khung
-    (từ 0 nhảy lên vị trí thật) hay tay đang nâng từ dưới bụng lên không bị tính là một nét.
-    """
     T = len(pos)
     lag = min(lag, T - 1)
     out = np.zeros(STROKE_DIM, dtype=np.float32)
@@ -597,15 +503,6 @@ def process_sequence(
     max_gap: int = 6,
     add_motion: bool = True,
 ) -> np.ndarray:
-    """
-    Đóng gói chuỗi (T, FEATURE_DIM) về (target_len, SEQ_FEATURE_DIM):
-      1. Nội suy NaN (chỉ đoạn thiếu <= max_gap frame; dài hơn -> 0 + cờ presence).
-      2. Khử gai lỗi 1-frame (chỉ khi 2 frame lân cận khớp nhau, giữ nguyên cử động thật).
-      3. Co giãn thời gian về target_len.
-      4. Thêm đặc trưng CHUYỂN ĐỘNG (vận tốc vị trí tay + hướng bàn tay) và NÉT (cú di chuyển mạnh nhất
-         của mỗi tay trong cửa sổ, lặp lại ở mọi frame) nếu add_motion.
-    Các cột thủ hình giữ nguyên không làm mờ (để không mất rung/búng ngón).
-    """
     seq = np.array(raw_sequence, dtype=np.float32)
     out_dim = SEQ_FEATURE_DIM if add_motion else FEATURE_DIM
     if seq.ndim != 2 or seq.shape[0] == 0:
@@ -665,25 +562,12 @@ STILL_MAX_STROKE = 0.15
 
 
 def stroke_magnitude(seq: np.ndarray) -> float:
-    """|Δ xy đầu ngón trỏ| của nét chính (lớn hơn của hai tay) trong chuỗi đã xử lý ``(T, SEQ_FEATURE_DIM)``."""
     stroke = np.asarray(seq, dtype=np.float32)[0, STROKE_SLICE]
     half = STROKE_DIM // 2
     return float(max(np.linalg.norm(stroke[side * half: side * half + 2]) for side in (0, 1)))
 
 
 def still_versions(seq: np.ndarray, target_len: int | None = None) -> list[np.ndarray]:
-    """Các bản "đứng yên" của một chuỗi đã xử lý ``(T, >= FEATURE_DIM)``: giữ tư thế, bỏ cú di chuyển.
-
-    Dấu sắc/huyền/nặng/hỏi chỉ vẩy tay ~0.3 s rồi giữ yên; nếu chỉ nhìn tư thế giữ tay thì model nhận ra lớp
-    theo tư thế riêng của buổi thu chứ không theo nét, và hỏng khi người ký giữ tay khác đi. Các bản này
-    (mẫu âm khi train, xem ``training.Config.still_negative_weight``) dạy model rằng tư thế không có nét
-    không phải là lớp đó.
-
-    Đoạn chuyển động = từ frame đầu tới frame cuối có tốc độ xy đầu ngón trỏ >= 30% đỉnh (tay hợp lệ), nới
-    thêm 1 frame mỗi bên. Trả về (tối đa 3 chuỗi ``(target_len, SEQ_FEATURE_DIM)``, tính lại bằng
-    ``process_sequence``): đoạn giữ tay trước và sau đoạn chuyển động (nếu dài >= ``STILL_MIN_HOLD`` frame và
-    nét còn lại <= min(nửa nét gốc, ``STILL_MAX_STROKE``)), và frame yên nhất lặp lại. Không có tay hợp lệ hoặc mẫu không có nét > ``STILL_MAX_STROKE`` -> [].
-    """
     raw = np.asarray(seq, dtype=np.float32)[:, :FEATURE_DIM]
     T = len(raw)
     target_len = target_len or T

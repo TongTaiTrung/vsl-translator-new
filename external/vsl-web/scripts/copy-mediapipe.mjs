@@ -1,3 +1,5 @@
+/** Copy MediaPipe wasm and model files into public/mediapipe. */
+
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

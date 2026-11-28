@@ -1,3 +1,5 @@
+"""Tests for view simulation and the cross-session benchmark."""
+
 import json
 import tempfile
 import unittest
@@ -20,7 +22,6 @@ RIGHT_SCALE = S["hand_scale"].start + 1
 
 
 def _clip(T: int = 10, seed: int = 0):
-    """Landmark (pose, hands, world) của một clip: cảnh của test_feature_v3, tay phải trôi nhẹ theo thời gian."""
     rng = np.random.default_rng(seed)
     pose0, image0, world0 = _scene()
     marks = []

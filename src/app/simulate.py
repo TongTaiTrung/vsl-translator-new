@@ -1,15 +1,6 @@
-"""So sánh nhánh thường và nhánh nhanh trên luồng ký mô phỏng (không cần camera/MediaPipe).
+"""Compare the regular and fast branches on simulated multi-word signing streams.
 
-Ghép các clip gốc (không augment) trong ``data/processed`` thành chuỗi nhiều từ, xen giữa là
-0..``max_gap`` frame không có tay (gap ngắn hơn ``no_hand_timeout`` -> cửa sổ dính đoạn chuyển
-tiếp giữa hai từ), rồi phát lại ở 15 fps qua ``RealtimeTranslator`` / ``FastRealtimeTranslator``.
-
-``--holdout`` (mặc định khi checkpoint có ``folds.json``): với mỗi fold k chỉ dùng model fold k
-và chỉ phát các clip thuộc fold k -> mọi con số đều trên dữ liệu model CHƯA thấy. Khi đó model
-nhanh và "ensemble" xác nhận là cùng một model, nên chỉ đo được tác dụng của luật thoát sớm;
-lớp xác nhận bằng ensemble thật chỉ làm nhánh nhanh an toàn hơn.
-
-Chạy: ``.venv/bin/python -m src.app.simulate [--checkpoint runs/.../ensemble.pt] [--streams 20]``
+Usage: python -m src.app.simulate [--checkpoint runs/best/ensemble.pt] [--streams 20]
 """
 
 from __future__ import annotations
@@ -38,7 +29,6 @@ class _NoLandmarkers:
 
 
 class _Replay:
-    """Nhận đặc trưng thô thay cho frame BGR (``RealtimeTranslator.process`` gọi ``update_frame``)."""
 
     def update_frame(self, feature, *, now=None):
         return self.update_features(feature, now=now)
@@ -53,7 +43,6 @@ class FastReplaySession(_Replay, FastStreamSession):
 
 
 def load_original_samples(data_dir: Path, classes, folds: dict | None) -> list[tuple[str, int, np.ndarray]]:
-    """[(lớp, fold, đặc trưng thô (frames, FEATURE_DIM))] của các mẫu gốc."""
     samples = []
     for name in classes:
         class_dir = data_dir / name
@@ -75,7 +64,6 @@ def load_original_samples(data_dir: Path, classes, folds: dict | None) -> list[t
 
 
 def build_stream(samples, rng, words: int, max_gap: int):
-    """Trả về (đặc trưng (N, D), [(nhãn, frame bắt đầu)]) — không có hai từ liền nhau trùng nhãn."""
     rest = np.full((1, FEATURE_DIM), np.nan, dtype=np.float32)
     parts, spans, cursor, previous = [np.repeat(rest, 12, 0)], [], 12, None
     for _ in range(words):
@@ -91,11 +79,6 @@ def build_stream(samples, rng, words: int, max_gap: int):
 
 
 def score(commits, spans) -> dict:
-    """Căn chuỗi từ đã chốt với chuỗi đúng (Levenshtein, như WER).
-
-    commits: [(frame, nhãn)]; spans: [(nhãn, frame bắt đầu)]. Độ trễ của một từ khớp = frame
-    chốt - frame bắt đầu của từ đó.
-    """
     hyp, ref = [label for _f, label in commits], [label for label, _s in spans]
     n, m = len(ref), len(hyp)
     cost = np.zeros((n + 1, m + 1), dtype=np.int64)

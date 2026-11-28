@@ -1,3 +1,5 @@
+/** Root layout: page metadata, fonts and theme bootstrap. */
+
 import type { Metadata, Viewport } from "next";
 import { Be_Vietnam_Pro } from "next/font/google";
 import { THEME_SCRIPT } from "@/lib/theme";

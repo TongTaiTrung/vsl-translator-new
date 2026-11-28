@@ -1,3 +1,5 @@
+"""Tests for training components and calibration."""
+
 import contextlib
 import io
 import sys

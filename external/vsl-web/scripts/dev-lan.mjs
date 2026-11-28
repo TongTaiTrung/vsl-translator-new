@@ -1,3 +1,5 @@
+/** Run the dev server over HTTPS on the LAN with a self-signed certificate. */
+
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";

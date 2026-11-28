@@ -1,3 +1,4 @@
+/** Browser-side MediaPipe pose and hand landmarking, mapped to the 1280x1280 padded canvas. */
 
 import { type AssetUrls, type Delegate, MainSubjectIsolator, type Point } from "./subject";
 

@@ -1,3 +1,4 @@
+/** Recognition loop: capture frames, send landmarks to the streaming API, vote and emit words. */
 
 import { type Delegate, type FrameLandmarks, LandmarkDetector } from "./landmarks";
 import type { MemoryPayload } from "./memory";

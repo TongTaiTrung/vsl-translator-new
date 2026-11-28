@@ -23,6 +23,6 @@ Luồng chính: video BGR → pad 1280×1280 → MediaPipe pose + hand → **383
 [[Workflow-Data-to-Model]] · [[Workflow-Realtime]] · [[Workflow-Web-API]]
 
 ## Quy ước
-- Comment/docstring/thông báo CLI viết bằng tiếng Việt.
+- Thông báo CLI và giao diện viết bằng tiếng Việt.
 - Số liệu trong vault lấy từ code (`src/features/extract.py`); đổi extractor thì cập nhật [[Feature-Contract]].
-- Không có `# comment` trong code: lý do thiết kế nằm ở docstring và ở các ghi chú này.
+- Mỗi file code chỉ có một doc comment tiếng Anh ở đầu file (docstring Python, `/** */` cho TS/CSS, `<!-- -->` cho HTML); không có comment hay docstring nào khác. Lý do thiết kế nằm ở các ghi chú trong vault này.

@@ -1,3 +1,4 @@
+/** Toggle switch control. */
 
 export function Switch(props: {
   label: string;

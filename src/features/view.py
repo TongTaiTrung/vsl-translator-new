@@ -1,19 +1,4 @@
-"""Giả lập bối cảnh quay khác (góc máy, khoảng cách, FOV, cỡ tay) trên LANDMARK thô rồi tính lại feature.
-
-Đo trên dữ liệu (lớp ``m`` quay ở hai bối cảnh): cùng một ký hiệu ở hai bối cảnh cách nhau trong không gian
-feature xa hơn hai ký hiệu khác nhau quay cùng bối cảnh, và lệch nhiều nhất ở các kênh phụ thuộc góc nhìn
-(z, ``hand_scale``, thành phần pháp tuyến của ``hand_local``, cả cos khớp 3D). Augment trên feature
-(``rotate_view_pitch``) chỉ xấp xỉ được pitch; ở đây ta biến đổi chính landmark rồi chạy lại ``extract`` nên
-MỌI cột (kể cả thủ hình từ ``hand_world``) đổi nhất quán như khi quay thật bằng camera khác.
-
-Mô hình hình học (đơn vị = bề rộng canvas FRAME_SIZE, trục như ảnh: x phải, y xuống, z ra xa camera):
-  - Gốc xoay = giữa hai vai của từng frame. Độ sâu tương đối d = (z_pose - z_vai) / POSE_Z_GAIN.
-  - Tay: d = d(cổ tay pose ghép với tay đó, làm mượt theo thời gian, kẹp biên) + z tương đối của tay.
-  - Camera hiện tại cách gốc ``FOCAL`` (đơn vị canvas đã quy về mặt phẳng vai): bỏ phối cảnh
-    X = u (f + d) / f, xoay quanh gốc, chiếu lại với khoảng cách f·r: u' = X' f / (f r + Z').
-    r > 1: camera xa hơn / FOV hẹp hơn (phối cảnh yếu đi, tay trước ngực bớt "to"); r < 1 ngược lại.
-  - ``hand_world`` (mét, trục theo camera) xoay cùng ma trận.
-"""
+"""Simulate another recording setup (camera angle, distance, FOV, hand size) on raw landmarks and recompute features."""
 
 from __future__ import annotations
 
@@ -55,8 +40,6 @@ IDENTITY = ViewParams()
 def random_view(rng: np.random.Generator, *, yaw: float = 20.0, pitch: float = PITCH_AUG_DEG, roll: float = 5.0,
                 distance: tuple[float, float] = (0.7, 1.6), hand_size: tuple[float, float] = (0.9, 1.1),
                 shift: float = 0.08, finger_sigma: float = 8.0) -> ViewParams:
-    """Bối cảnh ngẫu nhiên: góc đều trong ±biên, khoảng cách log-đều, cỡ tay đều, dịch tay đều ±shift vai,
-    độ gập từng khớp lệch N(0, finger_sigma) kẹp ±2.5 sigma."""
     lo, hi = np.log(distance)
     fingers = np.clip(rng.normal(0.0, finger_sigma, 30), -2.5 * finger_sigma, 2.5 * finger_sigma) if finger_sigma > 0 else ()
     return ViewParams(
@@ -69,7 +52,6 @@ def random_view(rng: np.random.Generator, *, yaw: float = 20.0, pitch: float = P
 
 
 def rotation(view: ViewParams) -> np.ndarray:
-    """R = Rz(roll) · Rx(pitch) · Ry(yaw), trục ảnh (x phải, y xuống, z ra xa)."""
     y, p, r = np.deg2rad([view.yaw, view.pitch, view.roll])
     ry = np.array([[np.cos(y), 0, np.sin(y)], [0, 1, 0], [-np.sin(y), 0, np.cos(y)]])
     rx = np.array([[1, 0, 0], [0, np.cos(p), -np.sin(p)], [0, np.sin(p), np.cos(p)]])
@@ -81,7 +63,6 @@ _FINGER_CHAINS = np.array([[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14,
 
 
 def _rotate_about(points: np.ndarray, center: np.ndarray, axis: np.ndarray, degrees: float) -> np.ndarray:
-    """Rodrigues: xoay points (N,3) quanh trục qua center."""
     a = np.deg2rad(degrees)
     k = axis / (np.linalg.norm(axis) + 1e-9)
     v = points - center
@@ -89,11 +70,6 @@ def _rotate_about(points: np.ndarray, center: np.ndarray, axis: np.ndarray, degr
 
 
 def bend_fingers(hand: np.ndarray, offsets: np.ndarray, is_left: bool) -> np.ndarray:
-    """hand (21,3) → bản sao với khớp thứ j (thứ tự extract._JOINTS) gập thêm offsets[j] độ.
-
-    Ngón 2-5 gập quanh trục ngang lòng bàn tay (gốc trỏ → gốc út), ngón cái quanh trục dọc bàn tay. Tay trái
-    đổi dấu trục để cùng một offset là cùng chiều gập ở hai tay (đối xứng gương như extract).
-    """
     out = np.array(hand, dtype=np.float64)
     across = out[17] - out[5]
     along = out[9] - out[0]
@@ -114,7 +90,6 @@ def _match_pose_wrist(hand: np.ndarray, pose: np.ndarray) -> int:
 
 
 def _smooth_depth(depth: np.ndarray, k: int = 5) -> np.ndarray:
-    """Trung vị trượt (bỏ qua NaN) theo thời gian: z cổ tay pose nhảy từng frame."""
     out = depth.copy()
     half = k // 2
     for t in range(len(depth)):
@@ -127,11 +102,6 @@ def _smooth_depth(depth: np.ndarray, k: int = 5) -> np.ndarray:
 
 def simulate_view(pose: np.ndarray, hands: np.ndarray, world: np.ndarray, view: ViewParams,
                   focal: float = FOCAL) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Landmark của cả clip (T, …) nhìn từ bối cảnh ``view``. Không sửa mảng vào.
-
-    Frame không có pose giữ nguyên (``extract`` trả NaN cho frame đó dù sao). Tay bị chiếu ra ngoài
-    canvas thì coi như mất (NaN), như detector thật.
-    """
     pose, hands, world = (np.array(a, dtype=np.float64) for a in (pose, hands, world))
     T = len(pose)
     R = rotation(view)
@@ -165,10 +135,6 @@ def simulate_view(pose: np.ndarray, hands: np.ndarray, world: np.ndarray, view: 
         shift = np.array([view.shift_x, view.shift_y]) * sw
 
         def transform(u: np.ndarray, d: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-            """u (N,2) toạ độ ảnh trừ gốc, d (N,) độ sâu → (u', Z' - d, hệ số chiếu cũ, hệ số chiếu mới).
-
-            Với IDENTITY: u' = u và Z' = d chính xác, nên landmark ra trùng landmark vào.
-            """
             d = np.maximum(d, -0.8 * f)
             P = np.column_stack([u * ((f + d) / f)[:, None], d]) @ R.T
             z = np.maximum(P[:, 2], -0.8 * f * r)
@@ -215,7 +181,6 @@ def simulate_view(pose: np.ndarray, hands: np.ndarray, world: np.ndarray, view: 
 
 
 def features_from_landmarks(pose: np.ndarray, hands: np.ndarray, world: np.ndarray) -> np.ndarray:
-    """(T, FEATURE_DIM) feature thô từ landmark của cả clip, đúng như ``extract`` trên kết quả MediaPipe."""
     out = np.empty((len(pose), FEATURE_DIM), dtype=np.float32)
     for t in range(len(pose)):
         out[t] = extract(*arrays_to_results(pose[t], hands[t], world[t]))

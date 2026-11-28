@@ -1,3 +1,5 @@
+"""Tests for personal exemplar memory."""
+
 import base64
 import tempfile
 import unittest
@@ -19,7 +21,6 @@ CLASSES = ["xin chào", "cảm ơn", "toi"]
 
 
 def clip(seed: int, hand: bool = True, frames: int = 30) -> np.ndarray:
-    """Feature thô của một clip giả: mỗi seed là một 'cách ký' khác nhau."""
     return np.stack([extract(*dict_to_results(fake_landmarks(hand=hand, seed=seed * 100 + i)))
                      for i in range(frames)]).astype(np.float32)
 

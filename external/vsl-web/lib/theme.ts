@@ -1,3 +1,4 @@
+/** Theme preference storage and application. */
 
 export type Theme = "light" | "dark";
 

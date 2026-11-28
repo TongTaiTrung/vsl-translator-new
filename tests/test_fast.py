@@ -1,3 +1,5 @@
+"""Tests for the fast prediction branch."""
+
 import tempfile
 import unittest
 from pathlib import Path
@@ -31,7 +33,6 @@ def result(label, confidence, gap):
 
 
 class ScriptedPredictor:
-    """predict_processed trả kết quả theo model: ``fast`` cho ensemble con, ``full`` cho cả ensemble."""
 
     target_len = 30
 

@@ -1,3 +1,5 @@
+"""Tests for the Flask HTTP API."""
+
 import base64
 import io
 import json
@@ -24,7 +26,6 @@ def encode_frame(frame: np.ndarray, data_url: bool = True) -> str:
 
 
 def fake_landmarks(hand: bool = True, seed: int = 0) -> dict:
-    """Landmark một frame: người đứng giữa khung (vai rộng 0.2), có/không một tay giơ trước ngực."""
     rng = np.random.default_rng(seed)
     pose = np.column_stack([rng.uniform(0.4, 0.6, 33), rng.uniform(0.2, 0.4, 33), rng.uniform(-0.1, 0.1, 33),
                             np.ones(33)])
@@ -169,7 +170,6 @@ class ServerTests(unittest.TestCase):
 
 
 class FakeStreamExtractor:
-    """Extractor giả cho /api/stream: ghi lại timestamp; frame có kênh B > 200 thì có tay (palm y = 0)."""
 
     instances: list["FakeStreamExtractor"] = []
 
@@ -328,7 +328,6 @@ class StreamTests(unittest.TestCase):
         self.assertEqual(send([fake_landmarks()], timestamps=[1, 2]).status_code, 400)
 
     def test_window_follows_capture_time_not_frame_count(self):
-        """Điện thoại chậm (7.5 fps) hay máy nhanh (30 fps): cửa sổ luôn là 2 giây như lúc train (30 frame ở 15 fps)."""
         sid = self.client.post("/api/stream").get_json()["session_id"]
         send = lambda frames, **extra: self.client.post(f"/api/stream/{sid}", json={"landmarks": frames, **extra})
         slow = [1000 + i * 1000 / 7.5 for i in range(16)]

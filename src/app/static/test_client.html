@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- API test page: send webcam or video-file frames to the VSL prediction server and show the result. -->
 <html lang="vi">
 <head>
 <meta charset="utf-8">
@@ -109,7 +110,7 @@ const $ = (id) => document.getElementById(id);
 const video = $("video");
 const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d");
-let mode = "cam";          // "cam" | "file"
+let mode = "cam";
 let stream = null;
 let busy = false;
 let looping = false;
@@ -118,7 +119,6 @@ $("server").value = location.protocol.startsWith("http") ? location.origin : "ht
 const api = (path) => $("server").value.replace(/\/+$/, "") + path;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// ---------- kết nối ----------
 async function checkHealth() {
   const el = $("healthStatus");
   el.className = "muted"; el.textContent = "đang kiểm tra…";
@@ -135,7 +135,6 @@ async function checkHealth() {
   }
 }
 
-// ---------- nguồn video ----------
 function setMode(next) {
   mode = next;
   $("tabCam").classList.toggle("active", mode === "cam");
@@ -156,7 +155,6 @@ function setMode(next) {
 
 async function startCamera() {
   try {
-    // Xin độ phân giải 16:9 lớn nhất (trình duyệt chọn chế độ gốc gần nhất); ô "maxSide" thu nhỏ khi gửi.
     stream = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 3840 }, height: { ideal: 2160 }, aspectRatio: { ideal: 16 / 9 } },
       audio: false,
@@ -195,9 +193,7 @@ $("fileInput").addEventListener("change", () => {
   };
 });
 
-// ---------- chụp frame ----------
 function grab() {
-  // Gửi frame gốc (không lật); server tự lật nếu mirror_data = true.
   const w = video.videoWidth, h = video.videoHeight;
   const scale = Math.min(1, Number($("maxSide").value) / Math.max(w, h));
   canvas.width = Math.round(w * scale);
@@ -226,7 +222,6 @@ async function captureCamera(n, fps) {
 }
 
 async function captureFile(n) {
-  // Lấy n frame đều trên cả video; fps gửi server = n / thời lượng (giống lấy mẫu lại clip).
   video.pause();
   const duration = video.duration;
   if (!isFinite(duration) || duration <= 0) throw new Error("Không đọc được thời lượng video");
@@ -248,7 +243,6 @@ function onFrame(frames, n) {
   $("strip").appendChild(img);
 }
 
-// ---------- gọi API ----------
 async function captureAndPredict() {
   if (busy) return;
   busy = true;
@@ -325,7 +319,6 @@ async function loop() {
   }
 }
 
-// ---------- sự kiện ----------
 $("healthBtn").onclick = checkHealth;
 $("tabCam").onclick = () => setMode("cam");
 $("tabFile").onclick = () => setMode("file");
@@ -334,7 +327,7 @@ $("captureBtn").onclick = captureAndPredict;
 $("loopBtn").onclick = () => {
   looping = !looping;
   $("loopBtn").textContent = "Liên tục: " + (looping ? "bật" : "tắt");
-  $("countdown").parentElement.hidden = looping;   // chế độ liên tục bỏ đếm ngược
+  $("countdown").parentElement.hidden = looping;
   if (looping) loop();
 };
 $("mirrorPreview").onchange = () => video.classList.toggle("mirror", mode === "cam" && $("mirrorPreview").checked);

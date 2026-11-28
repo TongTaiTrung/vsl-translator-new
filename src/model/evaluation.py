@@ -1,8 +1,4 @@
-"""Các chỉ số đánh giá bổ sung cho OOF logits (originals-only, T=1).
-
-Module này KHÔNG import ``src.model.training`` để tránh phụ thuộc vòng (training.py
-sẽ gọi ``oof_report`` sau khi tính xong ``oof``/``oof_mask``). Chỉ dùng numpy.
-"""
+"""Extra metrics on out-of-fold logits (original samples only)."""
 
 from __future__ import annotations
 
@@ -47,7 +43,6 @@ def _topk_accuracy(logits: np.ndarray, y: np.ndarray, k: int) -> float:
 
 
 def _mean_prob_by_true_class(probs: np.ndarray, y: np.ndarray, n_classes: int) -> np.ndarray:
-    """mean_probs[c] = trung bình xác suất dự đoán (mọi lớp) trên các mẫu có nhãn thật = c."""
     mean_probs = np.full((n_classes, n_classes), np.nan)
     for c in range(n_classes):
         rows = probs[y == c]
@@ -57,7 +52,6 @@ def _mean_prob_by_true_class(probs: np.ndarray, y: np.ndarray, n_classes: int) -
 
 
 def _closest_pairs(probs: np.ndarray, y: np.ndarray, n_classes: int, n_pairs: int) -> list[tuple[int, int, float]]:
-    """Xếp hạng mọi cặp lớp theo mean softmax rival probability (đối xứng, lấy max 2 chiều)."""
     mean_probs = _mean_prob_by_true_class(probs, y, n_classes)
     scored = []
     for a in range(n_classes):
@@ -82,7 +76,6 @@ def _pairwise_binary_accuracy(logits: np.ndarray, y: np.ndarray, a: int, b: int)
 
 def _bootstrap_ci(y: np.ndarray, pred: np.ndarray, n_classes: int, groups: np.ndarray | None,
                    n_resamples: int, seed: int) -> dict:
-    """CI 95% cho accuracy/macro_f1 bằng bootstrap; resample theo nhóm nếu có groups."""
     rng = np.random.default_rng(seed)
     n = len(y)
     if groups is not None:
@@ -112,20 +105,6 @@ def _bootstrap_ci(y: np.ndarray, pred: np.ndarray, n_classes: int, groups: np.nd
 
 def oof_report(logits: np.ndarray, y: np.ndarray, classes: list[str],
                groups: np.ndarray | None = None) -> dict:
-    """Báo cáo JSON-ready từ OOF logits (chỉ mẫu gốc, T=1).
-
-    Tham số:
-      logits: (N, C) logits OOF đã pool qua các fold.
-      y: (N,) nhãn thật (chỉ số lớp).
-      classes: tên C lớp, theo đúng thứ tự chỉ số.
-      groups: (N,) id nhóm gốc (để bootstrap resample theo nhóm, tránh đếm hai lần
-        các bản augmentation); None -> resample theo từng mẫu.
-
-    Trả về dict gồm: accuracy, macro_f1, per_class (list precision/recall/f1/support),
-    confusion_matrix + labels, top_k (k<=C trong {1,3,5}), hard_pairs (5 cặp lớp gần
-    nhau nhất theo mean softmax rival probability, kèm accuracy nhị phân trên riêng
-    2 lớp đó), bootstrap_ci_95 (accuracy, macro_f1).
-    """
     logits = np.asarray(logits, dtype=np.float64)
     y = np.asarray(y, dtype=np.int64)
     n_classes = len(classes)

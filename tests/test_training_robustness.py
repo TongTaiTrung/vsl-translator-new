@@ -1,3 +1,5 @@
+"""Tests for training robustness and augmentation."""
+
 import unittest
 from pathlib import Path
 from types import SimpleNamespace

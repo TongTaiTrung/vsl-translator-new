@@ -1,3 +1,5 @@
+"""Tests for still-negative training copies."""
+
 import unittest
 
 import numpy as np
@@ -8,7 +10,6 @@ from src.model import training as tr
 
 
 def _flick(start: int = 8, dy: float = -0.6, T: int = 30, side: int = 1, frames: int = 4) -> np.ndarray:
-    """Chuỗi thô: tay giữ yên, vẩy ``dy`` trong ``frames`` frame từ ``start`` rồi giữ yên (như dấu sắc)."""
     raw = np.full((T, fx.FEATURE_DIM), np.nan, dtype=np.float32)
     raw[:, fx.FEATURE_SLICES["presence"]] = 0.0
     hp = fx.FEATURE_SLICES["hand_pos"].start + 9 * side

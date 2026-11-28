@@ -1,3 +1,4 @@
+/** Word voting (port of src/app/voting.py). */
 
 export class WordVoter {
   sequence: string[] = [];

@@ -1,17 +1,4 @@
-"""Mở webcam ở độ phân giải gốc lớn nhất thay vì mặc định của backend.
-
-OpenCV không tự chọn độ phân giải tối đa: backend AVFoundation (macOS) mở session với
-``AVCaptureSessionPresetMedium``, còn V4L2/DirectShow/MSMF thường mặc định 640x480. Vì vậy
-mọi chỗ mở camera phải đi qua ``open_camera``.
-
-Cách chọn: thử các độ phân giải ứng viên từ lớn xuống nhỏ (cùng tỉ lệ khung hình), đọc thử một
-frame và giữ ứng viên đầu tiên mà camera trả về đúng kích thước. Trên macOS, ``set`` width/height
-làm AVFoundation tự đổi sang một định dạng *gốc* của thiết bị (không phóng to giả), còn driver
-khác thì giữ nguyên/kẹp kích thước khi không hỗ trợ — nên kích thước frame đọc được là thật.
-
-Mặc định giữ tỉ lệ 16:9 vì dữ liệu ``data/raw`` được quay ở 16:9; đổi tỉ lệ (4:3, vuông) làm
-thay đổi vùng nhìn so với lúc train.
-"""
+"""Open the webcam at the largest native resolution instead of the backend default."""
 
 from __future__ import annotations
 
@@ -28,7 +15,6 @@ __all__ = ["RESOLUTIONS_16_9", "open_camera", "parse_resolution"]
 
 
 def parse_resolution(text: str | None) -> tuple[int, int] | None:
-    """``"1920x1080"`` → ``(1920, 1080)``; ``None``/``""``/``"max"`` → ``None`` (tự chọn lớn nhất)."""
     if text is None or text.strip().lower() in ("", "max", "auto"):
         return None
     try:
@@ -41,7 +27,6 @@ def parse_resolution(text: str | None) -> tuple[int, int] | None:
 
 
 def _read_size(cap: cv2.VideoCapture, attempts: int = 3) -> tuple[int, int] | None:
-    """Kích thước (w, h) của frame thật đọc được — tin cậy hơn ``cap.get`` trên một số backend."""
     for _ in range(attempts):
         ok, frame = cap.read()
         if ok and frame is not None:
@@ -58,11 +43,6 @@ def _request(cap: cv2.VideoCapture, size: tuple[int, int]) -> tuple[int, int] | 
 def open_camera(index: int = 0, resolution: tuple[int, int] | None = None, *,
                 candidates=RESOLUTIONS_16_9, fps: float | None = None,
                 api: int = cv2.CAP_ANY, verbose: bool = True) -> cv2.VideoCapture:
-    """Mở camera ``index`` ở độ phân giải gốc lớn nhất (hoặc đúng ``resolution`` nếu truyền vào).
-
-    Trả về ``cv2.VideoCapture`` đã mở; ném ``RuntimeError`` nếu không mở/đọc được camera.
-    ``fps`` (tuỳ chọn) đặt sau khi chọn độ phân giải vì dải fps phụ thuộc định dạng.
-    """
     cap = cv2.VideoCapture(index, api)
     if not cap.isOpened():
         cap.release()

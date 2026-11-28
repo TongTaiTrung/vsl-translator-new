@@ -1,18 +1,6 @@
-"""Mô phỏng luồng web (lib/recognizer.ts + /api/stream) trên clip gốc, CÓ động tác đưa tay lên và hạ tay.
+"""Replay recorded clips through the web streaming flow with simulated hand raise/lower.
 
-Clip thu dữ liệu bắt đầu khi tay đã ở tư thế ký (bấm SPACE lúc tay đã giơ lên), còn trên camera thật cửa sổ
-2 giây dính cả cú nâng/hạ tay, và người ký vẩy sớm/muộn, giữ tay ngắn/dài tuỳ lúc. Mỗi clip gốc (có
-``landmarks.npz``) được ghép thành một luồng: vài frame không có tay → tay nâng từ mép dưới khung lên tư thế đầu
-clip → clip → tay hạ xuống → không có tay, rồi phát lại ở 15 fps qua cùng luật cửa sổ / đếm tay / bỏ phiếu như web.
-Đặc trưng tính lại bằng ``extract`` từ landmark nên giống hệt pipeline thật. Mỗi clip chỉ do model của fold chứa
-nó dự đoán (chưa thấy clip đó lúc train).
-
-- ``--speed`` / ``--pre-hold`` / ``--post-hold``: ký nhanh hơn, vẩy muộn hơn, giữ tay ngắn sau nét.
-- ``--view train|hard``: bối cảnh quay khác (góc camera, khoảng cách, cỡ tay, lệch khớp ngón; ``view.simulate_view``).
-- ``--still``: giơ tay đúng tư thế của clip nhưng KHÔNG vẩy. Với lớp có nét, "đúng" ở chế độ này là nhận nhầm
-  (model nhận theo tư thế chứ không theo nét); kết quả mong muốn là "bỏ sót".
-
-Chạy: ``.venv/bin/python -m src.app.live_sim [--checkpoint runs/.../ensemble.pt] [--preset accurate]``
+Usage: python -m src.app.live_sim [--checkpoint runs/best/ensemble.pt] [--view hard] [--still]
 """
 
 from __future__ import annotations
@@ -49,16 +37,11 @@ _POSE_ELBOWS = {15: 13, 16: 14}
 
 
 def _ease(n: int) -> np.ndarray:
-    """n hệ số 1 → 0 (smoothstep), không gồm 0: frame cuối của đoạn nâng tay sát tư thế đầu clip."""
     s = np.arange(1, n + 1) / (n + 1)
     return 1.0 - (3 * s ** 2 - 2 * s ** 3)
 
 
 def _lift(pose_t, hands_t, world_t, dy: np.ndarray):
-    """Các frame của tư thế (pose_t, hands_t) với tay dịch xuống dy (đơn vị canvas) mỗi frame.
-
-    Cổ tay + điểm ngón của pose dịch theo tay, khuỷu dịch nửa đoạn. Tay ra ngoài khung → mất (NaN).
-    """
     n = len(dy)
     pose = np.repeat(pose_t[None], n, 0).copy()
     hands = np.repeat(hands_t[None], n, 0).copy()
@@ -79,9 +62,6 @@ def _lift(pose_t, hands_t, world_t, dy: np.ndarray):
 
 def retime(pose, hands, world, *, speed: float = 1.0, pre_hold: int = 0, post_hold: int | None = None,
            still: bool = False):
-    """Đổi nhịp clip: ký nhanh hơn ``speed`` lần (bỏ frame), giữ tư thế đầu thêm ``pre_hold`` frame,
-    và chỉ giữ ``post_hold`` frame sau cú di chuyển mạnh nhất của đầu ngón trỏ (None = giữ hết).
-    ``still``: thay cả clip bằng frame yên nhất lặp lại (giơ tay đúng tư thế nhưng KHÔNG vẩy) -> đo nhận nhầm."""
     T = len(pose)
     if still:
         tip = hands[:, :, 8, :2]
@@ -105,7 +85,6 @@ def retime(pose, hands, world, *, speed: float = 1.0, pre_hold: int = 0, post_ho
 
 
 def build_live(pose, hands, world, *, entry: int, exit_: int, pre: int, post: int):
-    """Landmark của luồng: pre frame không tay, nâng tay, clip, hạ tay, post frame không tay."""
     has = np.isfinite(hands[:, :, 0, 0]).any(1) & np.isfinite(pose[:, 0, 0])
     if not has.any():
         return None
@@ -131,7 +110,6 @@ def build_live(pose, hands, world, *, entry: int, exit_: int, pre: int, post: in
 
 
 def replay(predictor, ensemble, features, preset) -> list[str]:
-    """Các từ được chốt khi phát ``features`` (N, FEATURE_DIM) ở 15 fps qua luồng web."""
     predict_frames, min_frames, stride, min_hand = preset
     buffer: list[np.ndarray] = []
     since = None

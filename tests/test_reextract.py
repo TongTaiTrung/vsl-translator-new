@@ -1,3 +1,5 @@
+"""Tests for feature re-extraction."""
+
 import json
 import tempfile
 import unittest

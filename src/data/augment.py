@@ -1,4 +1,4 @@
-"""Create feature-only variants while preserving source groups for validation."""
+"""Create augmented variants of original samples while keeping the source group for validation."""
 
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ from src.features.view import features_from_landmarks, random_view, simulate_vie
 
 
 def available_sources(processed_root: Path, classes: list[str] | None = None) -> list[Path]:
-    """Return complete original samples; never augment an augmented sample."""
     processed_root = Path(processed_root)
     if not processed_root.is_dir():
         raise FileNotFoundError(processed_root)
@@ -48,7 +47,6 @@ def plan_augmentation(
     processed_root: Path, classes: list[str] | None,
     minimum_samples: int, copies_per_sample: int,
 ) -> tuple[list[tuple[Path, int]], dict[str, int]]:
-    """Plan exact per-class deficits, or all sources when minimum_samples=-1."""
     if minimum_samples < -1:
         raise ValueError("minimum_samples must be -1 or non-negative")
     if copies_per_sample < 1:
@@ -100,7 +98,6 @@ def plan_augmentation(
 
 
 def add_feature_noise(features: np.ndarray, rng: np.random.Generator, strength: float = 1.0) -> np.ndarray:
-    """Add small bounded noise to geometry, keeping NaNs and presence unchanged."""
     if not np.isfinite(strength) or strength <= 0 or strength > 3:
         raise ValueError("strength must be in (0, 3]")
     source = np.asarray(features, dtype=np.float32)
@@ -123,7 +120,6 @@ def add_feature_noise(features: np.ndarray, rng: np.random.Generator, strength: 
 
 
 def load_source_landmarks(source_dir: Path, n_frames: int):
-    """Landmark thô của mẫu gốc (``reextract`` ghi ra) hoặc None nếu chưa có / không khớp số frame."""
     path = Path(source_dir) / LANDMARKS_FILE
     if not path.is_file():
         return None
@@ -133,12 +129,6 @@ def load_source_landmarks(source_dir: Path, n_frames: int):
 
 def make_variant(features: np.ndarray, landmarks, rng: np.random.Generator, strength: float,
                  pitch_degrees: float = PITCH_AUG_DEG, view_kwargs: dict | None = None) -> tuple[np.ndarray, dict]:
-    """Một bản tăng cường của clip: (feature thô (T, FEATURE_DIM), thông tin để ghi vào meta).
-
-    Có landmark: giả lập bối cảnh quay khác trên landmark (góc máy, khoảng cách/FOV, cỡ tay, vị trí ký,
-    độ lệch góc khớp ngón; ``src.features.view``) rồi tính lại feature, sau đó thêm nhiễu nhỏ.
-    Không có landmark: cách cũ, nhiễu feature + ``rotate_view_pitch``.
-    """
     if landmarks is not None:
         view = random_view(rng, pitch=pitch_degrees, **(view_kwargs or {}))
         viewed = features_from_landmarks(*simulate_view(*landmarks, view))
@@ -154,12 +144,6 @@ def make_variant(features: np.ndarray, landmarks, rng: np.random.Generator, stre
 
 def augment_sample(source_dir: Path, raw_root: Path, copies: int, strength: float,
                    rng: np.random.Generator, pitch_degrees: float = PITCH_AUG_DEG) -> list[Path]:
-    """Write new numeric sample directories under processed; never touch raw.
-
-    Mẫu có ``landmarks.npz`` (chạy ``reextract`` để tạo): mỗi bản sao là clip nhìn từ một bối cảnh quay ngẫu
-    nhiên (``make_variant``). Mẫu cũ chưa có landmark: nhiễu feature + pitch ngẫu nhiên trong
-    [-pitch_degrees, pitch_degrees] (rotate_view_pitch). pitch_degrees=0 -> không đổi pitch.
-    """
     source_dir = Path(source_dir)
     raw_root = Path(raw_root)
     if copies < 1:

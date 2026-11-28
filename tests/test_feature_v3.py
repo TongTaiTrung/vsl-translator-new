@@ -1,3 +1,5 @@
+"""Tests for the feature extractor and sequence processing."""
+
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,7 +13,6 @@ from src.model import training as tr
 
 
 def _hand(thumb_x: float, index_tip_x: float = 0.0, middle_tip_x: float = 0.33) -> np.ndarray:
-    """Bàn tay phải tổng hợp (21,3): lòng bàn tay trong mặt phẳng xy, ngón duỗi theo -y."""
     pts = np.zeros((21, 3))
     for base, x in zip((5, 9, 13, 17), (0.0, 0.33, 0.66, 1.0)):
         for k in range(4):
@@ -77,7 +78,6 @@ class LayoutTests(unittest.TestCase):
 
 
 def _clip(T: int, left_y: float | None, right_y: float, seed: int = 0) -> np.ndarray:
-    """Clip thô (T, FEATURE_DIM) với quỹ đạo mượt; left_y=None -> không có tay trái."""
     rng = np.random.default_rng(seed)
     t = np.linspace(0, np.pi, T)[:, None]
     raw = np.full((T, fx.FEATURE_DIM), np.nan, dtype=np.float32)
@@ -177,7 +177,6 @@ def _pt(row, vis=1.0):
 
 
 def _scene():
-    """Pose (33,3) toạ độ ảnh + tay phải (ảnh, world) đưa ra trước ngực; hông trong khung."""
     pose = np.tile([0.5, 0.5, 0.0], (33, 1))
     rows = {0: (0.5, 0.30, -0.30), 2: (0.52, 0.28, -0.28), 5: (0.48, 0.28, -0.28), 7: (0.55, 0.29, -0.1),
             8: (0.45, 0.29, -0.1), 9: (0.51, 0.33, -0.28), 10: (0.49, 0.33, -0.28), 11: (0.6, 0.45, 0.0),
@@ -203,7 +202,6 @@ def _results(pose, image, world, hip_vis=1.0):
 
 
 def _rotate_scene(pose, image, world, degrees):
-    """Camera thấp hơn `degrees`: xoay cảnh quanh trục x qua giữa vai, trong thang độ sâu thật (z / POSE_Z_GAIN)."""
     a = np.radians(degrees)
     c, s = np.cos(a), np.sin(a)
 
@@ -225,7 +223,6 @@ def _rotate_scene(pose, image, world, degrees):
 
 
 class FeatureV6Tests(unittest.TestCase):
-    """v6: hệ trục thân không phụ thuộc hông; rotate_view_pitch mô phỏng camera cao/thấp để augment."""
 
     def test_version_bumped(self):
         self.assertGreaterEqual(fx.FEATURE_VERSION, 6)
@@ -320,7 +317,6 @@ class SignFormerTests(unittest.TestCase):
 
 
 class FeatureV5Tests(unittest.TestCase):
-    """v5: tiếp xúc cơ thể không bị trục z nhiễu lấn át; hand_scale ước lượng độ sâu bàn tay."""
 
     def _anchors(self):
         return fx._body_anchors(np.zeros((33, 3), dtype=np.float32))
@@ -360,7 +356,6 @@ class FeatureV5Tests(unittest.TestCase):
 
 
 class StrokeTests(unittest.TestCase):
-    """Nét: cú di chuyển mạnh nhất trong cửa sổ, lặp ở mọi frame (dấu sắc/huyền/nặng chỉ vẩy ~4 frame)."""
 
     @staticmethod
     def _clip(start: int, dy: float, side: int = 1, T: int = 30, absent_until: int = 0) -> np.ndarray:
@@ -408,7 +403,6 @@ class StrokeTests(unittest.TestCase):
 
 
 def _bend(hand: np.ndarray, finger: int, degrees: float) -> np.ndarray:
-    """Gập PIP và DIP của ngón `finger` (1 = trỏ ... 4 = út) mỗi khớp `degrees` độ, quanh trục ngang lòng bàn tay."""
     from src.features.view import _rotate_about
     out = hand.copy()
     chain = fx._FINGER_CHAINS[finger]
@@ -419,7 +413,6 @@ def _bend(hand: np.ndarray, finger: int, degrees: float) -> np.ndarray:
 
 
 class FingerCurlTests(unittest.TestCase):
-    """v7: độ cong từng ngón (góc rad, tổng gập, PIP+DIP, độ thẳng) đo trên cả landmark ảnh lẫn hand_world."""
 
     def test_version_and_layout(self):
         self.assertGreaterEqual(fx.FEATURE_VERSION, 7)
@@ -478,8 +471,6 @@ class FingerCurlTests(unittest.TestCase):
 
 
 def _ring(gap_degrees: float) -> np.ndarray:
-    """Bàn tay phải (21,3) có ngón cái + trỏ uốn thành cung tròn tâm (0.5,-1.6), hở một cung gap_degrees ở đỉnh
-    (0 = "o" khép kín, ~90 = "c"). Ngón giữa/nhẫn/út duỗi như _hand nhưng lùi ra sau mặt phẳng vòng."""
     pts = _hand(0.5)
     pts[10:13, 2] += 1.0
     center, r = np.array([0.5, -1.6, 0.0]), 0.6
@@ -494,7 +485,6 @@ def _ring(gap_degrees: float) -> np.ndarray:
 
 
 class HandClosureTests(unittest.TestCase):
-    """v8: độ khép vòng ngón cái - trỏ/giữa, tách "o" (khép kín) với "c" (hở)."""
 
     def test_version_and_layout(self):
         self.assertEqual(fx.FEATURE_VERSION, 8)

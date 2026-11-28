@@ -1,3 +1,4 @@
+/** API route: compose a Vietnamese sentence from recognized sign labels with Groq. */
 
 import { cleanCompletion, composeMessages, DEFAULT_MODEL, naiveSentence } from "@/lib/sentence";
 

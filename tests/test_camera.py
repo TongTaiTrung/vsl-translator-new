@@ -1,3 +1,5 @@
+"""Tests for webcam resolution selection."""
+
 import unittest
 from unittest import mock
 
@@ -8,8 +10,6 @@ from src.features import camera
 
 
 class FakeCapture:
-    """Camera giả: chỉ hỗ trợ ``modes``; yêu cầu kích thước khác thì giữ nguyên (như DirectShow)
-    hoặc chuyển sang chế độ gốc gần nhất (``snap=True``, như AVFoundation)."""
 
     def __init__(self, modes, default, snap=False, backend="AVFOUNDATION", opened=True):
         self.modes, self.size, self.snap, self.backend, self.opened = modes, default, snap, backend, opened

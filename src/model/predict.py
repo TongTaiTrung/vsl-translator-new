@@ -1,4 +1,4 @@
-"""Reusable VSL prediction from feature sequences or a stream of BGR frames."""
+"""VSL prediction from feature sequences, BGR clips or live frame streams."""
 
 from __future__ import annotations
 
@@ -44,11 +44,6 @@ class StreamConfig:
 
 
 class VSLPredictor:
-    """Load one checkpoint and predict independently from complete feature sequences.
-
-    Share this object across requests. Use a separate ``VSLStreamSession`` for
-    each live camera/client because its frame history and MediaPipe state vary.
-    """
 
     def __init__(self, checkpoint_path: str | Path | None = None, *, device=None,
                  min_confidence: float = 0.65, min_probability_gap: float = 0.08,
@@ -84,12 +79,6 @@ class VSLPredictor:
 
     def predict_processed(self, sequence: np.ndarray, *, top_k: int = 3,
                           ensemble: training.VSLEnsemble | None = None) -> dict:
-        """Predict a processed ``(T, D)`` sequence; return JSON-compatible data.
-
-        ensemble: chạy một ensemble khác (vd. một model con để sàng lọc nhanh, hoặc
-        ``memory.MemoryEnsemble`` có bộ nhớ mẫu cá nhân) với cùng ngưỡng từ chối; mặc định là
-        ensemble của checkpoint. Với ``MemoryEnsemble`` kết quả có thêm ``memory`` (lớp có mẫu giống nhất).
-        """
         features = np.asarray(sequence, dtype=np.float32)
         if features.shape != (self.target_len, self.feature_dim):
             raise ValueError(f"Expected processed features {(self.target_len, self.feature_dim)}, got {features.shape}")
@@ -122,7 +111,6 @@ class VSLPredictor:
         return result
 
     def predict_raw(self, raw_features: np.ndarray, *, top_k: int = 3, ensemble=None) -> dict:
-        """Process raw ``(frames, FEATURE_DIM)`` features and predict a complete clip."""
         features = np.asarray(raw_features, dtype=np.float32)
         if features.ndim != 2 or features.shape[0] == 0 or features.shape[1] != FEATURE_DIM:
             raise ValueError(f"Expected nonempty raw features (frames, {FEATURE_DIM}), got {features.shape}")
@@ -133,10 +121,6 @@ class VSLPredictor:
 
     def predict_frames(self, frames_bgr: Iterable[np.ndarray], *, mirror_data: bool = False,
                        top_k: int = 3, fps: float | None = None) -> dict:
-        """Predict one complete clip of BGR frames without persistent stream state.
-
-        fps: nếu biết fps của video, timestamp gửi MediaPipe theo đúng nhịp (giống reextract).
-        """
         features = []
         landmarkers = LandmarkerLoader(running_mode=VisionRunningMode.VIDEO)
         try:
@@ -159,15 +143,12 @@ class VSLPredictor:
         return session
 
     def build_memory(self, exemplars, *, strength: float = 0.5, **kwargs):
-        """Bộ nhớ mẫu cá nhân (``memory.MemoryEnsemble``) từ list ``memory.Exemplar``; truyền vào
-        ``predict_raw(..., ensemble=)`` hoặc ``open_stream(memory=)``."""
         from src.model.memory import MemoryEnsemble
         return MemoryEnsemble(self.ensemble, self.classes, list(exemplars), target_len=self.target_len,
                               strength=strength, **kwargs)
 
 
 class VSLStreamSession:
-    """Stateful prediction for one video stream; never share between clients."""
 
     def __init__(self, predictor: VSLPredictor, config: StreamConfig | None = None,
                  landmarkers=None) -> None:
@@ -189,7 +170,6 @@ class VSLStreamSession:
         self.reset()
 
     def reset(self) -> None:
-        """Start a fresh signing window without reloading the model or MediaPipe."""
         self.history: deque[tuple[float, np.ndarray]] = deque()
         self.recent_labels: deque[str | None] = deque(maxlen=self.config.stability_frames)
         self.prediction: dict | None = None
@@ -203,7 +183,6 @@ class VSLStreamSession:
         self.last_state: dict | None = None
 
     def update_frame(self, frame_bgr: np.ndarray, *, now: float | None = None) -> dict:
-        """Consume a BGR frame and return JSON-compatible prediction state."""
         if self._closed:
             raise RuntimeError("Stream session is closed")
         now = time.monotonic() if now is None else float(now)
@@ -222,11 +201,6 @@ class VSLStreamSession:
         return self.update_features(feature, now=now)
 
     def update_features(self, feature: np.ndarray, *, now: float) -> dict:
-        """Cập nhật cửa sổ bằng đặc trưng thô ``(FEATURE_DIM,)`` của một frame đã trích xuất.
-
-        ``update_frame`` gọi hàm này sau MediaPipe; có thể gọi trực tiếp để phát lại
-        đặc trưng đã lưu (đánh giá offline) mà không cần camera.
-        """
         if self._closed:
             raise RuntimeError("Stream session is closed")
         now = float(now)
@@ -272,11 +246,9 @@ class VSLStreamSession:
         return self.last_state
 
     def _min_ready_seconds(self) -> float:
-        """Độ dài cửa sổ tối thiểu để bắt đầu dự đoán (lớp con có thể dự đoán sớm hơn)."""
         return self.config.min_window_seconds
 
     def _predict(self, raw: np.ndarray, duration: float) -> dict:
-        """Dự đoán cửa sổ thô hiện tại ``(frames, FEATURE_DIM)``."""
         if self.memory is None:
             return self.predictor.predict_raw(raw, top_k=self.config.top_k)
         return self.predictor.predict_raw(raw, top_k=self.config.top_k, ensemble=self.memory)

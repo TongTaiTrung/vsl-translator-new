@@ -1,3 +1,5 @@
+"""LandmarkerLoader: create, run and close pose and hand landmarkers."""
+
 import numpy as np
 import mediapipe as mp
 import cv2
@@ -164,7 +166,6 @@ class LandmarkerLoader:
         )
 
     def close(self) -> None:
-        """Release the underlying MediaPipe landmarker resources."""
         if self._executor is not None:
             self._executor.shutdown()
         self._pose_landmarker.close()

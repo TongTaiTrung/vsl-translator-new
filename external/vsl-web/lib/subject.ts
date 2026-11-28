@@ -1,3 +1,4 @@
+/** Main-subject isolation: crop the camera frame around the primary signer. */
 
 import type {
   Detection,

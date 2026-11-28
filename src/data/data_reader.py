@@ -1,22 +1,5 @@
-"""
-DataHandler: lưu / đọc mẫu VSL và xuất ra tập dữ liệu để train.
+"""DataHandler: store and read VSL samples and export the training dataset."""
 
-Bố cục thư mục (tương thích bản cũ):
-    data/processed/<class>/<sample_idx>/<frame_idx>.npz   # mỗi frame 1 vector đặc trưng THÔ (key "feature")
-    data/processed/<class>/<sample_idx>/meta.json         # session, thời điểm, fps, ... (mẫu cũ không có -> "legacy")
-    data/raw/<class>/<sample_idx>.mp4                     # video gốc để trích xuất lại khi đổi extractor
-
-Khác bản cũ (các lỗi đã sửa):
-  1. Đặc trưng thô CÓ THỂ chứa NaN (tay/pose không detect được) -> cho phép NaN, chỉ cấm Inf.
-     `process_sequence` mới là nơi nội suy NaN. Bản cũ từ chối NaN nên không lưu được mẫu thật.
-  2. Mẫu lưu độ dài tuỳ ý (>= MIN_FRAMES); co giãn về EXPECTED_FRAMES lúc đọc bằng `processor`.
-  3. Ghi nguyên tử (thư mục tạm -> đổi tên): crash giữa chừng không để lại mẫu dở dang.
-  4. Mẫu dở dang/hỏng bị bỏ qua + ghi vào `.incomplete` (bản cũ: 1 mẫu hỏng làm cả dataset ném lỗi).
-  5. Chỉ lớp có >= min_samples_per_class mẫu hoàn chỉnh mới được đánh nhãn (bản cũ: lớp rỗng vẫn
-     chiếm một nhãn -> model có lớp "ma").
-  6. Chuẩn hoá tên lớp Unicode NFC (tiếng Việt có dấu: macOS lưu NFD -> trùng lớp giả).
-  7. Có `session` để chia fold theo phiên ghi; `remove_sample`; `quality_report`; `export_arrays`.
-"""
 from __future__ import annotations
 
 import json
@@ -84,17 +67,6 @@ class SampleRef:
 
 
 class DataHandler:
-    """Quản lý mẫu VSL đã lưu và phơi ra như một dataset có thể index.
-
-    ``dataset[i]`` -> ``(sequence, label)``:
-      * có ``processor`` (vd. ``process_sequence``): sequence = ``processor(raw)``,
-        float32, shape ``(EXPECTED_FRAMES, D_out)``.
-      * không có ``processor``: chỉ chấp nhận mẫu đúng EXPECTED_FRAMES frame, trả đặc trưng thô
-        ``(EXPECTED_FRAMES, FRAME_FEATURE_DIM)`` (có thể còn NaN).
-
-    ``min_samples_per_class`` counts independent original recordings. Derived
-    feature variants share the original sample's group for fold splitting.
-    """
 
     SEQUENCE_LENGTH = EXPECTED_FRAMES
     FEATURE_DIM = FRAME_FEATURE_DIM
@@ -141,12 +113,10 @@ class DataHandler:
 
     @property
     def class_names(self) -> List[str]:
-        """Mọi lớp có thư mục (kể cả lớp còn trống), đã chuẩn hoá NFC."""
         return sorted(self._child_dirs(self.processed))
 
     @property
     def active_class_names(self) -> List[str]:
-        """Các lớp thực sự có nhãn (đủ min_samples_per_class), theo thứ tự nhãn."""
         self._ensure_dataset_index()
         return list(self._class_to_idx or {})
 
@@ -156,12 +126,10 @@ class DataHandler:
         return dict(self._class_to_idx or {})
 
     def get_class_counts(self) -> Dict[str, int]:
-        """Số mẫu hoàn chỉnh của MỌI lớp (lớp trống = 0)."""
         self._ensure_dataset_index()
         return {name: self._counts.get(name, 0) for name in self.class_names}
 
     def get_origin_counts(self) -> Dict[str, int]:
-        """Number of independent source samples per class."""
         self._ensure_dataset_index()
         return {name: self._origin_counts.get(name, 0) for name in self.class_names}
 
@@ -250,13 +218,11 @@ class DataHandler:
             self._samples, self._class_to_idx = self._scan_dataset()
 
     def refresh_dataset(self) -> int:
-        """Quét lại đĩa; trả về số mẫu đã được đánh nhãn."""
         self._invalidate_dataset_index()
         self._ensure_dataset_index()
         return len(self._samples or [])
 
     def sample_groups(self, by: str = "sample") -> List[str]:
-        """Group by independent source sample or recording session."""
         self._ensure_dataset_index()
         if by == "session":
             return [s.session for s in self._samples or []]
@@ -291,7 +257,6 @@ class DataHandler:
         return feature
 
     def validate_dataset(self) -> int:
-        """Đọc thử mọi file đặc trưng; trả về số mẫu hợp lệ."""
         self.refresh_dataset()
         for s in self._samples or []:
             for p in s.frame_paths:
@@ -303,7 +268,6 @@ class DataHandler:
         return len(self._samples or [])
 
     def load_raw(self, index: int) -> np.ndarray:
-        """Đặc trưng THÔ (T, FEATURE_DIM), có thể chứa NaN."""
         self._ensure_dataset_index()
         samples = self._samples or []
         index = int(index)
@@ -359,12 +323,6 @@ class DataHandler:
         meta: Optional[dict] = None,
         require_hand: bool = True,
     ) -> int:
-        """
-        Lưu 1 mẫu (độ dài T tuỳ ý >= MIN_FRAMES) và trả về sample_idx.
-        features: T vector (FEATURE_DIM,) float32, được phép có NaN.
-        frames:   T ảnh BGR uint8 để lưu video gốc (None = không lưu video).
-        fps:      fps THỰC của lúc ghi (bản cũ mặc định 48 -> video phát sai tốc độ).
-        """
         feats = [np.asarray(f) for f in features]
         n = len(feats)
         if n < self.MIN_FRAMES:
@@ -437,7 +395,6 @@ class DataHandler:
         self._invalidate_dataset_index()
 
     def quality_report(self) -> List[dict]:
-        """Thống kê chất lượng từng mẫu: số frame, tỉ lệ frame có pose, tỉ lệ có tay trái/phải."""
         self._ensure_dataset_index()
         rows = []
         for i, s in enumerate(self._samples or []):
@@ -452,10 +409,6 @@ class DataHandler:
         return rows
 
     def export_arrays(self, group_by: str = "sample", progress: bool = True) -> dict:
-        """
-        Xuất toàn bộ dataset: X (N, T, D) float32, y (N,), classes (theo thứ tự nhãn),
-        groups, sessions. Dùng đúng `processor` của handler.
-        """
         self._ensure_dataset_index()
         n = len(self)
         if n == 0:
@@ -480,7 +433,6 @@ class DataHandler:
         }
 
     def save_npz(self, path: Union[str, Path], group_by: str = "sample") -> Path:
-        """Ghi file .npz đúng định dạng mà src/model/training.py đọc (X, y, classes, groups)."""
         data = self.export_arrays(group_by=group_by)
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
